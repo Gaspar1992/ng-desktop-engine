@@ -157,3 +157,40 @@ When `@angular/platform-browser` is removed, Angular's Ivy runtime still require
 - [x] **Pokédex Master-Detail Split Upgrade (`examples/counter-app` & `PokedexController`):**
   - [x] Upgraded the showcase to use `<ng-clamp>`, `<ng-search-entry>`, `<ng-spin-button>`, `<ng-paned>` master-detail layout, collapsible `<ng-expander>` sections, and `<ng-text-view>` trainer notes.
 - [x] **Automated Test Coverage:** 70 automated tests passing (27 Rust unit tests + 15 Rust E2E integration tests + 28 Angular Vitest tests).
+
+---
+
+### Phase 9: OS-Native HTTP/2, `@ng-native/builders` Toolchain, SQLite FFI, & Full Angular Platform Integration (Completed ✅)
+
+- [x] **OS-Native HTTP/2 & `provideHttpClient` Parity (`@ng-native/http` + `src/desktop/http_native.rs`):**
+  - [x] `libsoup-3.0.so.0` FFI session (`libsoup_sys.rs`) with persistent TLS/HTTP2 sockets, `http_codec.rs` JSON bridge separation (SRP), parallel HTTP/2 batch transfers, and `createNativeHttpResource()`.
+  - [x] JSC C callbacks (`__NG_NATIVE_HOST_HTTP__`, `__NG_NATIVE_HOST_HTTP_CONFIG__`) wired to Angular `provideHttpClient(...)` (`withFetch`, `withInterceptors`, `withXsrfConfiguration`, `withHttpCaching`, `withParallelBatching`).
+- [x] **Toolchain Extraction & Minimal `angular.json` Schema (`@ng-native/builders`):**
+  - [x] Extracted all AST compilers, HMR client, and dev-server out of `examples/counter-app` into `packages/builders-native/`, leaving `examples/counter-app` as a pure Angular 22 project.
+  - [x] Added `angular-native-schema.json`, `native-builder-schema.json`, and minimal `{ os, arch, cpu }` config derivation in `builder.ts` and `src/config/mod.rs`.
+- [x] **Runtime Reactive Control Flow & Angular 22 Reactivity:**
+  - [x] Implemented `.ngb` opcodes `bind_visible` and `bind_attr` across `parser.rs`, `reactivity.rs`, `bootstrap_js.rs`, `bridge.ts`, and `quickjs_engine.rs` for reactive `@if`/`@else`, `@switch`, `[visible]`, `[attr]`, and parent-child input/output forwarding.
+  - [x] Migrated Angular Pipes, `@let`, `@for`/`@empty`, `@defer`/`@error`, `computed()`, `linkedSignal()`, `input()`, `model()`, `output()`, and `httpResource()`.
+- [x] **Nivel 1 & Nivel 2 OS/Angular Integrations:**
+  - [x] **SQLite3 FFI & Live Queries (`src/desktop/sqlite_sys.rs`, `@ng-native/desktop`):** `NativeSqliteDatabase` (`libsqlite3.so.0`, WAL mode) + Signal-based `NativeSqliteService.liveQuery()`.
+  - [x] **OS Environment & Network Monitor (`src/desktop/system_env.rs`, `@ng-native/desktop`):** `GNetworkMonitor` (`NativeNetworkService`), `GLib` locale/timezone (`provideSystemLocale()`), disk image cache (`provideNativeImageLoader()`), `NativeTitleService` (`Title`), `NativeTitleStrategy` (`TitleStrategy`), `NativeStackRouteReuseStrategy` (`RouteReuseStrategy`), `NativeViewportScroller` (`ViewportScroller`), `NativeKeyEventsPlugin` (`EVENT_MANAGER_PLUGINS`), and `NativeSystemErrorHandler` (`ErrorHandler`).
+- [x] **CI & Coverage:** Green GitHub Actions CI with Linux native shared libraries (`libgtk-4-1`, `libadwaita-1-0`, `libjavascriptcoregtk-6.0-1`, `libsoup-3.0-0`, `libsqlite3-0`) and 93 automated tests passing (38 Rust unit + 16 Rust integration + 39 Vitest).
+
+---
+
+### Phase 10 (Nivel 3): Multithreaded Compute Pool, Zero-Copy File System & Kernel Watcher (`inotify`), and Native Drag & Drop (Next Up 🚀)
+
+Designed as a self-contained blueprint for the next implementation iteration:
+
+1. **Multithreaded Rust Compute Pool (`src/desktop/compute_pool.rs` + `packages/desktop-native/src/compute-service.ts`):**
+   - [ ] Implement `NativeComputePool` using `std::thread` workers + `mpsc` channels for off-UI-thread fuzzy filtering (`fuzzy_filter`), sorting (`sort_items`), and cryptographic/FNV hashing (`hash_text`), exposed via `DesktopServices` and `__NG_NATIVE__` (`computeFuzzyFilter`, `computeHash`).
+   - [ ] Implement Angular `NativeComputeService` with `fuzzyFilterSignal<T>(itemsSignal, querySignal, keyFn)` and `hashText(input)`.
+2. **XDG File System, Atomic I/O & Linux `inotify` Watcher (`src/desktop/fs_watcher.rs` + `packages/desktop-native/src/fs-service.ts`):**
+   - [ ] Implement `NativeFsManager` with XDG base dir resolution (`config_dir`, `data_dir`, `cache_dir`), atomic file writes (`write_text_atomic` via temp file + `fs::rename`), file reads (`read_text`), and Linux `inotify` (`inotify_init1(IN_NONBLOCK)` + `inotify_add_watch` via `libc` dynamic FFI or direct Linux syscall wrapper with `#![allow(unsafe_code)]`) for non-blocking change polling.
+   - [ ] Expose `fsResolvePath`, `fsReadText`, `fsWriteText`, `fsWatchFile`, and `fsPollChangedFiles` on `NgNativeBridge` (`bridge.ts` + `bootstrap_js.rs` + `quickjs_engine.rs`) and wrap in Angular `NativeFileSystemService` (`readTextFile`, `writeTextFile`, `resolveXdgPath`, and reactive `watchTextFile` Signal).
+3. **Native Drag & Drop (`GtkDropTarget` + `NativeDropTargetDirective`):**
+   - [ ] Extend `gtk4_sys.rs`, `gtk4_callbacks.rs`, `gtk4_widgets.rs`, and `linux_gtk.rs` to handle `drop-target="true"` attributes on container widgets (`GtkBox`, `GtkFlowBox`, `GtkPaned`) and emit `"file-drop"` events carrying `EventPayload::Text(paths)`.
+   - [ ] Create `NativeDropTargetDirective` (`[ngNativeDropTarget]`, `fileDrop = output<string[]>()`) in `packages/desktop-native/src/drop-target.directive.ts`.
+4. **Pokédex Nivel 3 Integration & Verification:**
+   - [ ] Wire `NativeComputeService`, `NativeFileSystemService`, and `NativeDropTargetDirective` into `examples/counter-app/src/app/pokedex.service.ts` for XDG trainer notes export/import, live external file reload, and fuzzy search over cached entries.
+   - [ ] Preserve the 274-command Frame 0 invariant in `tests/test_pipeline_and_hmr.rs`, add Rust + Vitest coverage for all 3 modules, and verify `pnpm run build:native && pnpm run format:all && pnpm run check` plus GitHub Actions CI pass with 0 warnings.

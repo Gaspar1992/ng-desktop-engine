@@ -15,11 +15,11 @@ A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22
 3. **Game-Engine Inspired Render Pipeline (`CommandQueue`):**
    - Angular mutations during a change-detection tick are batched into an OS-agnostic [`RenderCommand`](./src/engine/commands.rs) buffer (`CreateWidget`, `CreateComment`, `SetText`, `SetAttribute`, `SetWindowIcon`, `RegisterStyle`, `ApplyStyleClass`, `AppendChild`, `InsertBefore`, `RemoveChild`, `DestroyWidget`) and flushed atomically per frame.
 4. **AST-Driven Compilation Pipeline (Zero Regex Parsing):**
-   - **TypeScript 6.0 AST:** Powered by Rust-based [`oxc-parser`](./examples/counter-app/ast-metadata-extractor.mjs), extracting component decorators, `signal()` declarations, and reactive mutation methods.
-   - **Angular Template AST:** Powered by official [`@angular/compiler`](./examples/counter-app/template-compiler.mjs) `parseTemplate`, compiling control flow (`@if`), dynamic inputs, reactive text bindings, and events.
-   - **Native CSS AST:** Powered by [`postcss`](./examples/counter-app/style-compiler.mjs), translating standard CSS (`padding`, `gap`, `border-radius`, `font-size`, `font-weight`) into native GTK4 / WinUI / AppKit styling.
+   - **TypeScript 6.0 AST:** Powered by Rust-based [`oxc-parser`](./packages/builders-native/src/ast-metadata-extractor.mjs), extracting component decorators, `signal()`, `computed()`, `linkedSignal()`, `input()`, `model()`, `output()`, `httpResource()`, and reactive mutation methods.
+   - **Angular Template AST:** Powered by official [`@angular/compiler`](./packages/builders-native/src/template-compiler.mjs) `parseTemplate`, compiling control flow (`@if`/`@else`, `@for`/`@empty`, `@switch`, `@let`, `@defer`/`@error`), Angular pipes, dynamic inputs, reactive `bind_visible`/`bind_attr` bindings, and events.
+   - **Native CSS AST:** Powered by [`postcss`](./packages/builders-native/src/style-compiler.mjs), translating standard CSS (`padding`, `gap`, `border-radius`, `font-size`, `font-weight`) into native GTK4 / WinUI / AppKit styling.
 5. **Real-Time Unix Socket HMR IPC:**
-   - Non-blocking IPC server ([`src/ipc/`](./src/ipc/mod.rs)) communicating over local Unix Domain Sockets (`dist/<project>/hmr.sock`) with a Node.js client ([`hmr-client.mjs`](./examples/counter-app/hmr-client.mjs)) for zero-latency, atomic hot module reloads while preserving active signal state.
+   - Non-blocking IPC server ([`src/ipc/`](./src/ipc/mod.rs)) communicating over local Unix Domain Sockets (`dist/<project>/hmr.sock`) with a Node.js client ([`hmr-client.mjs`](./packages/builders-native/src/hmr-client.mjs)) for zero-latency, atomic hot module reloads while preserving active signal state.
 6. **SOLID & Hexagonal Platform Architecture (`PlatformBackend`):**
    - The core [`RenderEngine<B: PlatformBackend>`](./src/engine/mod.rs) depends exclusively on an abstract trait, never on concrete OS toolkits.
    - Concrete platform adapters live in [`src/platforms/`](./src/platforms/):
@@ -78,7 +78,12 @@ ng-native-engine/
 │   ├── config/
 │   │   └── mod.rs                # Angular CLI (angular.json) native target parser
 │   ├── desktop/
-│   │   ├── mod.rs                # Desktop OS services (Theme, Clipboard, Notifications, Dialogs, HTTP)
+│   │   ├── mod.rs                # Desktop OS hub (Theme, Clipboard, Notifications, Dialogs, HTTP, SQLite, Env)
+│   │   ├── http_native.rs        # OS-native HTTP/2 engine (libsoup-3.0 / URLSession / WinHTTP, cache & XSRF)
+│   │   ├── http_codec.rs         # JSON bridge serialization & request/response parsing (SRP)
+│   │   ├── libsoup_sys.rs        # Isolated C FFI dynamic loader for libsoup-3.0.so.0
+│   │   ├── sqlite_sys.rs         # Isolated C FFI dynamic loader for libsqlite3.so.0 (WAL + JSON rows)
+│   │   ├── system_env.rs         # GNetworkMonitor, GLib locale/timezone, disk image cache & error log
 │   │   ├── pokedex.rs            # Live PokéAPI HTTP client & sprite cache
 │   │   └── pokedex_ui.rs         # Async Pokédex controller, debounced search & loading spinner
 │   ├── ipc/
@@ -118,22 +123,16 @@ ng-native-engine/
 │       ├── scene_exec.rs         # Structural scene instruction executor & handle table (SRP)
 │       └── parser.rs             # Bytecode (.ngb) instruction IR & syntax parser
 ├── packages/
-│   ├── platform-native/          # @ng-native/platform custom Angular 22 Renderer2 package
+│   ├── platform-native/          # @ng-native/platform (Renderer2, IMAGE_LOADER, Title, ViewportScroller, Locale, KeyEvents, ErrorHandler)
 │   ├── forms-native/             # @ng-native/forms ControlValueAccessor directives
-│   ├── router-native/            # @ng-native/router DOM-free NativePlatformLocation & provideNativeRouter()
-│   ├── http-native/              # @ng-native/http NativeHttpBackend & provideNativeHttpClient()
-│   ├── desktop-native/           # @ng-native/desktop NativeDesktopService (theme Signal, clipboard, dialogs)
-│   └── builders-native/          # @ng-native/builders Angular 22 Architect builder & packager orchestrator
+│   ├── router-native/            # @ng-native/router (NativePlatformLocation, NativeTitleStrategy, NativeStackRouteReuseStrategy)
+│   ├── http-native/              # @ng-native/http (NativeHttpBackend, provideHttpClient features, createNativeHttpResource)
+│   ├── desktop-native/           # @ng-native/desktop (NativeDesktopService, NativeSqliteService, NativeNetworkService)
+│   └── builders-native/          # @ng-native/builders (Angular 22 Architect builder, schema, AST compilers, HMR & dev server)
 ├── examples/
-│   └── counter-app/              # Official Angular 22 showcase application workspace
-│       ├── ast-metadata-extractor.mjs # Rust oxc-parser TypeScript 6.0 AST extractor
-│       ├── build-bundle.mjs      # AST bundle compiler & IPC reload notifier
-│       ├── dev-server.mjs        # Live Hot-Reload dev orchestrator
-│       ├── hmr-client.mjs        # Node.js Unix socket IPC client for instant HMR
-│       ├── icon-compiler.mjs     # Multi-DPI PNG taskbar icon generator
-│       ├── style-compiler.mjs    # PostCSS AST parser for native CSS styling
-│       ├── template-compiler.mjs # @angular/compiler AST template parser
-│       └── src/app/              # Angular 22 Component (app.ts, app.html, app.css)
+│   └── counter-app/              # Pure Angular 22 Pokédex showcase application
+│       ├── public/               # Application favicon assets
+│       └── src/app/              # app.{ts,html,css,config,spec}, pokedex.service.ts, pokemon-card.*, type-badge.*
 ├── tests/
 │   ├── common/mod.rs             # Shared test helpers & headless harness
 │   ├── test_cross_platform.rs    # WinUI 3, AppKit, Linux GTK4 & packager tests
@@ -167,7 +166,7 @@ pnpm install
 pnpm run build
 ```
 
-This runs the official Angular 22 compiler (`ng build`) followed by the AST-driven native compiler (`examples/counter-app/build-bundle.mjs`), generating:
+This runs the official Angular 22 compiler (`ng build`) followed by the AST-driven native compiler ([`build-bundle.mjs`](./packages/builders-native/src/build-bundle.mjs)), generating:
 
 - `dist/ng-linux-counter/main.ngb` (compiled native instructions, styles, and reactive signal bindings)
 - `dist/ng-linux-counter/icons/hicolor/<size>x<size>/apps/ng-linux-counter.png` (`16x16` through `256x256` taskbar icons)
@@ -213,10 +212,10 @@ NG_NATIVE_BATCH=1 cargo run
 | `pnpm run format`                           | Format TypeScript, HTML, CSS, JSON, and Markdown via `oxfmt`         |
 | `pnpm run format:check`                     | Verify formatting with `oxfmt`                                       |
 | `pnpm run lint`                             | Lint TypeScript & Angular templates via `oxlint` + `angular-eslint`  |
-| `pnpm run test`                             | Run all 28 Vitest specs for packages and showcase app                |
+| `pnpm run test`                             | Run all 39 Vitest specs for packages and showcase app                |
 | `cargo fmt --all -- --check`                | Verify Rust formatting                                               |
 | `cargo clippy --all-targets -- -D warnings` | Run strict Rust Clippy lints (pedantic + nursery, zero warnings)     |
-| `cargo test`                                | Execute all 27 unit tests + 15 E2E integration tests in Rust         |
+| `cargo test`                                | Execute all 38 unit tests + 16 E2E integration tests in Rust         |
 
 ---
 
