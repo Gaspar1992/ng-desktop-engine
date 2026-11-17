@@ -6,6 +6,8 @@ import {
   WritableSignal,
 } from '@angular/core';
 import { ensureNgNativeBridge } from '@ng-native/platform';
+import { NativeNetworkService } from './network-service';
+import { NativeSqliteService } from './sqlite-service';
 
 export type NativeThemeMode = 'dark' | 'light';
 
@@ -68,5 +70,9 @@ export class NativeDesktopService {
 }
 
 export function provideNativeDesktop(): EnvironmentProviders {
-  return makeEnvironmentProviders([NativeDesktopService]);
+  return makeEnvironmentProviders([
+    NativeDesktopService,
+    NativeSqliteService,
+    NativeNetworkService,
+  ]);
 }

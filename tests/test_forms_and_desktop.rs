@@ -1,3 +1,4 @@
+use ng_native_engine::desktop::DesktopServices;
 use ng_native_engine::engine::{EventPayload, RenderEngine};
 use ng_native_engine::platforms::HeadlessBackend;
 use ng_native_engine::runtime::{JsEngineBackend, JsRuntime};
@@ -158,4 +159,40 @@ fn phase5_desktop_services_and_native_http_bridge() {
             Some("tok-99")
         );
     }
+}
+
+#[test]
+fn nivel1_native_sqlite_ffi_and_system_env() {
+    let mut desktop = DesktopServices::new();
+    desktop
+        .sqlite_mut()
+        .execute("CREATE TABLE IF NOT EXISTS teams (id INTEGER PRIMARY KEY, name TEXT);")
+        .unwrap();
+    desktop
+        .sqlite_mut()
+        .execute("INSERT INTO teams (id, name) VALUES (25, 'Pikachu');")
+        .unwrap();
+
+    if desktop.sqlite().is_native_loaded() {
+        let json = desktop
+            .sqlite()
+            .query_json("SELECT id, name FROM teams ORDER BY id ASC;")
+            .unwrap();
+        assert_eq!(json, r#"[{"id":"25","name":"Pikachu"}]"#);
+    }
+
+    assert_ne!(desktop.system_env().locale(), "");
+    assert_ne!(desktop.system_env().timezone(), "");
+    assert_eq!(
+        desktop.system_env().resolve_image_asset(
+            "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/6.png",
+            Some(180)
+        ),
+        "/tmp/ng_native_pokedex/6.png"
+    );
+
+    desktop.system_env_mut().set_network_status(false, false);
+    assert_eq!(desktop.system_env().connectivity(), "offline");
+    desktop.system_env_mut().log_error("Timeout warning");
+    assert_eq!(desktop.system_env().error_logs(), ["Timeout warning"]);
 }

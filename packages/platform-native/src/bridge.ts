@@ -1,4 +1,14 @@
+import { InMemorySqliteStore, resolveNativeImageAsset } from './bridge-sqlite';
+
 export type NativeHttpCallKind = 'json' | 'graphql' | 'asset' | 'batch' | 'text';
+
+export type NativeConnectivity = 'full' | 'limited' | 'offline';
+
+export interface NativeNetworkStatus {
+  online: boolean;
+  metered: boolean;
+  connectivity: NativeConnectivity;
+}
 
 export interface NativeHttpRequestOptions {
   headers?: Record<string, string>;
@@ -79,6 +89,15 @@ export interface NgNativeBridge {
       options?: NativeHttpRequestOptions;
     }>,
   ): NativeHttpBridgeResponse[];
+  sqliteExecute(sql: string): boolean;
+  sqliteQuery(sql: string): Array<Record<string, string>>;
+  getNetworkStatus(): NativeNetworkStatus;
+  setNetworkStatus(online: boolean, metered?: boolean): void;
+  getSystemLocale(): string;
+  getSystemTimezone(): string;
+  resolveImageAsset(src: string, width?: number): string;
+  logSystemError(message: string): void;
+  getSystemErrors(): string[];
   __dispatchEvent(id: string, eventName: string, eventPayload?: unknown): void;
   __flushTimers(): void;
   __drainQueue(): string;
@@ -101,6 +120,17 @@ export function ensureNgNativeBridge(): NgNativeBridge {
   let queue: string[] = [];
   let systemTheme: 'dark' | 'light' = 'dark';
   let clipboardText = '';
+  const sqliteStore = new InMemorySqliteStore();
+  let networkStatus: NativeNetworkStatus = {
+    online: true,
+    metered: false,
+    connectivity: 'full',
+  };
+  const systemLocale =
+    (typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().locale : '') || 'en-US';
+  const systemTimezone =
+    (typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : '') || 'UTC';
+  const systemErrors: string[] = [];
   const httpEndpoints = new Map<string, NativeHttpBridgeResponse>();
   let httpConfig: NativeHttpConfig = {
     platform: 'js-fallback',
@@ -245,6 +275,37 @@ export function ensureNgNativeBridge(): NgNativeBridge {
       return requests.map((req) =>
         fallbackBridge.httpRequest(req.method, req.url, req.body, req.options),
       );
+    },
+    sqliteExecute(sql) {
+      return sqliteStore.execute(sql);
+    },
+    sqliteQuery(sql) {
+      return sqliteStore.query(sql);
+    },
+    getNetworkStatus() {
+      return { ...networkStatus };
+    },
+    setNetworkStatus(online, metered = false) {
+      networkStatus = {
+        online,
+        metered,
+        connectivity: !online ? 'offline' : metered ? 'limited' : 'full',
+      };
+    },
+    getSystemLocale() {
+      return systemLocale;
+    },
+    getSystemTimezone() {
+      return systemTimezone;
+    },
+    resolveImageAsset(src, width) {
+      return resolveNativeImageAsset(src, width);
+    },
+    logSystemError(message) {
+      systemErrors.push(String(message));
+    },
+    getSystemErrors() {
+      return [...systemErrors];
     },
     __dispatchEvent(id, eventName, eventPayload = {}) {
       for (const entry of listeners.values()) {

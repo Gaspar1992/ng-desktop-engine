@@ -2,10 +2,13 @@ use std::env;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+mod http_codec;
 pub mod http_native;
 mod libsoup_sys;
 pub mod pokedex;
 pub mod pokedex_ui;
+pub mod sqlite_sys;
+pub mod system_env;
 
 pub use http_native::{
     NativeHttpCallKind, NativeHttpConfig, NativeHttpEngine, NativeHttpRequest, NativeHttpResponse,
@@ -13,6 +16,8 @@ pub use http_native::{
 };
 pub use pokedex::{PokemonIndexEntry, PokemonInfo};
 pub use pokedex_ui::PokedexController;
+pub use sqlite_sys::NativeSqliteDatabase;
+pub use system_env::NativeSystemEnv;
 
 /// Native system color scheme synchronized with GTK4 (`GtkSettings`) / Libadwaita (`AdwStyleManager`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +72,8 @@ pub struct DesktopServices {
     notifications: Vec<DesktopNotification>,
     file_dialogs: Vec<FileDialogRequest>,
     http_engine: Arc<Mutex<NativeHttpEngine>>,
+    sqlite: NativeSqliteDatabase,
+    system_env: NativeSystemEnv,
 }
 
 impl Default for DesktopServices {
@@ -95,7 +102,25 @@ impl DesktopServices {
             notifications: Vec::new(),
             file_dialogs: Vec::new(),
             http_engine,
+            sqlite: NativeSqliteDatabase::new_in_memory(),
+            system_env: NativeSystemEnv::detect(),
         }
+    }
+
+    pub const fn sqlite(&self) -> &NativeSqliteDatabase {
+        &self.sqlite
+    }
+
+    pub const fn sqlite_mut(&mut self) -> &mut NativeSqliteDatabase {
+        &mut self.sqlite
+    }
+
+    pub const fn system_env(&self) -> &NativeSystemEnv {
+        &self.system_env
+    }
+
+    pub const fn system_env_mut(&mut self) -> &mut NativeSystemEnv {
+        &mut self.system_env
     }
 
     pub fn shared_http_engine(&self) -> Arc<Mutex<NativeHttpEngine>> {

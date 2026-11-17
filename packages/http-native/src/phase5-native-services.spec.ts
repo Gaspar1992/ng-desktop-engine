@@ -1,7 +1,20 @@
 import { HttpClient, HttpHeaders, HttpInterceptorFn } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { NativeDesktopService } from '@ng-native/desktop';
+import {
+  ActivatedRouteSnapshot,
+  DetachedRouteHandle,
+  RouteReuseStrategy,
+  RouterStateSnapshot,
+  TitleStrategy,
+  UrlSegment,
+} from '@angular/router';
+import {
+  NativeDesktopService,
+  NativeNetworkService,
+  NativeSqliteService,
+  provideNativeDesktop,
+} from '@ng-native/desktop';
 import {
   createNativeHttpResource,
   NATIVE_HTTP_CONFIG,
@@ -15,8 +28,19 @@ import {
   withParallelBatching,
   withXsrfConfiguration,
 } from '@ng-native/http';
-import { ensureNgNativeBridge, NativeHttpRequestOptions } from '@ng-native/platform';
-import { NativePlatformLocation } from '@ng-native/router';
+import {
+  ensureNgNativeBridge,
+  NativeHttpRequestOptions,
+  NativeTitleService,
+} from '@ng-native/platform';
+import {
+  NativePlatformLocation,
+  NativeStackRouteReuseStrategy,
+  NativeTitleStrategy,
+  provideNativeRouter,
+  withNativeRouteReuse,
+  withNativeTitleStrategy,
+} from '@ng-native/router';
 import { firstValueFrom } from 'rxjs';
 
 describe('Phase 5 — @ng-native/router, @ng-native/http & @ng-native/desktop', () => {
@@ -262,5 +286,65 @@ describe('Phase 5 — @ng-native/router, @ng-native/http & @ng-native/desktop', 
     expect(resource.reload()).toBe(false);
     expect(resource.status()).toBe('error');
     expect(resource.error()).toMatchObject({ status: 404 });
+  });
+
+  it('provides NativeSqliteService liveQuery, NativeNetworkService, TitleStrategy, and RouteReuseStrategy', () => {
+    TestBed.configureTestingModule({
+      providers: [
+        provideNativeDesktop(),
+        provideNativeRouter([]),
+        withNativeTitleStrategy('Pokédex'),
+        withNativeRouteReuse(),
+      ],
+    });
+
+    const sqlite = TestBed.inject(NativeSqliteService);
+    sqlite.execute('CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, body TEXT)');
+    const liveNotes = sqlite.liveQuery<{ id: string; body: string }>(
+      'SELECT * FROM notes ORDER BY id ASC',
+      (r) => ({ id: r['id'] ?? '', body: r['body'] ?? '' }),
+    );
+    expect(liveNotes.count()).toBe(0);
+
+    sqlite.execute("INSERT INTO notes (id, body) VALUES ('25', 'Voltaje')");
+    sqlite.execute("INSERT INTO notes (id, body) VALUES ('1', 'Semilla')");
+    expect(liveNotes.count()).toBe(2);
+    expect(liveNotes.rows().map((r) => r.id)).toEqual(['1', '25']);
+
+    sqlite.execute("DELETE FROM notes WHERE id = '1'");
+    expect(liveNotes.rows()).toEqual([{ id: '25', body: 'Voltaje' }]);
+
+    const network = TestBed.inject(NativeNetworkService);
+    expect(network.connectivity()).toBe('full');
+    network.setOnlineStatus(true, true);
+    expect(network.connectivity()).toBe('limited');
+    network.setOnlineStatus(false);
+    expect(network.connectivity()).toBe('offline');
+    network.setOnlineStatus(true, false);
+
+    const titleStrategy = TestBed.inject(TitleStrategy) as NativeTitleStrategy;
+    const nativeTitle = TestBed.inject(NativeTitleService);
+    vi.spyOn(titleStrategy, 'buildTitle').mockReturnValue('Pikachu');
+    titleStrategy.updateTitle({} as RouterStateSnapshot);
+    expect(nativeTitle.getTitle()).toBe('Pokédex — Pikachu');
+
+    const reuse = TestBed.inject(RouteReuseStrategy) as NativeStackRouteReuseStrategy;
+    const mockSnapshot = {
+      routeConfig: { path: 'detail/25' },
+      data: {},
+      url: [new UrlSegment('detail', {}), new UrlSegment('25', {})],
+      get pathFromRoot() {
+        return [this];
+      },
+    } as unknown as ActivatedRouteSnapshot;
+
+    expect(reuse.shouldDetach(mockSnapshot)).toBe(true);
+    const fakeHandle = { componentRef: 'detail-25' } as unknown as DetachedRouteHandle;
+    reuse.store(mockSnapshot, fakeHandle);
+    expect(reuse.shouldAttach(mockSnapshot)).toBe(true);
+    expect(reuse.retrieve(mockSnapshot)).toBe(fakeHandle);
+    expect(reuse.cachedRoutes()).toEqual(['/detail/25']);
+    reuse.clearCache();
+    expect(reuse.cachedRoutes()).toEqual([]);
   });
 });

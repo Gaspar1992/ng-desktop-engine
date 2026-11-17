@@ -1,7 +1,12 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
+import {
+  type NativeLiveQueryRef,
+  NativeNetworkService,
+  NativeSqliteService,
+} from '@ng-native/desktop';
 import { createNativeHttpResource } from '@ng-native/http';
-import { ensureNgNativeBridge } from '@ng-native/platform';
+import { ensureNgNativeBridge, NativeTitleService } from '@ng-native/platform';
 import { Observable } from 'rxjs';
 
 export interface PokemonSummary {
@@ -19,17 +24,43 @@ export interface CatalogEntry {
   name: string;
 }
 
+export interface FavoritePokemonRow {
+  id: number;
+  name: string;
+  note: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class PokedexService {
   private readonly http = inject(HttpClient, { optional: true });
+  private readonly sqlite = inject(NativeSqliteService);
+  private readonly network = inject(NativeNetworkService);
+  private readonly titleService = inject(NativeTitleService);
 
   readonly selectedId = signal(1);
   readonly searchQuery = signal('');
   readonly loadedCount = signal(12);
+  readonly isOnline = this.network.isOnline;
 
   readonly selectedPokemonResource = createNativeHttpResource<PokemonSummary>(
     () => `https://pokeapi.co/api/v2/pokemon/${this.selectedId()}`,
   );
+
+  readonly favorites: NativeLiveQueryRef<FavoritePokemonRow>;
+
+  constructor() {
+    this.sqlite.execute(
+      'CREATE TABLE IF NOT EXISTS favorites (id TEXT PRIMARY KEY, name TEXT, note TEXT)',
+    );
+    this.favorites = this.sqlite.liveQuery<FavoritePokemonRow>(
+      'SELECT * FROM favorites ORDER BY id ASC',
+      (r) => ({
+        id: Number(r['id']),
+        name: r['name'] ?? '',
+        note: r['note'] ?? '',
+      }),
+    );
+  }
 
   fetchPokemon(idOrName: string | number): Observable<PokemonSummary> | null {
     if (!this.http) {
@@ -38,9 +69,25 @@ export class PokedexService {
     return this.http.get<PokemonSummary>(`https://pokeapi.co/api/v2/pokemon/${idOrName}`);
   }
 
-  selectPokemon(id: number): void {
+  selectPokemon(id: number, name?: string): void {
     this.selectedId.set(id);
     this.selectedPokemonResource.reload();
+    if (name) {
+      const padded = String(id).padStart(4, '0');
+      this.titleService.setTitle(`Pokédex Nacional — #${padded} ${name}`);
+    }
+  }
+
+  saveFavorite(id: number, name: string, note = ''): void {
+    const safeName = name.replaceAll("'", "''");
+    const safeNote = note.replaceAll("'", "''");
+    this.sqlite.execute(
+      `INSERT OR REPLACE INTO favorites (id, name, note) VALUES ('${id}', '${safeName}', '${safeNote}')`,
+    );
+  }
+
+  removeFavorite(id: number): void {
+    this.sqlite.execute(`DELETE FROM favorites WHERE id = '${id}'`);
   }
 
   /**

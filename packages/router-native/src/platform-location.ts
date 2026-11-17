@@ -5,6 +5,7 @@ import {
 } from '@angular/common';
 import { type EnvironmentProviders, Injectable, makeEnvironmentProviders } from '@angular/core';
 import { provideRouter, type RouterFeatures, type Routes } from '@angular/router';
+import { withNativeTitleStrategy } from './route-strategies';
 
 interface HistoryEntry {
   url: string;
@@ -158,5 +159,6 @@ export function provideNativeRouter(
   return makeEnvironmentProviders([
     { provide: PlatformLocation, useExisting: NativePlatformLocation },
     provideRouter(routes, ...features),
+    withNativeTitleStrategy(),
   ]);
 }

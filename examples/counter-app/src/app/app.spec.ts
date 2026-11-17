@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@ng-native/http';
-import { ensureNgNativeBridge } from '@ng-native/platform';
+import { ensureNgNativeBridge, NativeTitleService } from '@ng-native/platform';
 import { firstValueFrom } from 'rxjs';
 import { App } from './app';
 import { PokedexService } from './pokedex.service';
@@ -95,5 +95,18 @@ describe('App', () => {
     expect(httpObs).not.toBeNull();
     const fetched = (await firstValueFrom(httpObs!)) as { id: number; name: string };
     expect(fetched.name).toBe('pikachu');
+
+    service.saveFavorite(25, 'Pikachu', 'Inicial eléctrico');
+    service.saveFavorite(1, 'Bulbasaur', 'Semilla');
+    expect(service.favorites.count()).toBe(2);
+    expect(service.favorites.rows().map((f) => f.id)).toEqual([1, 25]);
+    service.removeFavorite(1);
+    expect(service.favorites.rows()).toEqual([
+      { id: 25, name: 'Pikachu', note: 'Inicial eléctrico' },
+    ]);
+
+    const titleService = TestBed.inject(NativeTitleService);
+    service.selectPokemon(25, 'Pikachu');
+    expect(titleService.getTitle()).toBe('Pokédex Nacional — #0025 Pikachu');
   });
 });

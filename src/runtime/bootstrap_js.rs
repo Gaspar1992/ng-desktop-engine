@@ -3,7 +3,7 @@
 /// `@ng-native/platform` (`NativeRenderer2`), `@ng-native/forms`, `@ng-native/http`, and
 /// `@ng-native/desktop` call this object to queue frame-batched scene/desktop commands,
 /// configure OS-native HTTP transports, and register live JS event listener closures.
-pub const NG_NATIVE_BOOTSTRAP_JS: &str = r"
+pub const NG_NATIVE_BOOTSTRAP_JS: &str = r#"
 globalThis.__NG_NATIVE__ = (() => {
   let queue = [];
   let logs = [];
@@ -13,6 +13,11 @@ globalThis.__NG_NATIVE__ = (() => {
   let nextListenerId = 1;
   let systemTheme = 'dark';
   let clipboardText = '';
+  let networkStatus = { online: true, metered: false, connectivity: 'full' };
+  let systemLocale = 'en-US';
+  let systemTimezone = 'UTC';
+  let systemErrors = [];
+  let sqliteTables = new Map();
   let httpEndpoints = new Map();
   let httpConfig = {
     platform: 'auto',
@@ -241,6 +246,91 @@ globalThis.__NG_NATIVE__ = (() => {
         bridge.httpRequest(req.method || 'GET', req.url, req.body, req.options),
       );
     },
+    sqliteExecute(sql) {
+      const statements = String(sql ?? '').split(';').map((s) => s.trim()).filter(Boolean);
+      for (const stmt of statements) {
+        const cm = stmt.match(/^CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+([a-zA-Z_]\w*)\s*\(([\s\S]*)\)$/i);
+        if (cm) {
+          if (!sqliteTables.has(cm[1])) {
+            const cols = cm[2].split(',').map((d) => d.trim().split(/\s+/)[0]).filter(Boolean);
+            sqliteTables.set(cm[1], { columns: cols, rows: [] });
+          }
+          continue;
+        }
+        const im = stmt.match(/^INSERT(?:\s+OR\s+(REPLACE|IGNORE))?\s+INTO\s+([a-zA-Z_]\w*)(?:\s*\(([^)]*)\))?\s+VALUES\s*\(([\s\S]*)\)$/i);
+        if (im) {
+          const tbl = sqliteTables.get(im[2]) || { columns: [], rows: [] };
+          sqliteTables.set(im[2], tbl);
+          const cols = im[3] ? im[3].split(',').map((c) => c.trim()) : tbl.columns;
+          const vals = im[4].split(',').map((v) => v.trim().replace(/^['"]|['"]$/g, ''));
+          const row = {};
+          for (let i = 0; i < cols.length; i++) row[cols[i]] = vals[i] ?? '';
+          const pk = cols.includes('id') ? 'id' : cols[0];
+          const idx = pk ? tbl.rows.findIndex((r) => r[pk] === row[pk]) : -1;
+          if (idx !== -1) {
+            if ((im[1] || '').toUpperCase() !== 'IGNORE') tbl.rows[idx] = row;
+          } else {
+            tbl.rows.push(row);
+          }
+          continue;
+        }
+        const dm = stmt.match(/^DELETE\s+FROM\s+([a-zA-Z_]\w*)(?:\s+WHERE\s+([a-zA-Z_]\w*)\s*=\s*(.+))?$/i);
+        if (dm) {
+          const tbl = sqliteTables.get(dm[1]);
+          if (tbl) {
+            tbl.rows = dm[2]
+              ? tbl.rows.filter((r) => r[dm[2]] !== dm[3].trim().replace(/^['"]|['"]$/g, ''))
+              : [];
+          }
+        }
+      }
+      return true;
+    },
+    sqliteQuery(sql) {
+      const m = String(sql ?? '').trim().replace(/;+\s*$/, '').match(
+        /^SELECT\s+(.+?)\s+FROM\s+([a-zA-Z_]\w*)(?:\s+ORDER\s+BY\s+([a-zA-Z_]\w*)(?:\s+(ASC|DESC))?)?$/i,
+      );
+      if (!m) return [];
+      const tbl = sqliteTables.get(m[2]);
+      if (!tbl) return [];
+      return tbl.rows.map((r) => ({ ...r }));
+    },
+    getNetworkStatus() {
+      return { ...networkStatus };
+    },
+    setNetworkStatus(online, metered = false) {
+      networkStatus = {
+        online: Boolean(online),
+        metered: Boolean(metered),
+        connectivity: !online ? 'offline' : metered ? 'limited' : 'full',
+      };
+    },
+    getSystemLocale() {
+      return systemLocale;
+    },
+    getSystemTimezone() {
+      return systemTimezone;
+    },
+    resolveImageAsset(src, width) {
+      const trimmed = String(src ?? '').trim();
+      const idx = trimmed.indexOf('/official-artwork/');
+      if (idx !== -1) {
+        const part = trimmed.slice(idx + 18).split('?')[0];
+        if (part.endsWith('.png') && /^\d+$/.test(part.slice(0, -4))) {
+          return `/tmp/ng_native_pokedex/${part.slice(0, -4)}.png`;
+        }
+      }
+      if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+        return width ? `${trimmed}?w=${width}` : trimmed;
+      }
+      return trimmed;
+    },
+    logSystemError(message) {
+      systemErrors.push(String(message ?? ''));
+    },
+    getSystemErrors() {
+      return [...systemErrors];
+    },
     __drainQueue() {
       const out = queue.join('\n');
       queue = [];
@@ -267,4 +357,4 @@ globalThis.__NG_NATIVE__ = (() => {
 
   return bridge;
 })();
-";
+"#;

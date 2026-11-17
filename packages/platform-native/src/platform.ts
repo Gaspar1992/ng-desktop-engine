@@ -7,16 +7,32 @@ import {
   Type,
 } from '@angular/core';
 import { ensureNgNativeBridge, NgNativeBridge } from './bridge';
+import { provideNativeImageLoader } from './image-loader';
 import { NativeRendererFactory2 } from './native-renderer';
+import { provideNativeTitle } from './native-title';
+import {
+  provideNativeErrorHandler,
+  provideNativeKeyEvents,
+  provideSystemLocale,
+} from './system-providers';
+import { provideNativeViewportScroller } from './viewport-scroller';
 
 /**
- * Provides the Angular Native Desktop platform (`NativeRendererFactory2` + Zoneless reactivity).
+ * Provides the Angular Native Desktop platform (`NativeRendererFactory2`, Zoneless reactivity,
+ * OS image asset loader, native window title, viewport scroller, system locale/timezone,
+ * key shortcut plugin, and native error handler).
  */
 export function provideNativePlatform(): EnvironmentProviders {
   ensureNgNativeBridge();
   return makeEnvironmentProviders([
     provideZonelessChangeDetection(),
     { provide: RendererFactory2, useClass: NativeRendererFactory2 },
+    provideNativeImageLoader(),
+    provideNativeTitle(),
+    provideNativeViewportScroller(),
+    provideSystemLocale(),
+    provideNativeErrorHandler(),
+    provideNativeKeyEvents(),
   ]);
 }
 
