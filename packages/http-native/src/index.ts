@@ -18,3 +18,9 @@ export {
   withXhr,
   withXsrfConfiguration,
 } from './http-backend';
+export {
+  createNativeHttpResource,
+  type NativeHttpResourceOptions,
+  type NativeHttpResourceRef,
+  type NativeResourceStatus,
+} from './http-resource';

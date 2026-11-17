@@ -1,10 +1,30 @@
 import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@ng-native/http';
+import { ensureNgNativeBridge } from '@ng-native/platform';
+import { firstValueFrom } from 'rxjs';
 import { App } from './app';
+import { PokedexService } from './pokedex.service';
 
 describe('App', () => {
   beforeEach(async () => {
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+    bridge.registerHttpEndpoint(
+      'GET',
+      'https://pokeapi.co/api/v2/pokemon/1',
+      200,
+      JSON.stringify({ id: 1, name: 'bulbasaur' }),
+    );
+    bridge.registerHttpEndpoint(
+      'GET',
+      'https://pokeapi.co/api/v2/pokemon/25',
+      200,
+      JSON.stringify({ id: 25, name: 'pikachu' }),
+    );
+
     await TestBed.configureTestingModule({
       imports: [App],
+      providers: [provideHttpClient()],
     }).compileComponents();
   });
 
@@ -47,5 +67,33 @@ describe('App', () => {
 
     app.reset();
     expect(app['pokemonId']()).toBe(0);
+  });
+
+  it('wires PokedexService with native batching, httpResource, and catalog filtering', async () => {
+    const service = TestBed.inject(PokedexService);
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+
+    expect(service.selectedPokemonResource.status()).toBe('resolved');
+    expect(service.selectedPokemonResource.value()?.name).toBe('bulbasaur');
+
+    service.selectPokemon(25);
+    expect(service.selectedPokemonResource.value()?.name).toBe('pikachu');
+
+    const batch = service.fetchBatch([1, 25]);
+    expect(batch.map((p) => p.name)).toEqual(['bulbasaur', 'pikachu']);
+
+    const catalog = [
+      { id: 1, name: 'bulbasaur' },
+      { id: 4, name: 'charmander' },
+      { id: 25, name: 'pikachu' },
+    ];
+    expect(service.filterCatalog(catalog, 'pika').map((e) => e.id)).toEqual([25]);
+    expect(service.filterCatalog(catalog, '1').map((e) => e.name)).toEqual(['bulbasaur']);
+
+    const httpObs = app.fetchPokemonHttp(25);
+    expect(httpObs).not.toBeNull();
+    const fetched = (await firstValueFrom(httpObs!)) as { id: number; name: string };
+    expect(fetched.name).toBe('pikachu');
   });
 });

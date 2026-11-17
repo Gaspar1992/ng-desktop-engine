@@ -213,14 +213,19 @@ function extractMethodMutation(methodDef, methods) {
 
 /**
  * Parses an Angular 22 TypeScript component source file using the Rust-based `oxc-parser` AST
- * and extracts `@Component` decorator paths/imports, `signal(...)`, `computed(...)`, class properties,
- * and signal mutation methods.
+ * and extracts `@Component` decorator paths/imports, `signal(...)`, `computed(...)`,
+ * `linkedSignal(...)`, `input(...)`, `model(...)`, `output()`, `httpResource(...)`,
+ * class properties, and signal mutation methods.
  */
 export function extractComponentMetadata(tsSource, filename = 'app.ts') {
   const parsed = parseSync(filename, tsSource);
   const state = {};
   const numericSignals = {};
   const computedSignals = {};
+  const inputs = {};
+  const models = {};
+  const outputs = {};
+  const resources = {};
   const methods = {};
   const relativeImports = {};
   let component = {
@@ -289,6 +294,102 @@ export function extractComponentMetadata(tsSource, filename = 'app.ts') {
           continue;
         }
 
+        if (
+          valNode?.type === 'CallExpression' &&
+          valNode.callee?.type === 'Identifier' &&
+          valNode.callee.name === 'linkedSignal'
+        ) {
+          const arg0 = valNode.arguments?.[0];
+          const computationProp =
+            arg0?.type === 'ObjectExpression'
+              ? (arg0.properties || []).find((p) => (p.key?.name ?? p.key?.value) === 'computation')
+                  ?.value
+              : arg0;
+          const retExpr = resolveReturnedExpression(computationProp);
+          const evaluated = evaluateDerivedExpression(retExpr, state);
+          if (evaluated !== null) {
+            if (typeof evaluated === 'number') {
+              numericSignals[propName] = evaluated;
+            }
+            state[propName] = typeof evaluated === 'object' ? evaluated : String(evaluated);
+          }
+          continue;
+        }
+
+        const isInputCall =
+          valNode?.type === 'CallExpression' &&
+          ((valNode.callee?.type === 'Identifier' && valNode.callee.name === 'input') ||
+            (valNode.callee?.type === 'MemberExpression' &&
+              valNode.callee.object?.type === 'Identifier' &&
+              valNode.callee.object.name === 'input' &&
+              valNode.callee.property?.type === 'Identifier' &&
+              valNode.callee.property.name === 'required'));
+        if (isInputCall) {
+          const isRequired = valNode.callee?.type === 'MemberExpression';
+          const arg0 = isRequired ? undefined : valNode.arguments?.[0];
+          const lit = extractScalarLiteral(arg0);
+          if (lit) {
+            state[propName] = lit.raw;
+            inputs[propName] = { required: false, defaultValue: lit.value };
+          } else {
+            const evaluated = evaluateDerivedExpression(arg0, state);
+            if (evaluated !== null) {
+              state[propName] = evaluated;
+            }
+            inputs[propName] = { required: isRequired, defaultValue: evaluated };
+          }
+          continue;
+        }
+
+        const isModelCall =
+          valNode?.type === 'CallExpression' &&
+          ((valNode.callee?.type === 'Identifier' && valNode.callee.name === 'model') ||
+            (valNode.callee?.type === 'MemberExpression' &&
+              valNode.callee.object?.type === 'Identifier' &&
+              valNode.callee.object.name === 'model' &&
+              valNode.callee.property?.type === 'Identifier' &&
+              valNode.callee.property.name === 'required'));
+        if (isModelCall) {
+          const isRequired = valNode.callee?.type === 'MemberExpression';
+          const arg0 = isRequired ? undefined : valNode.arguments?.[0];
+          const lit = extractScalarLiteral(arg0);
+          if (lit) {
+            state[propName] = lit.raw;
+            if (lit.kind === 'number') {
+              numericSignals[propName] = lit.value;
+            }
+            models[propName] = { required: false, defaultValue: lit.value };
+          } else {
+            const evaluated = evaluateDerivedExpression(arg0, state);
+            if (evaluated !== null) {
+              state[propName] = evaluated;
+            }
+            models[propName] = { required: isRequired, defaultValue: evaluated };
+          }
+          continue;
+        }
+
+        if (
+          valNode?.type === 'CallExpression' &&
+          valNode.callee?.type === 'Identifier' &&
+          valNode.callee.name === 'output'
+        ) {
+          outputs[propName] = true;
+          continue;
+        }
+
+        if (
+          valNode?.type === 'CallExpression' &&
+          valNode.callee?.type === 'Identifier' &&
+          (valNode.callee.name === 'httpResource' ||
+            valNode.callee.name === 'createNativeHttpResource')
+        ) {
+          const retExpr = resolveReturnedExpression(valNode.arguments?.[0]);
+          const evaluated = evaluateDerivedExpression(retExpr, state);
+          resources[propName] = { kind: 'httpResource', url: String(evaluated ?? '') };
+          continue;
+        }
+
         const lit = extractScalarLiteral(valNode);
         if (lit && !(propName in state)) {
           state[propName] = lit.raw;
@@ -304,5 +405,16 @@ export function extractComponentMetadata(tsSource, filename = 'app.ts') {
     }
   }
 
-  return { state, numericSignals, computedSignals, methods, component, relativeImports };
+  return {
+    state,
+    numericSignals,
+    computedSignals,
+    inputs,
+    models,
+    outputs,
+    resources,
+    methods,
+    component,
+    relativeImports,
+  };
 }

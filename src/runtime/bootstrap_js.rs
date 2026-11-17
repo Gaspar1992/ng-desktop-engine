@@ -93,6 +93,12 @@ globalThis.__NG_NATIVE__ = (() => {
     bindText(id, signalName, template) {
       queue.push(`bind_text ${id} ${signalName} ${template}`);
     },
+    bindAttr(id, attrKey, signalName, template = '{}') {
+      queue.push(`bind_attr ${id} ${attrKey} ${signalName} ${template}`);
+    },
+    bindVisible(id, signalName, op = '!=', rhs = 0) {
+      queue.push(`bind_visible ${id} ${signalName} ${op} ${rhs}`);
+    },
     onAdd(id, eventName, signalName, delta = 1) {
       queue.push(`on_add ${id} ${eventName} ${signalName} ${delta}`);
     },

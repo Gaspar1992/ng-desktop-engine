@@ -3,6 +3,18 @@ export interface ReactiveBindingIr {
   template: string;
 }
 
+export interface ReactiveAttrBindingIr {
+  attrKey: string;
+  signalName: string;
+  template: string;
+}
+
+export interface VisibilityBindingIr {
+  signalName: string;
+  op: string;
+  rhs: number;
+}
+
 export interface TemplateAstNode {
   id: string;
   tag: string;
@@ -12,6 +24,8 @@ export interface TemplateAstNode {
   classes: string[];
   attributes: Record<string, string>;
   reactiveBinding: ReactiveBindingIr | null;
+  reactiveAttrs?: ReactiveAttrBindingIr[];
+  visibilityBinding?: VisibilityBindingIr | null;
   events: Record<string, string>;
   children: TemplateAstNode[];
 }
@@ -35,4 +49,5 @@ export function parseTemplateHtml(
   componentRegistry?: Record<string, ComponentDefinitionIr>,
   projectedChildren?: TemplateAstNode[] | null,
   idState?: TemplateIdState,
+  signalAliases?: Record<string, string>,
 ): TemplateAstNode[];

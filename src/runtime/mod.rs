@@ -12,7 +12,7 @@ use crate::engine::{EngineError, NodeId, RenderEngine};
 use crate::platforms::PlatformBackend;
 pub use js_engine::{AnyJsEngine, JsEngineBackend, JscEngine, QuickJsEngine};
 pub use parser::{Instruction, parse_instruction, parse_script};
-use reactivity::{HandlerAction, TextBinding};
+use reactivity::{AttrBinding, HandlerAction, TextBinding, VisibilityBinding};
 use std::collections::{HashMap, HashSet};
 
 /// Embedded JS Bridge Runtime that executes compiled Angular instructions (`.ngb`),
@@ -31,6 +31,8 @@ pub struct JsRuntime {
     node_vars: HashMap<NodeId, String>,
     signals: HashMap<String, i64>,
     bindings: Vec<TextBinding>,
+    attr_bindings: Vec<AttrBinding>,
+    visibility_bindings: Vec<VisibilityBinding>,
     handlers: HashMap<u64, HandlerAction>,
     next_listener_id: u64,
 }
@@ -56,6 +58,8 @@ impl JsRuntime {
             node_vars: HashMap::new(),
             signals: HashMap::new(),
             bindings: Vec::new(),
+            attr_bindings: Vec::new(),
+            visibility_bindings: Vec::new(),
             handlers: HashMap::new(),
             next_listener_id: 1,
         }
@@ -106,6 +110,8 @@ impl JsRuntime {
     ) -> Result<(), EngineError> {
         let instructions = parse_script(script)?;
         self.bindings.clear();
+        self.attr_bindings.clear();
+        self.visibility_bindings.clear();
         self.handlers.clear();
         engine.clear_listeners();
 
@@ -136,63 +142,6 @@ impl JsRuntime {
                 engine.register_style(rule);
                 Ok(())
             }
-            Instruction::DeclareSignal { name, initial } => {
-                if is_hmr {
-                    self.signals.entry(name).or_insert(initial);
-                } else {
-                    self.signals.insert(name, initial);
-                }
-                Ok(())
-            }
-            Instruction::BindText {
-                var_name,
-                signal_name,
-                template,
-            } => {
-                let _ = self.resolve_var(&var_name)?;
-                self.bindings.push(TextBinding {
-                    node_var: var_name,
-                    signal_name,
-                    template,
-                });
-                Ok(())
-            }
-            Instruction::OnAdd {
-                var_name,
-                event_name,
-                signal_name,
-                delta,
-            } => self.attach_handler(
-                engine,
-                &var_name,
-                &event_name,
-                HandlerAction::AddSignal { signal_name, delta },
-            ),
-            Instruction::OnSet {
-                var_name,
-                event_name,
-                signal_name,
-                value,
-            } => self.attach_handler(
-                engine,
-                &var_name,
-                &event_name,
-                HandlerAction::SetSignal { signal_name, value },
-            ),
-            Instruction::OnText {
-                var_name,
-                event_name,
-                target_var,
-                text,
-            } => self.attach_handler(
-                engine,
-                &var_name,
-                &event_name,
-                HandlerAction::SetText {
-                    node_var: target_var,
-                    text,
-                },
-            ),
             Instruction::SetTheme { mode } => {
                 self.desktop.set_theme(DesktopTheme::from_str_lossy(&mode));
                 Ok(())
@@ -200,6 +149,15 @@ impl JsRuntime {
             Instruction::SetClipboard { text } => {
                 self.desktop.set_clipboard(&text);
                 Ok(())
+            }
+            Instruction::DeclareSignal { .. }
+            | Instruction::BindText { .. }
+            | Instruction::BindAttr { .. }
+            | Instruction::BindVisible { .. }
+            | Instruction::OnAdd { .. }
+            | Instruction::OnSet { .. }
+            | Instruction::OnText { .. } => {
+                self.execute_reactive_instruction(engine, instruction, is_hmr)
             }
             other => self.execute_scene_instruction(engine, other, is_hmr, newly_created),
         }

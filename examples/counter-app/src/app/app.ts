@@ -1,6 +1,7 @@
 import { HttpClient } from '@angular/common/http';
 import { Component, CUSTOM_ELEMENTS_SCHEMA, inject, signal } from '@angular/core';
 import { Observable } from 'rxjs';
+import { PokedexService } from './pokedex.service';
 import { PokemonCard } from './pokemon-card';
 import { TypeBadge } from './type-badge';
 
@@ -12,6 +13,7 @@ import { TypeBadge } from './type-badge';
   styleUrl: './app.css',
 })
 export class App {
+  protected readonly pokedex = inject(PokedexService);
   private readonly http = inject(HttpClient, { optional: true });
   protected readonly windowTitle = signal('Pokédex Nacional');
   protected readonly subtitle = signal('Angular 22 + GTK4 / Libadwaita');
@@ -23,10 +25,10 @@ export class App {
    * Executes a live `PokéAPI v2` request via Angular `HttpClient` -> `@ng-native/http` -> Rust OS HTTP stack.
    */
   fetchPokemonHttp(idOrName: string | number): Observable<unknown> | null {
-    if (!this.http) {
-      return null;
-    }
-    return this.http.get(`https://pokeapi.co/api/v2/pokemon/${idOrName}`);
+    return (
+      this.pokedex.fetchPokemon(idOrName) ??
+      (this.http ? this.http.get(`https://pokeapi.co/api/v2/pokemon/${idOrName}`) : null)
+    );
   }
 
   increment(): void {

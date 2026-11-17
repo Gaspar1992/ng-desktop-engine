@@ -1,16 +1,8 @@
 import { extractComponentMetadata } from './ast-metadata-extractor.mjs';
-import { applyPipeTransform, parseTemplateHtml } from './template-compiler.mjs';
+import { emitNgbBundle } from './build-bundle.mjs';
+import { applyPipeTransform, parseTemplateHtml, TemplateAstNode } from './template-compiler.mjs';
 
-interface IrNode {
-  id: string;
-  tag: string;
-  isComment?: boolean;
-  text: string | null;
-  reactiveBinding: { signalName: string; template: string } | null;
-  children: IrNode[];
-}
-
-function collectIds(nodes: IrNode[], out: string[] = []): string[] {
+function collectIds(nodes: TemplateAstNode[], out: string[] = []): string[] {
   for (const node of nodes) {
     out.push(node.id);
     collectIds(node.children, out);
@@ -24,7 +16,7 @@ describe('Native template compiler (Angular AST)', () => {
   };
 
   it('generates globally unique ids when the same component is used several times', () => {
-    const ast: IrNode[] = parseTemplateHtml(
+    const ast = parseTemplateHtml(
       `<ng-box>
          <app-badge type="A" />
          <app-badge type="B" />
@@ -174,5 +166,99 @@ describe('Native template compiler (Angular AST)', () => {
     expect(meta.numericSignals['base']).toBe(10);
     expect(meta.state['doubled']).toBe('20');
     expect(meta.state['label']).toBe('HP:20');
+  });
+
+  it('compiles reactive @if/@else, @switch, [visible], [attr], and child component I/O bindings', () => {
+    const childRegistry = {
+      'app-counter-chip': {
+        templateHtml: '<ng-button id="chip_btn">ID: {{ count() }}</ng-button>',
+        templateUrl: 'chip.html',
+      },
+    };
+    const ast = parseTemplateHtml(
+      `
+        <ng-box id="root">
+          @if (pokemonId() > 0) {
+            <ng-box id="detail_panel"><ng-label id="detail_lbl">Detail</ng-label></ng-box>
+          } @else {
+            <ng-box id="list_panel"><ng-label id="list_lbl">List</ng-label></ng-box>
+          }
+          @switch (tab()) {
+            @case (0) { <ng-label id="tab_home">Home</ng-label> }
+            @case (1) { <ng-label id="tab_fav">Favorites</ng-label> }
+          }
+          <ng-progress-bar id="bar_hp" [value]="pokemonId()" [visible]="!isHidden()" />
+          <app-counter-chip id="chip" [count]="pokemonId()" (select)="pickPikachu()" />
+        </ng-box>
+      `,
+      { pokemonId: '0', tab: '1', isHidden: '0' },
+      { pokemonId: 0, tab: 1, isHidden: 0 },
+      'reactive.html',
+      childRegistry,
+    );
+
+    const children = ast[0].children;
+    const detailPanel = children.find((n) => n.id === 'detail_panel');
+    const listPanel = children.find((n) => n.id === 'list_panel');
+    const tabHome = children.find((n) => n.id === 'tab_home');
+    const tabFav = children.find((n) => n.id === 'tab_fav');
+    const barHp = children.find((n) => n.id === 'bar_hp');
+    const chip = children.find((n) => n.id === 'chip');
+
+    expect(detailPanel?.attributes['visible']).toBe('false');
+    expect(detailPanel?.visibilityBinding).toEqual({ signalName: 'pokemonId', op: '>', rhs: 0 });
+    expect(listPanel?.attributes['visible']).toBe('true');
+    expect(listPanel?.visibilityBinding).toEqual({ signalName: 'pokemonId', op: '<=', rhs: 0 });
+
+    expect(tabHome?.attributes['visible']).toBe('false');
+    expect(tabHome?.visibilityBinding).toEqual({ signalName: 'tab', op: '==', rhs: 0 });
+    expect(tabFav?.attributes['visible']).toBe('true');
+    expect(tabFav?.visibilityBinding).toEqual({ signalName: 'tab', op: '==', rhs: 1 });
+
+    expect(barHp?.reactiveAttrs).toEqual([
+      { attrKey: 'value', signalName: 'pokemonId', template: '{}' },
+    ]);
+    expect(barHp?.visibilityBinding).toEqual({ signalName: 'isHidden', op: '==', rhs: 0 });
+    expect(chip?.reactiveBinding).toEqual({ signalName: 'pokemonId', template: 'ID: {}' });
+    expect(chip?.events).toEqual({ click: 'pickPikachu' });
+
+    const bundle = emitNgbBundle(
+      [],
+      { pokemonId: 0, tab: 1, isHidden: 0 },
+      {},
+      ast,
+      null,
+      't.html',
+    );
+    expect(bundle).toContain('bind_visible detail_panel pokemonId > 0');
+    expect(bundle).toContain('bind_visible list_panel pokemonId <= 0');
+    expect(bundle).toContain('bind_visible tab_home tab == 0');
+    expect(bundle).toContain('bind_attr bar_hp value pokemonId {}');
+  });
+
+  it('extracts Angular 22 input(), model(), linkedSignal(), output(), and httpResource() metadata', () => {
+    const meta = extractComponentMetadata(`
+      import { Component, input, linkedSignal, model, output } from '@angular/core';
+      import { httpResource } from '@angular/common/http';
+      @Component({ selector: 'app-adv', templateUrl: './a.html', styleUrl: './a.css' })
+      export class AdvCmp {
+        readonly title = input('Pokédex');
+        readonly selectedId = model(25);
+        readonly doubledId = linkedSignal(() => this.selectedId() * 2);
+        readonly select = output<number>();
+        readonly pokeResource = httpResource(() => \`https://pokeapi.co/api/v2/pokemon/\${this.selectedId()}\`);
+      }
+    `);
+
+    expect(meta.inputs['title']).toEqual({ required: false, defaultValue: 'Pokédex' });
+    expect(meta.models['selectedId']).toEqual({ required: false, defaultValue: 25 });
+    expect(meta.numericSignals['selectedId']).toBe(25);
+    expect(meta.numericSignals['doubledId']).toBe(50);
+    expect(meta.state['doubledId']).toBe('50');
+    expect(meta.outputs['select']).toBe(true);
+    expect(meta.resources['pokeResource']).toEqual({
+      kind: 'httpResource',
+      url: 'https://pokeapi.co/api/v2/pokemon/25',
+    });
   });
 });

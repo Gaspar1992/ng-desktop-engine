@@ -104,6 +104,18 @@ export function emitNgbBundle(
       );
     }
 
+    for (const attrBind of node.reactiveAttrs || []) {
+      bindingInstructions.push(
+        `bind_attr ${node.id} ${attrBind.attrKey} ${attrBind.signalName} ${attrBind.template}`,
+      );
+    }
+
+    if (node.visibilityBinding) {
+      bindingInstructions.push(
+        `bind_visible ${node.id} ${node.visibilityBinding.signalName} ${node.visibilityBinding.op} ${node.visibilityBinding.rhs}`,
+      );
+    }
+
     for (const [evtName, methodName] of Object.entries(node.events)) {
       const nativeEvt = mapNativeEventName(evtName);
       const methodMeta = methods[methodName];

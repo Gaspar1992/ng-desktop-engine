@@ -49,6 +49,8 @@ export interface NgNativeBridge {
   removeChild(parent: string, child: string): void;
   addClass(id: string, className: string): void;
   bindText(id: string, signalName: string, template: string): void;
+  bindAttr(id: string, attrKey: string, signalName: string, template?: string): void;
+  bindVisible(id: string, signalName: string, op?: string, rhs?: number): void;
   onAdd(id: string, eventName: string, signalName: string, delta?: number): void;
   onSet(id: string, eventName: string, signalName: string, value?: number): void;
   listen(id: string, eventName: string, callback: (event?: unknown) => void): () => void;
@@ -162,6 +164,12 @@ export function ensureNgNativeBridge(): NgNativeBridge {
     },
     bindText(id, signalName, template) {
       queue.push(`bind_text ${id} ${signalName} ${template}`);
+    },
+    bindAttr(id, attrKey, signalName, template = '{}') {
+      queue.push(`bind_attr ${id} ${attrKey} ${signalName} ${template}`);
+    },
+    bindVisible(id, signalName, op = '!=', rhs = 0) {
+      queue.push(`bind_visible ${id} ${signalName} ${op} ${rhs}`);
     },
     onAdd(id, eventName, signalName, delta = 1) {
       queue.push(`on_add ${id} ${eventName} ${signalName} ${delta}`);

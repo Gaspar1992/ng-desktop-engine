@@ -14,6 +14,18 @@ pub enum Instruction {
         signal_name: String,
         template: String,
     },
+    BindAttr {
+        var_name: String,
+        attr_key: String,
+        signal_name: String,
+        template: String,
+    },
+    BindVisible {
+        var_name: String,
+        signal_name: String,
+        op: String,
+        rhs: i64,
+    },
     OnAdd {
         var_name: String,
         event_name: String,
@@ -194,41 +206,60 @@ fn parse_reactive_instruction(
     line: &str,
     parts: &[&str],
 ) -> Option<Result<Instruction, EngineError>> {
-    let parsed =
-        match parts {
-            ["signal", signal_name, initial_str] => {
-                parse_i64(line, initial_str).map(|initial| Instruction::DeclareSignal {
-                    name: (*signal_name).to_string(),
-                    initial,
-                })
-            }
-            ["bind_text", var_name, signal_name, rest @ ..] => Ok(Instruction::BindText {
+    let parsed = match parts {
+        ["signal", signal_name, initial_str] => {
+            parse_i64(line, initial_str).map(|initial| Instruction::DeclareSignal {
+                name: (*signal_name).to_string(),
+                initial,
+            })
+        }
+        ["bind_text", var_name, signal_name, rest @ ..] => Ok(Instruction::BindText {
+            var_name: (*var_name).to_string(),
+            signal_name: (*signal_name).to_string(),
+            template: rest.join(" "),
+        }),
+        ["bind_attr", var_name, attr_key, signal_name, rest @ ..] => Ok(Instruction::BindAttr {
+            var_name: (*var_name).to_string(),
+            attr_key: (*attr_key).to_string(),
+            signal_name: (*signal_name).to_string(),
+            template: if rest.is_empty() {
+                String::from("{}")
+            } else {
+                rest.join(" ")
+            },
+        }),
+        ["bind_visible", var_name, signal_name, op, rhs_str] => {
+            parse_i64(line, rhs_str).map(|rhs| Instruction::BindVisible {
                 var_name: (*var_name).to_string(),
                 signal_name: (*signal_name).to_string(),
-                template: rest.join(" "),
-            }),
-            ["on_add", var_name, event_name, signal_name, delta_str] => parse_i64(line, delta_str)
-                .map(|delta| Instruction::OnAdd {
-                    var_name: (*var_name).to_string(),
-                    event_name: (*event_name).to_string(),
-                    signal_name: (*signal_name).to_string(),
-                    delta,
-                }),
-            ["on_set", var_name, event_name, signal_name, value_str] => parse_i64(line, value_str)
-                .map(|value| Instruction::OnSet {
-                    var_name: (*var_name).to_string(),
-                    event_name: (*event_name).to_string(),
-                    signal_name: (*signal_name).to_string(),
-                    value,
-                }),
-            ["on_text", var_name, event_name, target_var, rest @ ..] => Ok(Instruction::OnText {
+                op: (*op).to_string(),
+                rhs,
+            })
+        }
+        ["on_add", var_name, event_name, signal_name, delta_str] => {
+            parse_i64(line, delta_str).map(|delta| Instruction::OnAdd {
                 var_name: (*var_name).to_string(),
                 event_name: (*event_name).to_string(),
-                target_var: (*target_var).to_string(),
-                text: rest.join(" "),
-            }),
-            _ => return None,
-        };
+                signal_name: (*signal_name).to_string(),
+                delta,
+            })
+        }
+        ["on_set", var_name, event_name, signal_name, value_str] => {
+            parse_i64(line, value_str).map(|value| Instruction::OnSet {
+                var_name: (*var_name).to_string(),
+                event_name: (*event_name).to_string(),
+                signal_name: (*signal_name).to_string(),
+                value,
+            })
+        }
+        ["on_text", var_name, event_name, target_var, rest @ ..] => Ok(Instruction::OnText {
+            var_name: (*var_name).to_string(),
+            event_name: (*event_name).to_string(),
+            target_var: (*target_var).to_string(),
+            text: rest.join(" "),
+        }),
+        _ => return None,
+    };
     Some(parsed)
 }
 
@@ -369,6 +400,53 @@ mod tests {
                 var_name: String::from("entry1"),
                 key: String::from("placeholder"),
                 value: String::from("Escribe tu nombre aquí"),
+            }
+        );
+    }
+
+    #[test]
+    fn parses_bind_attr_and_bind_visible_instructions() {
+        let script = r"
+            bind_attr hp_bar value pokemonId {}
+            bind_attr lbl_badge label pokemonId #{}
+            bind_visible detail_view pokemonId != 0
+            bind_visible list_view pokemonId == 0
+        ";
+        let parsed = parse_script(script).unwrap();
+        assert_eq!(
+            parsed[0],
+            Instruction::BindAttr {
+                var_name: String::from("hp_bar"),
+                attr_key: String::from("value"),
+                signal_name: String::from("pokemonId"),
+                template: String::from("{}"),
+            }
+        );
+        assert_eq!(
+            parsed[1],
+            Instruction::BindAttr {
+                var_name: String::from("lbl_badge"),
+                attr_key: String::from("label"),
+                signal_name: String::from("pokemonId"),
+                template: String::from("#{}"),
+            }
+        );
+        assert_eq!(
+            parsed[2],
+            Instruction::BindVisible {
+                var_name: String::from("detail_view"),
+                signal_name: String::from("pokemonId"),
+                op: String::from("!="),
+                rhs: 0,
+            }
+        );
+        assert_eq!(
+            parsed[3],
+            Instruction::BindVisible {
+                var_name: String::from("list_view"),
+                signal_name: String::from("pokemonId"),
+                op: String::from("=="),
+                rhs: 0,
             }
         );
     }

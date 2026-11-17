@@ -1,7 +1,9 @@
 import { HttpClient, HttpHeaders, HttpInterceptorFn } from '@angular/common/http';
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { NativeDesktopService } from '@ng-native/desktop';
 import {
+  createNativeHttpResource,
   NATIVE_HTTP_CONFIG,
   NativeHttpBackend,
   provideHttpClient,
@@ -217,5 +219,48 @@ describe('Phase 5 — @ng-native/router, @ng-native/http & @ng-native/desktop', 
     } finally {
       bridge.httpRequest = originalHttp;
     }
+  });
+
+  it('manages reactive signal HTTP resource lifecycle via createNativeHttpResource', () => {
+    const bridge = ensureNgNativeBridge();
+    bridge.registerHttpEndpoint(
+      'GET',
+      'https://pokeapi.co/api/v2/pokemon/1',
+      200,
+      JSON.stringify({ id: 1, name: 'bulbasaur' }),
+    );
+    bridge.registerHttpEndpoint(
+      'GET',
+      'https://pokeapi.co/api/v2/pokemon/25',
+      200,
+      JSON.stringify({ id: 25, name: 'pikachu' }),
+    );
+
+    const pokeId = signal<number | undefined>(undefined);
+    const resource = createNativeHttpResource<string>(
+      () => (pokeId() ? `https://pokeapi.co/api/v2/pokemon/${pokeId()}` : undefined),
+      {
+        map: (raw) => (raw as { name: string }).name.toUpperCase(),
+      },
+    );
+
+    expect(resource.status()).toBe('idle');
+    expect(resource.hasValue()).toBe(false);
+    expect(resource.isLoading()).toBe(false);
+
+    pokeId.set(1);
+    expect(resource.reload()).toBe(true);
+    expect(resource.status()).toBe('resolved');
+    expect(resource.hasValue()).toBe(true);
+    expect(resource.value()).toBe('BULBASAUR');
+
+    pokeId.set(25);
+    expect(resource.reload()).toBe(true);
+    expect(resource.value()).toBe('PIKACHU');
+
+    pokeId.set(9999);
+    expect(resource.reload()).toBe(false);
+    expect(resource.status()).toBe('error');
+    expect(resource.error()).toMatchObject({ status: 404 });
   });
 });

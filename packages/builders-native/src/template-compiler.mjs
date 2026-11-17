@@ -1,4 +1,4 @@
-import { parseTemplate } from '@angular/compiler';
+import { ParenthesizedExpression, parseTemplate, PrefixNot } from '@angular/compiler';
 
 const CURRENCY_SYMBOLS = {
   USD: '$',
@@ -136,6 +136,15 @@ function extractExpressionIdentifier(exprAst) {
 function evaluateScalarAst(ast, state) {
   if (!ast) {
     return { value: undefined, signalName: null, pipes: [] };
+  }
+
+  if (ast instanceof ParenthesizedExpression) {
+    return evaluateScalarAst(ast.expression, state);
+  }
+
+  if (ast instanceof PrefixNot) {
+    const inner = evaluateScalarAst(ast.expression, state);
+    return { value: !isTruthyCondition(inner.value), signalName: null, pipes: [] };
   }
 
   if (typeof ast.name === 'string' && 'exp' in ast && Array.isArray(ast.args)) {
@@ -293,6 +302,76 @@ function isBranchActive(branch, state) {
   return isTruthyCondition(evaluated.value);
 }
 
+function normalizeComparisonOp(op) {
+  if (op === '===') return '==';
+  if (op === '!==') return '!=';
+  if (op === '==' || op === '!=' || op === '>' || op === '>=' || op === '<' || op === '<=') {
+    return op;
+  }
+  return null;
+}
+
+function invertComparisonOp(op) {
+  switch (op) {
+    case '==':
+      return '!=';
+    case '!=':
+      return '==';
+    case '>':
+      return '<=';
+    case '<=':
+      return '>';
+    case '<':
+      return '>=';
+    case '>=':
+      return '<';
+    default:
+      return '!=';
+  }
+}
+
+function extractReactiveCondition(ast, numericSignals, signalAliases = {}) {
+  if (!ast || !numericSignals) return null;
+
+  if (ast instanceof ParenthesizedExpression) {
+    return extractReactiveCondition(ast.expression, numericSignals, signalAliases);
+  }
+
+  if (ast instanceof PrefixNot) {
+    const inner = extractReactiveCondition(ast.expression, numericSignals, signalAliases);
+    if (!inner) return null;
+    return {
+      signalName: inner.signalName,
+      op: invertComparisonOp(inner.op),
+      rhs: inner.rhs,
+    };
+  }
+
+  if (typeof ast.operation === 'string' && ast.left !== undefined && ast.right !== undefined) {
+    const op = normalizeComparisonOp(ast.operation);
+    if (!op) return null;
+    const leftChain = collectReceiverChain(ast.left);
+    if (!leftChain || leftChain.length !== 1 || !(leftChain[0] in numericSignals)) {
+      return null;
+    }
+    const rightVal = evaluateScalarAst(ast.right, {}).value;
+    const signalName = signalAliases[leftChain[0]] || leftChain[0];
+    if (typeof rightVal === 'number' && Number.isFinite(rightVal)) {
+      return { signalName, op, rhs: rightVal };
+    }
+    if (typeof rightVal === 'boolean') {
+      return { signalName, op, rhs: rightVal ? 1 : 0 };
+    }
+    return null;
+  }
+
+  const chain = collectReceiverChain(ast);
+  if (chain && chain.length === 1 && chain[0] in numericSignals) {
+    return { signalName: signalAliases[chain[0]] || chain[0], op: '!=', rhs: 0 };
+  }
+  return null;
+}
+
 function resolveCollectionValue(exprAst, state) {
   const evaluated = evaluateScalarAst(exprAst, state);
   const raw = evaluated.value;
@@ -328,6 +407,8 @@ function makeCommentNode(idState, prefix, text) {
     classes: [],
     attributes: {},
     reactiveBinding: null,
+    reactiveAttrs: [],
+    visibilityBinding: null,
     events: {},
     children: [],
   };
@@ -361,6 +442,7 @@ export function parseTemplateHtml(
   // Shared across nested component expansions so auto-generated ids stay globally unique
   // within one compilation (each expansion used to restart at 1 and collide).
   idState = { next: 1 },
+  signalAliases = {},
 ) {
   const parsed = parseTemplate(html, templateUrl, {
     preserveWhitespaces: false,
@@ -394,10 +476,36 @@ export function parseTemplateHtml(
         const firstExpr = tmplNode.branches[0]?.expression?.source?.trim() || 'cond';
         out.push(makeCommentNode(idState, 'anchor', `@if(${firstExpr})`));
 
-        for (const branch of tmplNode.branches) {
-          if (isBranchActive(branch, scopeState)) {
-            out.push(...transformNodes(branch.children, scopeState));
-            break;
+        const firstCond = extractReactiveCondition(
+          tmplNode.branches[0]?.expression?.ast,
+          numericSignals,
+          signalAliases,
+        );
+        if (firstCond) {
+          for (const branch of tmplNode.branches) {
+            const branchCond = branch.expression
+              ? extractReactiveCondition(branch.expression.ast, numericSignals, signalAliases)
+              : {
+                  signalName: firstCond.signalName,
+                  op: invertComparisonOp(firstCond.op),
+                  rhs: firstCond.rhs,
+                };
+            const active = isBranchActive(branch, scopeState);
+            const branchNodes = transformNodes(branch.children, scopeState);
+            for (const node of branchNodes) {
+              if (!node.isComment && branchCond) {
+                node.attributes.visible = String(active);
+                node.visibilityBinding = branchCond;
+              }
+              out.push(node);
+            }
+          }
+        } else {
+          for (const branch of tmplNode.branches) {
+            if (isBranchActive(branch, scopeState)) {
+              out.push(...transformNodes(branch.children, scopeState));
+              break;
+            }
           }
         }
         continue;
@@ -433,7 +541,66 @@ export function parseTemplateHtml(
         const exprSource = tmplNode.expression?.source?.trim() || 'value';
         out.push(makeCommentNode(idState, 'switch', `@switch(${exprSource})`));
 
-        const switchVal = evaluateScalarAst(tmplNode.expression?.ast, scopeState).value;
+        const switchEval = evaluateScalarAst(tmplNode.expression?.ast, scopeState);
+        const rawSwitchSig = switchEval.signalName;
+        const switchSig =
+          rawSwitchSig && rawSwitchSig in numericSignals
+            ? signalAliases[rawSwitchSig] || rawSwitchSig
+            : null;
+
+        const numericCases = [];
+        if (switchSig) {
+          for (const group of tmplNode.groups) {
+            const firstCase = (group.cases || []).find((c) => c.expression);
+            if (firstCase) {
+              const caseVal = evaluateScalarAst(firstCase.expression.ast, scopeState).value;
+              if (typeof caseVal === 'number' && Number.isFinite(caseVal)) {
+                numericCases.push(caseVal);
+              }
+            }
+          }
+        }
+
+        if (switchSig && numericCases.length > 0) {
+          for (const group of tmplNode.groups) {
+            const cases = group.cases || [];
+            const firstCase = cases.find((c) => c.expression);
+            if (firstCase) {
+              const caseVal = evaluateScalarAst(firstCase.expression.ast, scopeState).value;
+              if (typeof caseVal !== 'number' || !Number.isFinite(caseVal)) continue;
+              const isMatch = Number(caseVal) === Number(switchEval.value);
+              const groupNodes = transformNodes(group.children, scopeState);
+              for (const node of groupNodes) {
+                if (!node.isComment) {
+                  node.attributes.visible = String(isMatch);
+                  node.visibilityBinding = {
+                    signalName: switchSig,
+                    op: '==',
+                    rhs: Number(caseVal),
+                  };
+                }
+                out.push(node);
+              }
+            } else if (cases.some((c) => !c.expression) && numericCases.length === 1) {
+              const isMatch = Number(switchEval.value) !== numericCases[0];
+              const groupNodes = transformNodes(group.children, scopeState);
+              for (const node of groupNodes) {
+                if (!node.isComment) {
+                  node.attributes.visible = String(isMatch);
+                  node.visibilityBinding = {
+                    signalName: switchSig,
+                    op: '!=',
+                    rhs: numericCases[0],
+                  };
+                }
+                out.push(node);
+              }
+            }
+          }
+          continue;
+        }
+
+        const switchVal = switchEval.value;
         let matchedGroup = null;
         let defaultGroup = null;
 
@@ -494,6 +661,8 @@ export function parseTemplateHtml(
       if (tmplNode.name in componentRegistry) {
         const compDef = componentRegistry[tmplNode.name];
         const compState = { ...scopeState };
+        const childSignalAliases = { ...signalAliases };
+        const childNumericSignals = { ...numericSignals };
         for (const attr of tmplNode.attributes || []) {
           compState[attr.name] = attr.value;
         }
@@ -501,17 +670,25 @@ export function parseTemplateHtml(
           const evaluated = evaluateBoundValue(input.value, scopeState);
           compState[input.name] =
             evaluated.rawValue !== undefined ? evaluated.rawValue : evaluated.text;
+          if (evaluated.signalName) {
+            const resolvedSig = signalAliases[evaluated.signalName] || evaluated.signalName;
+            if (resolvedSig in numericSignals) {
+              childSignalAliases[input.name] = resolvedSig;
+              childNumericSignals[input.name] = numericSignals[resolvedSig];
+            }
+          }
         }
 
         const projected = transformNodes(tmplNode.children, scopeState);
         const compNodes = parseTemplateHtml(
           compDef.templateHtml,
           compState,
-          numericSignals,
+          childNumericSignals,
           compDef.templateUrl || `${tmplNode.name}.html`,
           componentRegistry,
           projected,
           idState,
+          childSignalAliases,
         );
 
         const hostId = tmplNode.attributes?.find((a) => a.name === 'id')?.value;
@@ -526,6 +703,15 @@ export function parseTemplateHtml(
           if (hostClasses.length > 0) {
             compNodes[0].classes = Array.from(new Set([...compNodes[0].classes, ...hostClasses]));
           }
+          for (const output of tmplNode.outputs || []) {
+            const handlerName =
+              extractExpressionIdentifier(output.handler?.ast) ||
+              output.handler?.source?.replace(/\(\)\s*$/, '').trim();
+            if (handlerName) {
+              const mappedEvent = output.name === 'select' ? 'click' : output.name;
+              compNodes[0].events[mappedEvent] = handlerName;
+            }
+          }
         }
 
         out.push(...compNodes);
@@ -537,9 +723,26 @@ export function parseTemplateHtml(
         attrs[attr.name] = attr.value;
       }
 
+      const reactiveAttrs = [];
+      let visibilityBinding = null;
       for (const input of tmplNode.inputs || []) {
         const evaluated = evaluateBoundValue(input.value, scopeState);
         attrs[input.name] = evaluated.text;
+        if (input.name === 'visible') {
+          const cond = extractReactiveCondition(input.value?.ast, numericSignals, signalAliases);
+          if (cond) {
+            visibilityBinding = cond;
+            attrs.visible = String(
+              isTruthyCondition(evaluateScalarAst(input.value?.ast, scopeState).value),
+            );
+          }
+        } else if (evaluated.signalName && evaluated.signalName in numericSignals) {
+          reactiveAttrs.push({
+            attrKey: input.name,
+            signalName: signalAliases[evaluated.signalName] || evaluated.signalName,
+            template: evaluated.templatePattern,
+          });
+        }
       }
 
       const events = {};
@@ -578,7 +781,7 @@ export function parseTemplateHtml(
           }
           if (evaluated.signalName && evaluated.signalName in numericSignals) {
             reactiveBinding = {
-              signalName: evaluated.signalName,
+              signalName: signalAliases[evaluated.signalName] || evaluated.signalName,
               template: evaluated.templatePattern,
             };
           }
@@ -593,6 +796,8 @@ export function parseTemplateHtml(
         attributes: customAttrs,
         text: textContent,
         reactiveBinding,
+        reactiveAttrs,
+        visibilityBinding,
         events,
         children: childElements,
       });
