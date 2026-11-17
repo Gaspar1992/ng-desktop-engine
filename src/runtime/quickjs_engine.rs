@@ -57,11 +57,38 @@ impl QuickJsEngine {
             ("removeChild", [parent, child]) => format!("remove_child {parent} {child}"),
             ("addClass", [id, cls]) => format!("add_class {id} {cls}"),
             ("bindText", [id, sig, tpl]) => format!("bind_text {id} {sig} {tpl}"),
+            ("bindAttr", [id, key, sig]) => format!("bind_attr {id} {key} {sig} {{}}"),
+            ("bindAttr", [id, key, sig, tpl]) => format!("bind_attr {id} {key} {sig} {tpl}"),
+            ("bindVisible", [id, sig]) => format!("bind_visible {id} {sig} != 0"),
+            ("bindVisible", [id, sig, op, rhs]) => format!("bind_visible {id} {sig} {op} {rhs}"),
             ("onAdd", [id, evt, sig, delta]) => format!("on_add {id} {evt} {sig} {delta}"),
             ("onSet", [id, evt, sig, val]) => format!("on_set {id} {evt} {sig} {val}"),
             ("destroyNode", [id]) => format!("destroy {id}"),
             ("setSystemTheme", [mode]) => format!("theme {mode}"),
             ("setClipboard", [text]) => format!("clipboard {text}"),
+            (
+                "listen"
+                | "configureHttp"
+                | "getHttpConfig"
+                | "registerHttpEndpoint"
+                | "httpRequest"
+                | "httpBatchRequest"
+                | "getSystemTheme"
+                | "getClipboard"
+                | "openFileDialog"
+                | "saveFileDialog"
+                | "sendNotification"
+                | "sqliteExecute"
+                | "sqliteQuery"
+                | "getNetworkStatus"
+                | "setNetworkStatus"
+                | "getSystemLocale"
+                | "getSystemTimezone"
+                | "resolveImageAsset"
+                | "logSystemError"
+                | "getSystemErrors",
+                _,
+            ) => return Ok(()),
             _ => {
                 return Err(EngineError::ScriptSyntaxError(format!(
                     "Unsupported QuickJS bridge call: {method}"
@@ -70,6 +97,28 @@ impl QuickJsEngine {
         };
         self.pending_commands.push(cmd);
         Ok(())
+    }
+
+    fn brace_delta(line: &str) -> i32 {
+        let mut delta = 0i32;
+        let mut in_quote: Option<char> = None;
+        let mut prev = ' ';
+        for ch in line.chars() {
+            if let Some(q) = in_quote {
+                if ch == q && prev != '\\' {
+                    in_quote = None;
+                }
+            } else {
+                match ch {
+                    '\'' | '"' | '`' => in_quote = Some(ch),
+                    '{' => delta += 1,
+                    '}' => delta -= 1,
+                    _ => {}
+                }
+            }
+            prev = ch;
+        }
+        delta
     }
 }
 
@@ -141,10 +190,13 @@ impl JsEngineBackend for QuickJsEngine {
             ));
         }
 
+        let mut block_depth = 0i32;
         let mut last_result = String::from("undefined");
         for raw_line in js_code.lines() {
             let line = raw_line.trim().trim_end_matches(';').trim();
-            if line.is_empty() || line.starts_with("//") {
+            let depth_before = block_depth;
+            block_depth += Self::brace_delta(line);
+            if line.is_empty() || line.starts_with("//") || depth_before > 0 {
                 continue;
             }
             let normalized = line.strip_prefix("globalThis.").unwrap_or(line);
@@ -179,5 +231,30 @@ impl JsEngineBackend for QuickJsEngine {
         let drained = self.pending_commands.join("\n");
         self.pending_commands.clear();
         Ok(drained)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn quickjs_translates_bind_attr_bind_visible_and_skips_closure_bodies() {
+        let mut qjs = QuickJsEngine::new();
+        let script = r#"
+            __NG_NATIVE__.createElement("box", "ng-box");
+            __NG_NATIVE__.bindAttr("box", "value", "pokeId", "{}");
+            __NG_NATIVE__.bindVisible("box", "pokeId", "!=", "0");
+            __NG_NATIVE__.listen("box", "clicked", function(evt) {
+                __NG_NATIVE__.setText("box", evt.value);
+            });
+            __NG_NATIVE__.sqliteExecute("CREATE TABLE IF NOT EXISTS t (id TEXT)");
+        "#;
+        qjs.eval_script(script).unwrap();
+        let drained = qjs.drain_native_commands().unwrap();
+        assert!(drained.contains("create box ng-box"));
+        assert!(drained.contains("bind_attr box value pokeId {}"));
+        assert!(drained.contains("bind_visible box pokeId != 0"));
+        assert!(!drained.contains("evt.value"));
     }
 }

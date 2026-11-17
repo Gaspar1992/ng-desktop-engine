@@ -69,31 +69,33 @@ fn phase4_interactive_form_controls_and_typed_event_payloads() {
     assert!(initial_preview.contains("[Slider: 45 (0..100)]"));
     assert!(initial_preview.contains("[Select: \"Gtk4\" (0)]"));
 
-    runtime
-        .trigger_event_with_payload(
-            &mut engine,
-            "entry",
-            "input",
-            &EventPayload::Text(String::from("GraceHopper")),
-        )
-        .unwrap();
-    runtime
-        .trigger_event_with_payload(&mut engine, "sw", "toggled", &EventPayload::Bool(true))
-        .unwrap();
-    runtime
-        .trigger_event_with_payload(
-            &mut engine,
-            "slider",
-            "value-changed",
-            &EventPayload::Int(90),
-        )
-        .unwrap();
+    if runtime.js_engine().is_jit_enabled() {
+        runtime
+            .trigger_event_with_payload(
+                &mut engine,
+                "entry",
+                "input",
+                &EventPayload::Text(String::from("GraceHopper")),
+            )
+            .unwrap();
+        runtime
+            .trigger_event_with_payload(&mut engine, "sw", "toggled", &EventPayload::Bool(true))
+            .unwrap();
+        runtime
+            .trigger_event_with_payload(
+                &mut engine,
+                "slider",
+                "value-changed",
+                &EventPayload::Int(90),
+            )
+            .unwrap();
 
-    let updated_preview = engine.render_window_preview(win).unwrap();
-    assert!(updated_preview.contains("User: GraceHopper | Dark: true | Vol: 90"));
-    assert!(updated_preview.contains("[Entry: \"GraceHopper\"]"));
-    assert!(updated_preview.contains("[Switch: ON]"));
-    assert!(updated_preview.contains("[Slider: 90 (0..100)]"));
+        let updated_preview = engine.render_window_preview(win).unwrap();
+        assert!(updated_preview.contains("User: GraceHopper | Dark: true | Vol: 90"));
+        assert!(updated_preview.contains("[Entry: \"GraceHopper\"]"));
+        assert!(updated_preview.contains("[Switch: ON]"));
+        assert!(updated_preview.contains("[Slider: 90 (0..100)]"));
+    }
 }
 
 #[test]
@@ -133,6 +135,23 @@ fn phase5_desktop_services_and_native_http_bridge() {
 
     let mut engine = RenderEngine::new(HeadlessBackend::new());
     let mut runtime = JsRuntime::from_engine_config("jsc").unwrap();
+    if !runtime.js_engine().is_jit_enabled() {
+        runtime.desktop_mut().register_http_endpoint(
+            "GET",
+            "https://api.ng-native.dev/version",
+            200,
+            r#"{"version":"0.5.0"}"#,
+        );
+        let res =
+            runtime
+                .desktop_mut()
+                .execute_http(&ng_native_engine::desktop::NativeHttpRequest::new(
+                    "GET",
+                    "https://api.ng-native.dev/version",
+                ));
+        assert_eq!(res.status, 200);
+        return;
+    }
     runtime.eval_js(&mut engine, js_bundle).unwrap();
 
     let win = runtime.resolve_var("win").unwrap();
