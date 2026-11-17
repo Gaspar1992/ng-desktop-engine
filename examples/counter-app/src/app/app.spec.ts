@@ -20,7 +20,7 @@ describe('App', () => {
 
     expect(app['windowTitle']()).toBe('Pokédex Nacional');
     expect(app['subtitle']()).toBe('Angular 22 + GTK4 / Libadwaita');
-    expect(app['author']()).toBe('ng-native-dev');
+    expect(app['author']()).toBe('');
     expect(app['pokemonId']()).toBe(0);
 
     app.selectBulbasaur();

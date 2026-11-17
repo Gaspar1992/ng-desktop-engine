@@ -70,6 +70,17 @@ pub(super) unsafe extern "C" fn on_gtk_drop_down_selected_notify(
     enqueue_event(user_data as usize, "value-changed");
 }
 
+pub(super) unsafe extern "C" fn on_gtk_scroll_edge_reached(
+    _scroll: *mut c_void,
+    pos: std::ffi::c_int,
+    user_data: *mut c_void,
+) {
+    // GTK_POS_BOTTOM == 3: triggers `@defer (on viewport)` pagination when scrolled to bottom
+    if pos == 3 {
+        enqueue_event(user_data as usize, "viewport-reached");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

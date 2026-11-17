@@ -3,7 +3,7 @@ use std::env;
 
 pub mod pokedex;
 pub mod pokedex_ui;
-pub use pokedex::PokemonInfo;
+pub use pokedex::{PokemonIndexEntry, PokemonInfo};
 pub use pokedex_ui::PokedexController;
 
 /// Native system color scheme synchronized with GTK4 (`GtkSettings`) / Libadwaita (`AdwStyleManager`).

@@ -159,47 +159,61 @@ impl GtkLinuxBackend {
         let (Some(gtk), Some(widget)) = (&self.gtk, self.widgets.get(&node)) else {
             return;
         };
+        let widget_kind = widget.kind;
         let Some(handle) = widget.handle else { return };
-        if key == "indeterminate" && widget.kind == GtkWidgetType::ProgressBar {
+        if key == "indeterminate" && widget_kind == GtkWidgetType::ProgressBar {
             let pulsing = value != "false" && value != "0";
             if let Some(w) = self.widgets.get_mut(&node) {
                 w.pulsing = pulsing;
             }
             return;
         }
-        if Self::apply_container_attribute(gtk, widget.kind, handle, key, value) {
+        if matches!(key, "width" | "height")
+            && let Some(px) = Self::parse_px_i32(value)
+        {
+            if let Some(w) = self.widgets.get_mut(&node) {
+                if key == "width" {
+                    w.size_request.0 = px;
+                } else {
+                    w.size_request.1 = px;
+                }
+                gtk.set_size_request(handle, w.size_request.0, w.size_request.1);
+            }
+            return;
+        }
+        if Self::apply_container_attribute(gtk, widget_kind, handle, key, value) {
             return;
         }
         match key {
-            "title" if widget.kind == GtkWidgetType::Window => {
+            "title" if widget_kind == GtkWidgetType::Window => {
                 gtk.set_window_title(handle, value);
             }
-            "title" if widget.kind == GtkWidgetType::HeaderBar => {
+            "title" if widget_kind == GtkWidgetType::HeaderBar => {
                 let entry = self.header_titles.entry(node).or_default();
                 entry.0 = value.to_string();
                 let (t, s) = (entry.0.clone(), entry.1.clone());
                 gtk.set_header_bar_title(handle, &t, &s);
             }
-            "subtitle" if widget.kind == GtkWidgetType::HeaderBar => {
+            "subtitle" if widget_kind == GtkWidgetType::HeaderBar => {
                 let entry = self.header_titles.entry(node).or_default();
                 entry.1 = value.to_string();
                 let (t, s) = (entry.0.clone(), entry.1.clone());
                 gtk.set_header_bar_title(handle, &t, &s);
             }
-            "show-title-buttons" if widget.kind == GtkWidgetType::HeaderBar => {
+            "show-title-buttons" if widget_kind == GtkWidgetType::HeaderBar => {
                 gtk.set_header_bar_show_title_buttons(handle, value != "false" && value != "0");
             }
-            "min-height" if widget.kind == GtkWidgetType::Scroll => {
+            "min-height" if widget_kind == GtkWidgetType::Scroll => {
                 if let Some(px) = Self::parse_px_i32(value) {
                     gtk.set_scrolled_min_height(handle, px);
                 }
             }
             "orientation"
-                if matches!(widget.kind, GtkWidgetType::Box | GtkWidgetType::Separator) =>
+                if matches!(widget_kind, GtkWidgetType::Box | GtkWidgetType::Separator) =>
             {
                 gtk.set_orientation(handle, value != "horizontal");
             }
-            "spacing" | "gap" if widget.kind == GtkWidgetType::Box => {
+            "spacing" | "gap" if widget_kind == GtkWidgetType::Box => {
                 if let Some(px) = Self::parse_px_i32(value) {
                     gtk.set_box_spacing(handle, px);
                 }
@@ -219,7 +233,7 @@ impl GtkLinuxBackend {
                     gtk.set_margin_side(handle, key, px);
                 }
             }
-            _ => Self::apply_interactive_attribute(gtk, widget.kind, handle, key, value),
+            _ => Self::apply_interactive_attribute(gtk, widget_kind, handle, key, value),
         }
     }
 
@@ -254,16 +268,6 @@ impl GtkLinuxBackend {
                 }
             }
             (GtkWidgetType::Image, "src") => gtk.set_image_file(handle, value),
-            (GtkWidgetType::Image, "width") => {
-                if let Some(w) = Self::parse_px_i32(value) {
-                    gtk.set_size_request(handle, w, -1);
-                }
-            }
-            (GtkWidgetType::Image, "height") => {
-                if let Some(h) = Self::parse_px_i32(value) {
-                    gtk.set_size_request(handle, -1, h);
-                }
-            }
             (GtkWidgetType::Spinner, "active") => {
                 gtk.set_spinner_active(handle, value != "false" && value != "0");
             }

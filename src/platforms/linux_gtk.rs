@@ -4,7 +4,7 @@ use super::PlatformBackend;
 use super::gtk4_callbacks::{
     drain_pending_events, on_gtk_button_clicked, on_gtk_check_toggled,
     on_gtk_drop_down_selected_notify, on_gtk_entry_changed, on_gtk_scale_value_changed,
-    on_gtk_switch_active_notify, pack_node_id,
+    on_gtk_scroll_edge_reached, on_gtk_switch_active_notify, pack_node_id,
 };
 use super::gtk4_sys::{Gtk4Sys, GtkHandle};
 use crate::engine::{EventPayload, NativeEvent, NodeId, RenderCommand, StyleId, StyleRule};
@@ -47,6 +47,8 @@ pub(super) struct NativeGtkWidget {
     pub(super) children: Vec<NodeId>,
     /// Indeterminate progress bars are pulsed from the event pump (GTK has no auto-pulse).
     pub(super) pulsing: bool,
+    /// Tracks explicit width/height requests so updating one dimension preserves the other.
+    pub(super) size_request: (i32, i32),
 }
 
 /// Concrete Linux GTK4 + Libadwaita platform adapter backed by `libgtk-4.so.1`.
@@ -160,6 +162,7 @@ impl GtkLinuxBackend {
                         kind: GtkWidgetType::Anchor,
                         children: Vec::new(),
                         pulsing: false,
+                        size_request: (-1, -1),
                     },
                 );
             }
@@ -243,7 +246,9 @@ impl GtkLinuxBackend {
                 (Some(gtk.create_header_bar()), GtkWidgetType::HeaderBar)
             }
             "ng-scroll" | "gtk-scrolled-window" => {
-                (Some(gtk.create_scrolled_window()), GtkWidgetType::Scroll)
+                let scroll = gtk.create_scrolled_window();
+                gtk.connect_edge_reached(scroll, on_gtk_scroll_edge_reached, pack_node_id(id));
+                (Some(scroll), GtkWidgetType::Scroll)
             }
             "ng-box" | "gtk-box" => (Some(gtk.create_box(12)), GtkWidgetType::Box),
             "ng-grid" | "gtk-grid" => (Some(gtk.create_grid()), GtkWidgetType::Grid),
@@ -301,6 +306,11 @@ impl GtkLinuxBackend {
                 None => return,
             },
         };
+        let size_request = if kind == GtkWidgetType::Image {
+            (120, 120)
+        } else {
+            (-1, -1)
+        };
         self.widgets.insert(
             id,
             NativeGtkWidget {
@@ -308,6 +318,7 @@ impl GtkLinuxBackend {
                 kind,
                 children: Vec::new(),
                 pulsing: false,
+                size_request,
             },
         );
     }

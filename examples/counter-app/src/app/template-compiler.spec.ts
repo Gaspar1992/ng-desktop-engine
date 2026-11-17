@@ -51,4 +51,26 @@ describe('Native template compiler (Angular AST)', () => {
     expect(compile()).toContain('root');
     expect(compile()).toEqual(compile());
   });
+
+  it('compiles @defer blocks with viewport and idle prefetch triggers into scene graph IR', () => {
+    const ast = parseTemplateHtml(
+      `
+        <ng-box id="wrapper">
+          @defer (on viewport; prefetch on idle) {
+            <ng-box id="deferred_batch"><ng-label id="lbl_ok">Loaded</ng-label></ng-box>
+          } @placeholder {
+            <ng-label id="defer_placeholder">Loading next batch...</ng-label>
+          }
+        </ng-box>
+      `,
+      {},
+      {},
+      'defer.html',
+    );
+
+    const anchor = ast[0]?.children.find((n) => n.isComment);
+    expect(anchor?.text).toBe('@defer(viewport; prefetch:idle)');
+    expect(collectIds(ast)).toContain('defer_placeholder');
+    expect(collectIds(ast)).toContain('deferred_batch');
+  });
 });

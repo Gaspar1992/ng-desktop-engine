@@ -1,13 +1,13 @@
 <ng-window id="win" title="{{ windowTitle() }}">
   <ng-header-bar id="hdr" subtitle="{{ subtitle() }}">{{ windowTitle() }}</ng-header-bar>
-  <ng-scroll id="scroll" min-height="460px">
+  <ng-scroll id="scroll" min-height="540px">
     <ng-clamp id="main_clamp" max-size="1080px">
       <ng-box id="vbox" class="main-card" orientation="vertical" spacing="14px">
         <ng-box id="search_bar" orientation="horizontal" spacing="10px">
           <ng-search-entry
             id="profile_entry"
             hexpand="true"
-            placeholder="Buscar Pokémon por nombre o número (ej. pikachu, 25, charizard)..."
+            placeholder="Buscar Pokémon por nombre o N.º (ej. bul, pika, char, mew, 25)..."
             value="{{ author() }}"
           />
           <ng-spin-button id="poke_id_spin" min="0" max="1025" step="1" value="0" />
@@ -15,186 +15,119 @@
 
         <ng-spinner id="loading_spinner" visible="false" halign="center" />
 
-        <ng-paned id="pokedex_split" orientation="horizontal" position="520px">
-          <!-- POKÉDEX MAIN VIEW: LIST / GRID OF POKÉMON -->
-          <ng-box id="list_view" visible="true" orientation="vertical" spacing="12px">
-            <ng-box id="list_header" orientation="vertical" spacing="4px">
-              <ng-label id="list_title" class="section-title">Pokémon destacados</ng-label>
-              <ng-label id="list_subtitle" class="section-subtitle"
-                >Selecciona uno para ver sus estadísticas completas</ng-label
-              >
-            </ng-box>
-
-            <ng-flow
-              id="pokemon_grid"
-              row-spacing="12px"
-              column-spacing="12px"
-              min-children="1"
-              max-children="6"
+        <!-- VIEW 1: INFINITE SCROLL & LIVE SEARCH POKÉDEX EXPLORER -->
+        <ng-box id="list_view" visible="true" orientation="vertical" spacing="12px">
+          <ng-box id="list_header" orientation="vertical" spacing="4px">
+            <ng-label id="list_title" class="section-title"
+              >Pokédex Nacional — Explorador Oficial (PokéAPI v2)</ng-label
             >
-              <!-- Item 1: Bulbasaur -->
-              <ng-box id="card_bulbasaur" class="grid-card" orientation="vertical" spacing="6px">
-                <ng-image
-                  id="img_bulbasaur"
-                  src="/tmp/ng_native_pokedex/1.png"
-                  width="120"
-                  height="120"
-                />
-                <ng-label id="num_bulbasaur" class="poke-num">N.º 0001</ng-label>
-                <ng-label id="name_bulbasaur" class="card-name">Bulbasaur</ng-label>
-                <ng-box id="types_bulbasaur" orientation="horizontal" spacing="6px">
-                  <app-type-badge class="badge-grass" type="PLANTA" />
-                  <app-type-badge class="badge-poison" type="VENENO" />
-                </ng-box>
-                <ng-button id="btn_sel_1" class="suggested-action" (click)="selectBulbasaur()"
-                  >Ver ficha ›</ng-button
-                >
-              </ng-box>
-
-              <!-- Item 2: Charmander -->
-              <ng-box id="card_charmander" class="grid-card" orientation="vertical" spacing="6px">
-                <ng-image
-                  id="img_charmander"
-                  src="/tmp/ng_native_pokedex/4.png"
-                  width="120"
-                  height="120"
-                />
-                <ng-label id="num_charmander" class="poke-num">N.º 0004</ng-label>
-                <ng-label id="name_charmander" class="card-name">Charmander</ng-label>
-                <ng-box id="types_charmander" orientation="horizontal" spacing="6px">
-                  <app-type-badge class="badge-fire" type="FUEGO" />
-                </ng-box>
-                <ng-button id="btn_sel_4" class="suggested-action" (click)="selectCharmander()"
-                  >Ver ficha ›</ng-button
-                >
-              </ng-box>
-
-              <!-- Item 3: Squirtle -->
-              <ng-box id="card_squirtle" class="grid-card" orientation="vertical" spacing="6px">
-                <ng-image
-                  id="img_squirtle"
-                  src="/tmp/ng_native_pokedex/7.png"
-                  width="120"
-                  height="120"
-                />
-                <ng-label id="num_squirtle" class="poke-num">N.º 0007</ng-label>
-                <ng-label id="name_squirtle" class="card-name">Squirtle</ng-label>
-                <ng-box id="types_squirtle" orientation="horizontal" spacing="6px">
-                  <app-type-badge class="badge-water" type="AGUA" />
-                </ng-box>
-                <ng-button id="btn_sel_7" class="suggested-action" (click)="selectSquirtle()"
-                  >Ver ficha ›</ng-button
-                >
-              </ng-box>
-
-              <!-- Item 4: Pikachu -->
-              <ng-box id="card_pikachu" class="grid-card" orientation="vertical" spacing="6px">
-                <ng-image
-                  id="img_pikachu"
-                  src="/tmp/ng_native_pokedex/25.png"
-                  width="120"
-                  height="120"
-                />
-                <ng-label id="num_pikachu" class="poke-num">N.º 0025</ng-label>
-                <ng-label id="name_pikachu" class="card-name">Pikachu</ng-label>
-                <ng-box id="types_pikachu" orientation="horizontal" spacing="6px">
-                  <app-type-badge class="badge-electric" type="ELÉCTRICO" />
-                </ng-box>
-                <ng-button id="btn_sel_25" class="suggested-action" (click)="selectPikachu()"
-                  >Ver ficha ›</ng-button
-                >
-              </ng-box>
-
-              <!-- Item 5: Charizard -->
-              <ng-box id="card_charizard" class="grid-card" orientation="vertical" spacing="6px">
-                <ng-image
-                  id="img_charizard"
-                  src="/tmp/ng_native_pokedex/6.png"
-                  width="120"
-                  height="120"
-                />
-                <ng-label id="num_charizard" class="poke-num">N.º 0006</ng-label>
-                <ng-label id="name_charizard" class="card-name">Charizard</ng-label>
-                <ng-box id="types_charizard" orientation="horizontal" spacing="6px">
-                  <app-type-badge class="badge-fire" type="FUEGO" />
-                  <app-type-badge class="badge-flying" type="VOLADOR" />
-                </ng-box>
-                <ng-button id="btn_sel_6" class="suggested-action" (click)="selectCharizard()"
-                  >Ver ficha ›</ng-button
-                >
-              </ng-box>
-
-              <!-- Item 6: Gengar -->
-              <ng-box id="card_gengar" class="grid-card" orientation="vertical" spacing="6px">
-                <ng-image
-                  id="img_gengar"
-                  src="/tmp/ng_native_pokedex/94.png"
-                  width="120"
-                  height="120"
-                />
-                <ng-label id="num_gengar" class="poke-num">N.º 0094</ng-label>
-                <ng-label id="name_gengar" class="card-name">Gengar</ng-label>
-                <ng-box id="types_gengar" orientation="horizontal" spacing="6px">
-                  <app-type-badge class="badge-ghost" type="FANTASMA" />
-                  <app-type-badge class="badge-poison" type="VENENO" />
-                </ng-box>
-                <ng-button id="btn_sel_94" class="suggested-action" (click)="selectGengar()"
-                  >Ver ficha ›</ng-button
-                >
-              </ng-box>
-            </ng-flow>
+            <ng-label id="list_subtitle" class="section-subtitle"
+              >Cargando catálogo oficial desde PokéAPI v2...</ng-label
+            >
           </ng-box>
 
-          <!-- POKÉDEX DETAIL VIEW: SELECTED POKÉMON COMPLETE STATS -->
-          <ng-box id="detail_view" visible="true" orientation="vertical" spacing="12px">
-            <ng-box id="detail_nav" orientation="horizontal" spacing="8px">
-              <ng-button id="btn_reset" class="suggested-action" (click)="backToList()"
-                >‹ Volver al listado</ng-button
-              >
-              <ng-button id="btn_dec" (click)="previousPokemon()">‹ Anterior</ng-button>
-              <ng-button id="btn" (click)="nextPokemon()">Siguiente ›</ng-button>
-            </ng-box>
+          <ng-flow
+            id="pokemon_grid"
+            row-spacing="12px"
+            column-spacing="12px"
+            min-children="2"
+            max-children="4"
+          />
 
+          @defer (on viewport; prefetch on idle) {
+          <ng-box id="defer_sentinel" orientation="horizontal" spacing="12px" halign="center">
+            <ng-button id="btn_load_more" class="suggested-action" (click)="loadMorePokemon()"
+              >Cargar más Pokémon (+12) ›</ng-button
+            >
+          </ng-box>
+          } @placeholder {
+          <ng-label id="defer_placeholder" class="section-subtitle"
+            >Desplázate hacia abajo para cargar el siguiente lote (&#64;defer on
+            viewport)...</ng-label
+          >
+          }
+        </ng-box>
+
+        <!-- VIEW 2: COMPLETE POKÉMON DESCRIPTION & STATS SHEET -->
+        <ng-box id="detail_view" visible="false" orientation="vertical" spacing="12px">
+          <ng-box id="detail_nav" orientation="horizontal" spacing="8px">
+            <ng-button id="btn_reset" class="suggested-action" (click)="backToList()"
+              >‹ Volver a la Pokédex</ng-button
+            >
+            <ng-button id="btn_dec" (click)="previousPokemon()">‹ Pokémon Anterior</ng-button>
+            <ng-button id="btn" (click)="nextPokemon()">Siguiente Pokémon ›</ng-button>
+          </ng-box>
+
+          <ng-paned id="pokedex_split" orientation="horizontal" position="420px">
             <app-pokemon-card
               id="poke_card"
               name="{{ greeting() }}"
               number="N.º 0001"
               sprite="/tmp/ng_native_pokedex/1.png"
             >
+              <ng-label id="poke_genus" class="section-subtitle">Pokémon Semilla</ng-label>
               <ng-box id="types_box" orientation="horizontal" spacing="8px">
                 <app-type-badge id="poke_type_primary" class="badge-grass" type="PLANTA" />
                 <app-type-badge id="poke_type_secondary" class="badge-poison" type="VENENO" />
               </ng-box>
-              <ng-grid id="specs_grid" class="specs-panel" row-spacing="4px" column-spacing="24px">
+              <ng-label id="poke_description" class="section-subtitle"
+                >Una rara semilla le fue plantada en el lomo al nacer. La planta brota y crece con
+                este Pokémon.</ng-label
+              >
+            </app-pokemon-card>
+
+            <ng-box id="detail_right_pane" orientation="vertical" spacing="12px">
+              <ng-grid id="specs_grid" class="specs-panel" row-spacing="6px" column-spacing="24px">
                 <ng-label id="lbl_h_title" class="spec-label">Altura</ng-label>
                 <ng-label id="lbl_w_title" class="spec-label">Peso</ng-label>
                 <ng-label id="lbl_height" class="spec-val">0.7 m</ng-label>
                 <ng-label id="lbl_weight" class="spec-val">6.9 kg</ng-label>
+                <ng-label id="lbl_abil_title" class="spec-label">Habilidad</ng-label>
+                <ng-label id="lbl_exp_title" class="spec-label">Exp. Base</ng-label>
+                <ng-label id="lbl_ability" class="spec-val">Overgrow</ng-label>
+                <ng-label id="lbl_base_exp" class="spec-val">64 EXP</ng-label>
               </ng-grid>
+
               <ng-expander
                 id="stats_expander"
-                label="Estadísticas Base (HP / ATK / DEF / SPD)"
+                label="Estadísticas Base Oficiales (PS / ATQ / DEF / AT.ESP / DF.ESP / VEL)"
                 expanded="true"
               >
                 <ng-box id="stats_box" orientation="vertical" spacing="6px">
                   <ng-label id="lbl_stats" class="stats-label"
-                    >HP: 45 | ATK: 49 | DEF: 49 | SPD: 45</ng-label
+                    >PS: 45 | ATQ: 49 | DEF: 49 | AT.ESP: 65 | DF.ESP: 65 | VEL: 45 (Total:
+                    318)</ng-label
                   >
                   <ng-label id="lbl" class="stats-label">Pokémon #{{ pokemonId() }}</ng-label>
+                  <ng-label id="lbl_hp_bar" class="section-subtitle">PS (45 / 255)</ng-label>
                   <ng-level-bar id="hp_bar" value="45" max="255" />
+                  <ng-label id="lbl_atk_bar" class="section-subtitle">Ataque (49 / 255)</ng-label>
                   <ng-level-bar id="atk_bar" value="49" max="255" />
+                  <ng-label id="lbl_def_bar" class="section-subtitle">Defensa (49 / 255)</ng-label>
                   <ng-level-bar id="def_bar" value="49" max="255" />
+                  <ng-label id="lbl_sp_atk_bar" class="section-subtitle"
+                    >Ataque Especial (65 / 255)</ng-label
+                  >
+                  <ng-level-bar id="sp_atk_bar" value="65" max="255" />
+                  <ng-label id="lbl_sp_def_bar" class="section-subtitle"
+                    >Defensa Especial (65 / 255)</ng-label
+                  >
+                  <ng-level-bar id="sp_def_bar" value="65" max="255" />
+                  <ng-label id="lbl_spd_bar" class="section-subtitle"
+                    >Velocidad (45 / 255)</ng-label
+                  >
                   <ng-level-bar id="spd_bar" value="45" max="255" />
                 </ng-box>
               </ng-expander>
-              <ng-expander id="notes_expander" label="Notas de Captura" expanded="false">
+
+              <ng-expander id="notes_expander" label="Notas de Campo de la Pokédex" expanded="true">
                 <ng-text-view id="poke_notes" editable="true"
                   >Pokédex Nacional Kanto/Johto</ng-text-view
                 >
               </ng-expander>
-            </app-pokemon-card>
-          </ng-box>
-        </ng-paned>
+            </ng-box>
+          </ng-paned>
+        </ng-box>
       </ng-box>
     </ng-clamp>
   </ng-scroll>

@@ -21,7 +21,7 @@ fn full_mvp_pipeline_with_headless_backend() {
     // Tick 1: Mount Angular component (signals + styles + template + icon + declarative events)
     runtime.eval_tick(&mut engine, &script).unwrap();
     assert_eq!(engine.backend().frames.len(), 1);
-    assert_eq!(engine.backend().frames[0].len(), 400);
+    assert_eq!(engine.backend().frames[0].len(), 274);
 
     let win = runtime.resolve_var("win").unwrap();
     let hello = runtime.resolve_var("hello").unwrap();
@@ -32,28 +32,30 @@ fn full_mvp_pipeline_with_headless_backend() {
     assert!(preview.contains("Pokédex Nacional"));
     assert!(preview.contains("[ICO:16x16, 32x32, 48x48]"));
     assert!(preview.contains("[HeaderBar: Pokédex Nacional — Angular 22 + GTK4 / Libadwaita]"));
-    assert!(preview.contains("Hola Mundo desde Angular Native!"));
+    assert!(preview.contains("Bulbasaur"));
     assert!(preview.contains(".hero-title"));
     assert!(preview.contains(
         ".hero-title(bg:transparent, fg:#78aeed, pad:8px, font-size:22px, font-weight:800)"
     ));
     assert!(preview.contains(".main-card(bg:#242424, fg:#ffffff, pad:16px, radius:14px)"));
     assert!(preview.contains("[Clamp max-width:1080px]"));
-    assert!(preview.contains("[SearchEntry: \"ng-native-dev\"]"));
+    assert!(preview.contains(
+        "[SearchEntry: \"Buscar Pokémon por nombre o N.º (ej. bul, pika, char, mew, 25)...\"]"
+    ));
     assert!(preview.contains("[SpinButton: 0 (0..1025, step:1)]"));
-    assert!(preview.contains("[Paned dir:horizontal, pos:520px]"));
-    assert!(preview.contains("[Expander ▼ Estadísticas Base (HP / ATK / DEF / SPD)]"));
+    assert!(preview.contains("[Paned dir:horizontal, pos:420px]"));
+    assert!(preview.contains(
+        "[Expander ▼ Estadísticas Base Oficiales (PS / ATQ / DEF / AT.ESP / DF.ESP / VEL)]"
+    ));
     assert!(preview.contains("[TextView: \"Pokédex Nacional Kanto/Johto\"]"));
-    assert!(preview.contains("Pokémon destacados"));
+    assert!(preview.contains("Pokédex Nacional — Explorador Oficial (PokéAPI v2)"));
+    assert!(preview.contains("Cargar más Pokémon (+12) ›"));
     assert!(preview.contains("[Spinner:"));
-    assert!(preview.contains("Bulbasaur"));
-    assert!(preview.contains("Pikachu"));
-    assert!(preview.contains("Charizard"));
 
     assert!(engine.backend().frames[0].iter().any(|cmd| matches!(
         cmd,
         RenderCommand::SetText { id, text }
-            if *id == hello && text.starts_with("Hola Mundo desde Angular Native!")
+            if *id == hello && text == "Bulbasaur"
     )));
 
     // Tick 2: Declarative `(click)="increment()"` updates signal `count` -> `Pokémon #1`

@@ -83,6 +83,7 @@ fn run_interactive_loop(
     );
     let mut pokedex = PokedexController::new(&js_runtime);
     pokedex.show_list(&mut engine);
+    pokedex.start_initial_load(&mut engine);
 
     while engine.backend().open_window_count() > 0 {
         for ev in engine.backend().step_native_events(false) {

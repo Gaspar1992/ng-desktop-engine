@@ -1,8 +1,8 @@
 #![allow(unsafe_code)]
 
 use super::gtk4_sys::{
-    GTK_ORIENTATION_HORIZONTAL, GTK_ORIENTATION_VERTICAL, Gtk4Sys, GtkClickCallback, GtkHandle,
-    GtkNotifyCallback,
+    GTK_ORIENTATION_HORIZONTAL, GTK_ORIENTATION_VERTICAL, Gtk4Sys, GtkClickCallback,
+    GtkEdgeReachedCallback, GtkHandle, GtkNotifyCallback,
 };
 use std::ffi::{CStr, CString, c_int, c_void};
 
@@ -39,7 +39,7 @@ impl Gtk4Sys {
     pub fn create_window(&self) -> GtkHandle {
         unsafe {
             let win = (self.gtk_window_new)();
-            (self.gtk_window_set_default_size)(win, 460, 280);
+            (self.gtk_window_set_default_size)(win, 1020, 720);
             GtkHandle(win)
         }
     }
@@ -73,7 +73,12 @@ impl Gtk4Sys {
     }
 
     pub fn create_label(&self) -> GtkHandle {
-        unsafe { GtkHandle((self.gtk_label_new)(c"".as_ptr())) }
+        unsafe {
+            let lbl = (self.gtk_label_new)(c"".as_ptr());
+            (self.gtk_label_set_wrap)(lbl, 1);
+            (self.gtk_label_set_max_width_chars)(lbl, 60);
+            GtkHandle(lbl)
+        }
     }
 
     pub fn create_button(&self) -> GtkHandle {
@@ -113,6 +118,7 @@ impl Gtk4Sys {
             let pic = (self.gtk_picture_new)();
             (self.gtk_picture_set_can_shrink)(pic, 1);
             (self.gtk_picture_set_keep_aspect_ratio)(pic, 1);
+            (self.gtk_widget_set_size_request)(pic, 120, 120);
             GtkHandle(pic)
         }
     }
@@ -806,6 +812,24 @@ impl Gtk4Sys {
             (self.g_signal_connect_data)(
                 widget.0,
                 signal_name.as_ptr(),
+                callback as *const c_void,
+                packed_node_id as *mut c_void,
+                std::ptr::null_mut(),
+                0,
+            );
+        }
+    }
+
+    pub fn connect_edge_reached(
+        &self,
+        scroll: GtkHandle,
+        callback: GtkEdgeReachedCallback,
+        packed_node_id: usize,
+    ) {
+        unsafe {
+            (self.g_signal_connect_data)(
+                scroll.0,
+                c"edge-reached".as_ptr(),
                 callback as *const c_void,
                 packed_node_id as *mut c_void,
                 std::ptr::null_mut(),

@@ -12,8 +12,8 @@ import { TypeBadge } from './type-badge';
 export class App {
   protected readonly windowTitle = signal('Pokédex Nacional');
   protected readonly subtitle = signal('Angular 22 + GTK4 / Libadwaita');
-  protected readonly greeting = signal('Hola Mundo desde Angular Native!');
-  protected readonly author = signal('ng-native-dev');
+  protected readonly greeting = signal('Bulbasaur');
+  protected readonly author = signal('');
   protected readonly pokemonId = signal(0);
 
   increment(): void {
@@ -38,6 +38,10 @@ export class App {
 
   backToList(): void {
     this.pokemonId.set(0);
+  }
+
+  loadMorePokemon(): void {
+    // Handled natively by PokedexController (@defer on viewport / load-more pagination)
   }
 
   selectBulbasaur(): void {

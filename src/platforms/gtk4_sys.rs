@@ -20,6 +20,7 @@ const GTK_STYLE_PROVIDER_PRIORITY_APPLICATION: c_uint = 600;
 
 pub type GtkClickCallback = unsafe extern "C" fn(*mut c_void, *mut c_void);
 pub type GtkNotifyCallback = unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void);
+pub type GtkEdgeReachedCallback = unsafe extern "C" fn(*mut c_void, c_int, *mut c_void);
 
 /// Dynamically loaded `GTK4` / `GLib` / `GObject` / `GIO` function table for Linux.
 /// Isolates all C FFI symbol loading (`dlopen` / `dlsym`) from widget operations.
@@ -62,6 +63,8 @@ pub struct Gtk4Sys {
     pub(super) gtk_orientable_set_orientation: unsafe extern "C" fn(*mut c_void, c_int),
     pub(super) gtk_label_new: unsafe extern "C" fn(*const c_char) -> *mut c_void,
     pub(super) gtk_label_set_text: unsafe extern "C" fn(*mut c_void, *const c_char),
+    pub(super) gtk_label_set_wrap: unsafe extern "C" fn(*mut c_void, c_int),
+    pub(super) gtk_label_set_max_width_chars: unsafe extern "C" fn(*mut c_void, c_int),
     pub(super) gtk_button_new_with_label: unsafe extern "C" fn(*const c_char) -> *mut c_void,
     pub(super) gtk_button_set_label: unsafe extern "C" fn(*mut c_void, *const c_char),
     pub(super) gtk_entry_new: unsafe extern "C" fn() -> *mut c_void,
@@ -273,6 +276,11 @@ impl Gtk4Sys {
                 )?,
                 gtk_label_new: Self::load_fn(gtk_lib, c"gtk_label_new")?,
                 gtk_label_set_text: Self::load_fn(gtk_lib, c"gtk_label_set_text")?,
+                gtk_label_set_wrap: Self::load_fn(gtk_lib, c"gtk_label_set_wrap")?,
+                gtk_label_set_max_width_chars: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_label_set_max_width_chars",
+                )?,
                 gtk_button_new_with_label: Self::load_fn(gtk_lib, c"gtk_button_new_with_label")?,
                 gtk_button_set_label: Self::load_fn(gtk_lib, c"gtk_button_set_label")?,
                 gtk_entry_new: Self::load_fn(gtk_lib, c"gtk_entry_new")?,

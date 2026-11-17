@@ -112,6 +112,40 @@ export function parseTemplateHtml(
         continue;
       }
 
+      if (tmplNode.triggers !== undefined || Array.isArray(tmplNode.definedTriggers)) {
+        const triggers =
+          Array.isArray(tmplNode.definedTriggers) && tmplNode.definedTriggers.length > 0
+            ? tmplNode.definedTriggers.join(',')
+            : 'idle';
+        const prefetch =
+          Array.isArray(tmplNode.definedPrefetchTriggers) &&
+          tmplNode.definedPrefetchTriggers.length > 0
+            ? `; prefetch:${tmplNode.definedPrefetchTriggers.join(',')}`
+            : '';
+        out.push({
+          id: `defer_${idState.next++}`,
+          tag: '#comment',
+          isComment: true,
+          text: `@defer(${triggers}${prefetch})`,
+          title: null,
+          classes: [],
+          attributes: {},
+          reactiveBinding: null,
+          events: {},
+          children: [],
+        });
+        if (tmplNode.placeholder?.children) {
+          out.push(...transformNodes(tmplNode.placeholder.children));
+        }
+        if (tmplNode.loading?.children) {
+          out.push(...transformNodes(tmplNode.loading.children));
+        }
+        if (Array.isArray(tmplNode.children)) {
+          out.push(...transformNodes(tmplNode.children));
+        }
+        continue;
+      }
+
       if (typeof tmplNode.name !== 'string') {
         continue;
       }
@@ -188,7 +222,12 @@ export function parseTemplateHtml(
       const childElements = [];
 
       for (const child of tmplNode.children || []) {
-        if (typeof child.name === 'string' || Array.isArray(child.branches)) {
+        if (
+          typeof child.name === 'string' ||
+          Array.isArray(child.branches) ||
+          child.triggers !== undefined ||
+          Array.isArray(child.definedTriggers)
+        ) {
           childElements.push(...transformNodes([child]));
         } else if (typeof child.value === 'string') {
           const trimmed = child.value.trim();
