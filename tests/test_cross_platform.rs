@@ -15,6 +15,9 @@ fn cross_platform_factory_supports_linux_windows_and_macos() {
     assert_eq!(linux.map_native_widget("ng-spinner"), "GtkSpinner");
     assert_eq!(linux.map_native_widget("ng-progress-bar"), "GtkProgressBar");
     assert_eq!(linux.map_native_widget("ng-level-bar"), "GtkLevelBar");
+    assert_eq!(linux.map_native_widget("ng-paned"), "GtkPaned");
+    assert_eq!(linux.map_native_widget("ng-stack"), "GtkStack");
+    assert_eq!(linux.map_native_widget("ng-expander"), "GtkExpander");
 
     let windows = AnyPlatformBackend::from_target("windows-winui").unwrap();
     assert_eq!(
@@ -25,11 +28,26 @@ fn cross_platform_factory_supports_linux_windows_and_macos() {
         windows.map_native_widget("ng-flow"),
         "Microsoft.UI.Xaml.Controls.ItemsRepeater"
     );
+    assert_eq!(
+        windows.map_native_widget("ng-paned"),
+        "Microsoft.UI.Xaml.Controls.SplitView"
+    );
+    assert_eq!(
+        windows.map_native_widget("ng-stack"),
+        "Microsoft.UI.Xaml.Controls.NavigationView"
+    );
+    assert_eq!(
+        windows.map_native_widget("ng-expander"),
+        "Microsoft.UI.Xaml.Controls.Expander"
+    );
 
     let macos = AnyPlatformBackend::from_target("macos-appkit").unwrap();
     assert_eq!(macos.map_native_widget("ng-window"), "NSWindow");
     assert_eq!(macos.map_native_widget("ng-flow"), "NSCollectionView");
     assert_eq!(macos.map_native_widget("ng-spinner"), "NSProgressIndicator");
+    assert_eq!(macos.map_native_widget("ng-paned"), "NSSplitView");
+    assert_eq!(macos.map_native_widget("ng-stack"), "NSTabView");
+    assert_eq!(macos.map_native_widget("ng-expander"), "NSDisclosureButton");
 }
 
 #[test]

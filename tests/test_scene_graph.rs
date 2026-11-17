@@ -147,3 +147,53 @@ fn scene_graph_prevents_cycles_and_cleans_up_orphaned_listeners() {
     let preview = engine.render_window_preview(win).unwrap();
     assert!(!preview.contains("box1"));
 }
+
+#[test]
+fn phase8_paned_stack_and_expander_containers_render_in_scene_graph() {
+    let mut engine = RenderEngine::new(HeadlessBackend::new());
+    let mut runtime = JsRuntime::new();
+
+    let script = r"
+        create win ng-window
+        text win Phase 8 Containers
+        create split ng-paned
+        attr split orientation horizontal
+        attr split position 240px
+        create stack ng-stack
+        attr stack visible-child page_0
+        attr stack transition slide-left
+        create exp ng-expander
+        attr exp label Details
+        attr exp expanded true
+        create lbl_left ng-label
+        text lbl_left Sidebar
+        create lbl_page ng-label
+        text lbl_page StackContent
+        create lbl_inner ng-label
+        text lbl_inner HiddenOrShown
+        append exp lbl_inner
+        append stack lbl_page
+        append stack exp
+        append split lbl_left
+        append split stack
+        append win split
+    ";
+    runtime.eval_tick(&mut engine, script).unwrap();
+
+    let win = runtime.resolve_var("win").unwrap();
+    let split = runtime.resolve_var("split").unwrap();
+    let stack = runtime.resolve_var("stack").unwrap();
+    let exp = runtime.resolve_var("exp").unwrap();
+
+    assert_eq!(engine.get_attribute(split, "position"), Some("240px"));
+    assert_eq!(engine.get_attribute(stack, "visible-child"), Some("page_0"));
+    assert_eq!(engine.get_attribute(exp, "expanded"), Some("true"));
+
+    let preview = engine.render_window_preview(win).unwrap();
+    assert!(preview.contains("[Paned dir:horizontal, pos:240px]"));
+    assert!(preview.contains("[Stack active:\"page_0\", transition:slide-left]"));
+    assert!(preview.contains("[Expander ▼ Details]"));
+    assert!(preview.contains("Sidebar"));
+    assert!(preview.contains("StackContent"));
+    assert!(preview.contains("HiddenOrShown"));
+}

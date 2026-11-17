@@ -142,12 +142,13 @@ When `@angular/platform-browser` is removed, Angular's Ivy runtime still require
 - [x] **Comprehensive Automated Test Coverage:**
   - [x] 66 automated tests passing (25 Rust unit tests + 14 Rust E2E integration tests + 27 Angular Vitest tests).
 
-### Phase 8: Advanced Layout Containers & Extended Primitives (Pending 🚧)
+### Phase 8: Advanced Layout Containers & Extended Primitives (In Progress 🚧)
 
-- [ ] **Priority Layout & Container Primitives:**
-  - [ ] `<ng-paned>` (`GtkPaned` / `Microsoft.UI.Xaml.Controls.SplitView` / `NSSplitView`): Resizable two-pane split container supporting `orientation` (`horizontal` | `vertical`), divider `position` (px), and start/end child slots.
-  - [ ] `<ng-stack>` (`GtkStack` / `AdwNavigationView` / `NSTabView`): Multi-page view container supporting named child views, `visible-child` active page switching, `transition-type`, and `@ng-native/router` integration.
-  - [ ] `<ng-expander>` (`GtkExpander` / `Microsoft.UI.Xaml.Controls.Expander` / `NSDisclosureButton`): Collapsible disclosure/accordion container supporting `label`, `expanded` state attribute, and `notify::expanded` signal emission.
+- [x] **Priority Layout & Container Primitives:**
+  - [x] `<ng-paned>` (`GtkPaned` / `Microsoft.UI.Xaml.Controls.SplitView` / `NSSplitView`): Resizable two-pane split container supporting `orientation` (`horizontal` | `vertical`), divider `position` (px), and start/end child slots.
+  - [x] `<ng-stack>` (`GtkStack` / `Microsoft.UI.Xaml.Controls.NavigationView` / `NSTabView`): Multi-page view container supporting indexed named child views (`page_0`...), `visible-child` / `active-page` switching, and `transition` / `transition-type`.
+  - [x] `<ng-expander>` (`GtkExpander` / `Microsoft.UI.Xaml.Controls.Expander` / `NSDisclosureButton`): Collapsible disclosure/accordion container supporting `label` / `title`, `expanded` / `open` state attribute, and `notify::expanded` signal emission.
+  - [x] **Automated Test Coverage:** 68 automated tests passing (26 Rust unit tests + 15 Rust E2E integration tests + 27 Angular Vitest tests).
 - [ ] **Extended Form & Adaptive Primitives (Backlog):**
   - [ ] `<ng-text-view>` (`GtkTextView` multi-line text editor with `NativeTextValueAccessor` support)
   - [ ] `<ng-password-entry>` (`GtkPasswordEntry` with `show-peek-icon`)

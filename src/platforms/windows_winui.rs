@@ -54,6 +54,11 @@ impl WinUiBackend {
             "ng-flow" | "ng-flow-box" | "gtk-flow-box" => {
                 "Microsoft.UI.Xaml.Controls.ItemsRepeater"
             }
+            "ng-paned" | "gtk-paned" => "Microsoft.UI.Xaml.Controls.SplitView",
+            "ng-stack" | "gtk-stack" | "adw-navigation-view" => {
+                "Microsoft.UI.Xaml.Controls.NavigationView"
+            }
+            "ng-expander" | "gtk-expander" => "Microsoft.UI.Xaml.Controls.Expander",
             _ => "Microsoft.UI.Xaml.UIElement",
         }
     }

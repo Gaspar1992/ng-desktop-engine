@@ -98,6 +98,39 @@ impl WidgetKind {
             Self::Separator { vertical } if key == "orientation" => {
                 *vertical = value == "vertical";
             }
+            _ => self.set_extended_container_attribute(key, value),
+        }
+    }
+
+    fn set_extended_container_attribute(&mut self, key: &str, value: &str) {
+        match self {
+            Self::Paned {
+                vertical, position, ..
+            } => match key {
+                "orientation" => *vertical = value == "vertical",
+                "position" => {
+                    if let Ok(parsed) = Self::parse_px(value) {
+                        *position = parsed;
+                    }
+                }
+                _ => {}
+            },
+            Self::Stack {
+                visible_child,
+                transition,
+                ..
+            } => match key {
+                "visible-child" | "active-page" => value.clone_into(visible_child),
+                "transition" | "transition-type" => value.clone_into(transition),
+                _ => {}
+            },
+            Self::Expander {
+                label, expanded, ..
+            } => match key {
+                "label" | "title" => value.clone_into(label),
+                "expanded" | "open" => *expanded = value == "true" || value == "1",
+                _ => {}
+            },
             _ => self.set_interactive_attribute(key, value),
         }
     }

@@ -47,6 +47,9 @@ impl MacOsAppKitBackend {
                 "NSProgressIndicator"
             }
             "ng-flow" | "ng-flow-box" | "gtk-flow-box" => "NSCollectionView",
+            "ng-paned" | "gtk-paned" => "NSSplitView",
+            "ng-stack" | "gtk-stack" | "adw-navigation-view" => "NSTabView",
+            "ng-expander" | "gtk-expander" => "NSDisclosureButton",
             _ => "NSView",
         }
     }

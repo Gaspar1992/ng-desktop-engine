@@ -5,6 +5,11 @@ This project adheres to [Conventional Commits](https://www.conventionalcommits.o
 
 ## [Unreleased]
 
+### Features (Phase 8 — Advanced Container Primitives)
+
+- **widgets:** add `<ng-paned>` (`GtkPaned` / `SplitView` / `NSSplitView`), `<ng-stack>` (`GtkStack` / `NavigationView` / `NSTabView`), and `<ng-expander>` (`GtkExpander` / `Expander` / `NSDisclosureButton`) across `WidgetKind`, `widget_attrs.rs`, `preview.rs`, `Gtk4Sys`, `GtkLinuxBackend`, `WinUiBackend`, and `MacOsAppKitBackend`.
+- **testing:** add unit and scene-graph/cross-platform E2E tests for Phase 8 container primitives, bringing total coverage to 68 automated tests (26 Rust unit tests + 15 Rust E2E tests + 27 Vitest tests).
+
 ### Features (Phase 7 — AST-Driven Toolchain, Real-Time Socket HMR, & SRP Hardening)
 
 - **ipc:** create `src/ipc/mod.rs` implementing non-blocking Unix Domain Socket `HmrIpcServer` & `HmrIpcClient` with framed JSON messages (`HmrMessage::Reload`, `HmrMessage::Eval`, `HmrMessage::Ping`) and automatic cleanup of stale socket files.

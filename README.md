@@ -8,7 +8,7 @@ A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22
 
 ## 🎯 Architectural Principles
 
-1. **Zero WebView Overhead:** Angular templates compile and execute against native operating system controls (`AdwApplicationWindow`, `GtkHeaderBar`, `GtkBox`, `GtkGrid`, `GtkFlowBox`, `GtkScrolledWindow`, `GtkLabel`, `GtkPicture`, `GtkLevelBar`, `GtkProgressBar`, `GtkSpinner`, `GtkButton`, `GtkEntry`, `GtkSwitch`, `GtkCheckButton`, `GtkScale`, `GtkDropDown`), delivering sub-second startup and a tiny memory footprint.
+1. **Zero WebView Overhead:** Angular templates compile and execute against native operating system controls (`AdwApplicationWindow`, `GtkHeaderBar`, `GtkBox`, `GtkGrid`, `GtkFlowBox`, `GtkPaned`, `GtkStack`, `GtkExpander`, `GtkScrolledWindow`, `GtkLabel`, `GtkPicture`, `GtkLevelBar`, `GtkProgressBar`, `GtkSpinner`, `GtkButton`, `GtkEntry`, `GtkSwitch`, `GtkCheckButton`, `GtkScale`, `GtkDropDown`), delivering sub-second startup and a tiny memory footprint.
 2. **Rust-Grade Memory Safety Across the JS/Native Boundary:**
    - **Generational Arena (`Arena` + `NodeId`):** JavaScript never holds raw C/GTK pointers. Every native widget is stored inside a Rust generational arena (`index` + `generation`), preventing use-after-free bugs when components unmount.
    - **Runtime Borrow Checker (`BorrowState`):** Enforces Rust's aliasing rules (`Shared(usize)` vs `Exclusive`) at runtime across asynchronous UI events, blocking illegal node destruction while an event callback is actively borrowing a widget.
@@ -32,7 +32,7 @@ A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22
 
 ## 🧩 Native Primitives Catalog
 
-### Implemented Native Primitives (19 Primitives)
+### Implemented Native Primitives (22 Primitives)
 
 | Tag (Aliases)                                          | Category             | Linux (GTK4 / Libadwaita) | Windows (WinUI 3)                            | macOS (AppKit)        | Attributes & Events                                                                                                               |
 | :----------------------------------------------------- | :------------------- | :------------------------ | :------------------------------------------- | :-------------------- | :-------------------------------------------------------------------------------------------------------------------------------- |
@@ -41,6 +41,9 @@ A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22
 | `<ng-box>` (`gtk-box`)                                 | Layout Container     | `GtkBox`                  | `Microsoft.UI.Xaml.Controls.StackPanel`      | `NSStackView`         | `orientation` (`vertical` \| `horizontal`), `spacing` / `gap`                                                                     |
 | `<ng-grid>` (`gtk-grid`)                               | Layout Container     | `GtkGrid`                 | `Microsoft.UI.Xaml.Controls.Grid`            | `NSGridView`          | `spacing` / `gap`, `row-spacing`, `column-spacing`                                                                                |
 | `<ng-flow>` (`ng-flow-box`, `gtk-flow-box`)            | Responsive Layout    | `GtkFlowBox`              | `Microsoft.UI.Xaml.Controls.ItemsRepeater`   | `NSCollectionView`    | `spacing` / `gap`, `row-spacing`, `column-spacing`, `min-children` / `min-per-row`, `max-children` / `max-per-row`, `homogeneous` |
+| `<ng-paned>` (`gtk-paned`)                             | Split Container      | `GtkPaned`                | `Microsoft.UI.Xaml.Controls.SplitView`       | `NSSplitView`         | `orientation` (`horizontal` \| `vertical`), `position` (px), start/end children                                                   |
+| `<ng-stack>` (`gtk-stack`, `adw-navigation-view`)      | Multi-Page Container | `GtkStack`                | `Microsoft.UI.Xaml.Controls.NavigationView`  | `NSTabView`           | `visible-child` / `active-page` (`page_0`...), `transition` / `transition-type`                                                   |
+| `<ng-expander>` (`gtk-expander`)                       | Disclosure Container | `GtkExpander`             | `Microsoft.UI.Xaml.Controls.Expander`        | `NSDisclosureButton`  | `label` / `title`, `expanded` / `open`, `notify::expanded`                                                                        |
 | `<ng-scroll>` (`gtk-scrolled-window`)                  | Scroll Container     | `GtkScrolledWindow`       | `Microsoft.UI.Xaml.Controls.ScrollViewer`    | `NSScrollView`        | `min-height`                                                                                                                      |
 | `<ng-separator>` (`gtk-separator`)                     | Layout Divider       | `GtkSeparator`            | `Microsoft.UI.Xaml.Controls.AppBarSeparator` | `NSBoxSeparator`      | `orientation` (`horizontal` \| `vertical`)                                                                                        |
 | `<ng-label>` (`gtk-label`)                             | Typography           | `GtkLabel`                | `Microsoft.UI.Xaml.Controls.TextBlock`       | `NSTextField`         | text content / `{{ signal() }}`                                                                                                   |
@@ -58,13 +61,9 @@ A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22
 
 > **Common Widget Attributes:** `visible`, `hexpand`, `vexpand`, `halign`, `valign`, `margin`, `margin-top`, `margin-bottom`, `margin-start`, `margin-end` (plus `sensitive` emitted by `@ng-native/forms` `setDisabledState`).
 
-### Pending Primitives (Phase 8 Roadmap)
+### Pending Primitives (Phase 8 Backlog)
 
-- **Priority Containers:**
-  - `<ng-paned>` (`GtkPaned`): Resizable two-pane split container (`orientation`, `position`, start/end child slots).
-  - `<ng-stack>` (`GtkStack` / `AdwNavigationView`): Multi-page view container (`visible-child`, `transition-type`, router integration).
-  - `<ng-expander>` (`GtkExpander`): Collapsible disclosure / accordion container (`label`, `expanded`, `notify::expanded`).
-- **Secondary Form & Adaptive Controls:**
+- **Extended Form & Adaptive Controls:**
   - `<ng-text-view>` (`GtkTextView`), `<ng-password-entry>` (`GtkPasswordEntry`), `<ng-spin-button>` (`GtkSpinButton`), `<ng-search-entry>` (`GtkSearchEntry`), `<ng-clamp>` (`AdwClamp`).
 
 ---
@@ -217,7 +216,7 @@ NG_NATIVE_BATCH=1 cargo run
 | `pnpm run test`                             | Run all 27 Vitest specs for packages and showcase app                |
 | `cargo fmt --all -- --check`                | Verify Rust formatting                                               |
 | `cargo clippy --all-targets -- -D warnings` | Run strict Rust Clippy lints (pedantic + nursery, zero warnings)     |
-| `cargo test`                                | Execute all 25 unit tests + 14 E2E integration tests in Rust         |
+| `cargo test`                                | Execute all 26 unit tests + 15 E2E integration tests in Rust         |
 
 ---
 

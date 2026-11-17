@@ -83,6 +83,22 @@ pub enum WidgetKind {
         fraction: f64,
         indeterminate: bool,
     },
+    Paned {
+        vertical: bool,
+        position: u32,
+        start_child: Option<NodeId>,
+        end_child: Option<NodeId>,
+    },
+    Stack {
+        visible_child: String,
+        transition: String,
+        children: Vec<NodeId>,
+    },
+    Expander {
+        label: String,
+        expanded: bool,
+        child: Option<NodeId>,
+    },
     Anchor {
         comment: String,
     },
@@ -165,6 +181,22 @@ impl WidgetKind {
                 fraction: 0.0,
                 indeterminate: false,
             }),
+            "ng-paned" | "gtk-paned" => Ok(Self::Paned {
+                vertical: false,
+                position: 200,
+                start_child: None,
+                end_child: None,
+            }),
+            "ng-stack" | "gtk-stack" | "adw-navigation-view" => Ok(Self::Stack {
+                visible_child: String::new(),
+                transition: String::from("crossfade"),
+                children: Vec::new(),
+            }),
+            "ng-expander" | "gtk-expander" => Ok(Self::Expander {
+                label: String::new(),
+                expanded: false,
+                child: None,
+            }),
             "ng-anchor" | "#comment" => Ok(Self::Anchor {
                 comment: String::new(),
             }),
@@ -185,7 +217,9 @@ impl WidgetKind {
     pub fn set_text(&mut self, id: NodeId, text: impl Into<String>) -> Result<(), EngineError> {
         match self {
             Self::Window { title, .. } | Self::HeaderBar { title, .. } => *title = text.into(),
-            Self::Button { label } | Self::CheckButton { label, .. } => *label = text.into(),
+            Self::Button { label }
+            | Self::CheckButton { label, .. }
+            | Self::Expander { label, .. } => *label = text.into(),
             Self::Label { text: label_text }
             | Self::Entry {
                 text: label_text, ..
@@ -200,6 +234,8 @@ impl WidgetKind {
             | Self::Scroll { .. }
             | Self::Grid { .. }
             | Self::FlowBox { .. }
+            | Self::Paned { .. }
+            | Self::Stack { .. }
             | Self::Separator { .. }
             | Self::Switch { .. }
             | Self::Slider { .. }
@@ -240,13 +276,26 @@ impl WidgetKind {
                 }
                 Ok(())
             }
-            Self::Scroll { child, .. } => {
+            Self::Scroll { child, .. } | Self::Expander { child, .. } => {
                 *child = Some(child_id);
+                Ok(())
+            }
+            Self::Paned {
+                start_child,
+                end_child,
+                ..
+            } => {
+                if start_child.is_none() || *start_child == Some(child_id) {
+                    *start_child = Some(child_id);
+                } else {
+                    *end_child = Some(child_id);
+                }
                 Ok(())
             }
             Self::Box { children, .. }
             | Self::Grid { children, .. }
             | Self::FlowBox { children, .. }
+            | Self::Stack { children, .. }
             | Self::HeaderBar { children, .. } => {
                 if !children.contains(&child_id) {
                     children.push(child_id);
@@ -279,6 +328,7 @@ impl WidgetKind {
             Self::Box { children, .. }
             | Self::Grid { children, .. }
             | Self::FlowBox { children, .. }
+            | Self::Stack { children, .. }
             | Self::HeaderBar { children, .. } => {
                 children.retain(|c| *c != new_child);
                 if let Some(ref_id) = ref_child {
@@ -292,8 +342,22 @@ impl WidgetKind {
                 }
                 Ok(())
             }
-            Self::Window { child, .. } | Self::Scroll { child, .. } => {
+            Self::Window { child, .. }
+            | Self::Scroll { child, .. }
+            | Self::Expander { child, .. } => {
                 *child = Some(new_child);
+                Ok(())
+            }
+            Self::Paned {
+                start_child,
+                end_child,
+                ..
+            } => {
+                if (ref_child.is_some() && ref_child == *end_child) || start_child.is_none() {
+                    *start_child = Some(new_child);
+                } else {
+                    *end_child = Some(new_child);
+                }
                 Ok(())
             }
             Self::Button { .. }
@@ -327,9 +391,24 @@ impl WidgetKind {
                     Err(EngineError::InvalidNode(child_id))
                 }
             }
-            Self::Scroll { child, .. } => {
+            Self::Scroll { child, .. } | Self::Expander { child, .. } => {
                 if *child == Some(child_id) {
                     *child = None;
+                    Ok(())
+                } else {
+                    Err(EngineError::InvalidNode(child_id))
+                }
+            }
+            Self::Paned {
+                start_child,
+                end_child,
+                ..
+            } => {
+                if *start_child == Some(child_id) {
+                    *start_child = None;
+                    Ok(())
+                } else if *end_child == Some(child_id) {
+                    *end_child = None;
                     Ok(())
                 } else {
                     Err(EngineError::InvalidNode(child_id))
@@ -338,6 +417,7 @@ impl WidgetKind {
             Self::Box { children, .. }
             | Self::Grid { children, .. }
             | Self::FlowBox { children, .. }
+            | Self::Stack { children, .. }
             | Self::HeaderBar { children, .. } => {
                 let before = children.len();
                 children.retain(|c| *c != child_id);
@@ -391,6 +471,9 @@ mod tests {
             "ng-flow",
             "ng-flow-box",
             "gtk-flow-box",
+            "ng-paned",
+            "ng-stack",
+            "ng-expander",
             "ng-anchor",
         ] {
             assert!(WidgetKind::from_tag(tag).is_ok(), "Failed to parse {tag}");
@@ -494,5 +577,72 @@ mod tests {
         if let WidgetKind::Box { children, .. } = &bx {
             assert_eq!(children, &vec![c1]);
         }
+    }
+
+    #[test]
+    fn phase8_container_primitives_manage_children_and_attributes() {
+        let p_id = NodeId {
+            index: 10,
+            generation: 0,
+        };
+        let c1 = NodeId {
+            index: 11,
+            generation: 0,
+        };
+        let c2 = NodeId {
+            index: 12,
+            generation: 0,
+        };
+
+        let mut paned = WidgetKind::from_tag("ng-paned").unwrap();
+        paned.set_attribute("orientation", "vertical");
+        paned.set_attribute("position", "320px");
+        paned.add_child(p_id, c1, false).unwrap();
+        paned.add_child(p_id, c2, false).unwrap();
+        assert!(matches!(
+            paned,
+            WidgetKind::Paned {
+                vertical: true,
+                position: 320,
+                start_child: Some(s),
+                end_child: Some(e),
+            } if s == c1 && e == c2
+        ));
+        paned.remove_child(p_id, c1).unwrap();
+        assert!(matches!(
+            paned,
+            WidgetKind::Paned {
+                start_child: None,
+                end_child: Some(e),
+                ..
+            } if e == c2
+        ));
+
+        let mut stack = WidgetKind::from_tag("ng-stack").unwrap();
+        stack.set_attribute("visible-child", "details");
+        stack.set_attribute("transition", "slide-left");
+        stack.add_child(p_id, c1, false).unwrap();
+        stack.add_child(p_id, c2, false).unwrap();
+        assert!(matches!(
+            stack,
+            WidgetKind::Stack {
+                ref visible_child,
+                ref transition,
+                ref children,
+            } if visible_child == "details" && transition == "slide-left" && children == &vec![c1, c2]
+        ));
+
+        let mut expander = WidgetKind::from_tag("ng-expander").unwrap();
+        expander.set_attribute("label", "Advanced");
+        expander.set_attribute("expanded", "true");
+        expander.add_child(p_id, c1, false).unwrap();
+        assert!(matches!(
+            expander,
+            WidgetKind::Expander {
+                ref label,
+                expanded: true,
+                child: Some(ch),
+            } if label == "Advanced" && ch == c1
+        ));
     }
 }

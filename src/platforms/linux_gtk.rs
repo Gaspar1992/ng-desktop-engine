@@ -30,6 +30,9 @@ pub(super) enum GtkWidgetType {
     Spinner,
     ProgressBar,
     FlowBox,
+    Paned,
+    Stack,
+    Expander,
     Anchor,
 }
 
@@ -116,6 +119,9 @@ impl GtkLinuxBackend {
                         GtkWidgetType::DropDown => {
                             EventPayload::Int(gtk.get_drop_down_selected(handle))
                         }
+                        GtkWidgetType::Expander => {
+                            EventPayload::Bool(gtk.get_expander_expanded(handle))
+                        }
                         _ => EventPayload::None,
                     };
                 }
@@ -162,6 +168,7 @@ impl GtkLinuxBackend {
                     GtkWidgetType::Button => gtk.set_button_label(handle, text),
                     GtkWidgetType::Entry => gtk.set_entry_text(handle, text),
                     GtkWidgetType::CheckButton => gtk.set_check_button_label(handle, text),
+                    GtkWidgetType::Expander => gtk.set_expander_label(handle, text),
                     GtkWidgetType::Image => gtk.set_image_file(handle, text),
                     _ => {}
                 }
@@ -274,6 +281,28 @@ impl GtkLinuxBackend {
                 );
                 (Some(dd), GtkWidgetType::DropDown)
             }
+            _ => match Self::create_extended_native_widget(gtk, id, tag) {
+                Some(pair) => pair,
+                None => return,
+            },
+        };
+        self.widgets.insert(
+            id,
+            NativeGtkWidget {
+                handle,
+                kind,
+                children: Vec::new(),
+                pulsing: false,
+            },
+        );
+    }
+
+    fn create_extended_native_widget(
+        gtk: &Gtk4Sys,
+        id: NodeId,
+        tag: &str,
+    ) -> Option<(Option<GtkHandle>, GtkWidgetType)> {
+        let pair = match tag {
             "ng-image" | "gtk-picture" | "ng-picture" => {
                 (Some(gtk.create_image()), GtkWidgetType::Image)
             }
@@ -287,18 +316,24 @@ impl GtkLinuxBackend {
             "ng-flow" | "ng-flow-box" | "gtk-flow-box" => {
                 (Some(gtk.create_flow_box()), GtkWidgetType::FlowBox)
             }
+            "ng-paned" | "gtk-paned" => (Some(gtk.create_paned()), GtkWidgetType::Paned),
+            "ng-stack" | "gtk-stack" | "adw-navigation-view" => {
+                (Some(gtk.create_stack()), GtkWidgetType::Stack)
+            }
+            "ng-expander" | "gtk-expander" => {
+                let exp = gtk.create_expander();
+                gtk.connect_notify_signal(
+                    exp,
+                    c"notify::expanded",
+                    on_gtk_switch_active_notify,
+                    pack_node_id(id),
+                );
+                (Some(exp), GtkWidgetType::Expander)
+            }
             "ng-anchor" | "#comment" => (None, GtkWidgetType::Anchor),
-            _ => return,
+            _ => return None,
         };
-        self.widgets.insert(
-            id,
-            NativeGtkWidget {
-                handle,
-                kind,
-                children: Vec::new(),
-                pulsing: false,
-            },
-        );
+        Some(pair)
     }
 
     fn apply_append_child(&mut self, parent: NodeId, child: NodeId) {
@@ -323,6 +358,17 @@ impl GtkLinuxBackend {
                 GtkWidgetType::Scroll => gtk.set_scrolled_child(p_h, c_h),
                 GtkWidgetType::Box => gtk.box_append(p_h, c_h),
                 GtkWidgetType::FlowBox => gtk.flow_box_append(p_h, c_h),
+                GtkWidgetType::Paned => {
+                    if child_index == 0 {
+                        gtk.paned_set_start_child(p_h, Some(c_h));
+                    } else {
+                        gtk.paned_set_end_child(p_h, Some(c_h));
+                    }
+                }
+                GtkWidgetType::Stack => {
+                    gtk.stack_add_named(p_h, c_h, &format!("page_{child_index}"));
+                }
+                GtkWidgetType::Expander => gtk.set_expander_child(p_h, Some(c_h)),
                 GtkWidgetType::Grid => {
                     gtk.grid_attach(p_h, c_h, child_index % 2, child_index / 2);
                 }
@@ -387,15 +433,33 @@ impl GtkLinuxBackend {
         ) else {
             return;
         };
-        if parent_w.kind == GtkWidgetType::Box
-            && let (Some(p_h), Some(c_h)) = (parent_w.handle, child_w.handle)
-        {
-            gtk.box_remove(p_h, c_h);
-        }
-        if parent_w.kind == GtkWidgetType::FlowBox
-            && let (Some(p_h), Some(c_h)) = (parent_w.handle, child_w.handle)
-        {
-            gtk.flow_box_remove(p_h, c_h);
+        if let Some(p_h) = parent_w.handle {
+            match parent_w.kind {
+                GtkWidgetType::Box => {
+                    if let Some(c_h) = child_w.handle {
+                        gtk.box_remove(p_h, c_h);
+                    }
+                }
+                GtkWidgetType::FlowBox => {
+                    if let Some(c_h) = child_w.handle {
+                        gtk.flow_box_remove(p_h, c_h);
+                    }
+                }
+                GtkWidgetType::Stack => {
+                    if let Some(c_h) = child_w.handle {
+                        gtk.stack_remove(p_h, c_h);
+                    }
+                }
+                GtkWidgetType::Paned => {
+                    if parent_w.children.first() == Some(&child) {
+                        gtk.paned_set_start_child(p_h, None);
+                    } else {
+                        gtk.paned_set_end_child(p_h, None);
+                    }
+                }
+                GtkWidgetType::Expander => gtk.set_expander_child(p_h, None),
+                _ => {}
+            }
         }
         if let Some(pw) = self.widgets.get_mut(&parent) {
             pw.children.retain(|c| *c != child);
@@ -432,6 +496,9 @@ impl PlatformBackend for GtkLinuxBackend {
             "ng-spinner" | "gtk-spinner" => "GtkSpinner",
             "ng-progress-bar" | "gtk-progress-bar" => "GtkProgressBar",
             "ng-flow" | "ng-flow-box" | "gtk-flow-box" => "GtkFlowBox",
+            "ng-paned" | "gtk-paned" => "GtkPaned",
+            "ng-stack" | "gtk-stack" | "adw-navigation-view" => "GtkStack",
+            "ng-expander" | "gtk-expander" => "GtkExpander",
             "ng-anchor" | "#comment" => "GtkAnchorComment",
             _ => "GtkWidget",
         }

@@ -238,6 +238,101 @@ impl Gtk4Sys {
         }
     }
 
+    pub fn create_paned(&self) -> GtkHandle {
+        unsafe { GtkHandle((self.gtk_paned_new)(GTK_ORIENTATION_HORIZONTAL)) }
+    }
+
+    pub fn paned_set_start_child(&self, paned: GtkHandle, child: Option<GtkHandle>) {
+        let ptr = child.map_or(std::ptr::null_mut(), |h| h.0);
+        unsafe {
+            (self.gtk_paned_set_start_child)(paned.0, ptr);
+        }
+    }
+
+    pub fn paned_set_end_child(&self, paned: GtkHandle, child: Option<GtkHandle>) {
+        let ptr = child.map_or(std::ptr::null_mut(), |h| h.0);
+        unsafe {
+            (self.gtk_paned_set_end_child)(paned.0, ptr);
+        }
+    }
+
+    pub fn set_paned_position(&self, paned: GtkHandle, pos: i32) {
+        unsafe {
+            (self.gtk_paned_set_position)(paned.0, pos);
+        }
+    }
+
+    pub fn create_stack(&self) -> GtkHandle {
+        unsafe { GtkHandle((self.gtk_stack_new)()) }
+    }
+
+    pub fn stack_add_named(&self, stack: GtkHandle, child: GtkHandle, name: &str) {
+        if let Ok(c_name) = CString::new(name) {
+            unsafe {
+                (self.gtk_stack_add_named)(stack.0, child.0, c_name.as_ptr());
+            }
+        }
+    }
+
+    pub fn stack_remove(&self, stack: GtkHandle, child: GtkHandle) {
+        unsafe {
+            (self.gtk_stack_remove)(stack.0, child.0);
+        }
+    }
+
+    pub fn set_stack_visible_child_name(&self, stack: GtkHandle, name: &str) {
+        if let Ok(c_name) = CString::new(name) {
+            unsafe {
+                (self.gtk_stack_set_visible_child_name)(stack.0, c_name.as_ptr());
+            }
+        }
+    }
+
+    pub fn set_stack_transition(&self, stack: GtkHandle, transition: &str) {
+        let code = match transition.trim() {
+            "none" => 0,
+            "slide-right" => 2,
+            "slide-left" => 3,
+            "slide-up" => 4,
+            "slide-down" => 5,
+            "slide-left-right" => 6,
+            "slide-up-down" => 7,
+            _ => 1, // crossfade
+        };
+        unsafe {
+            (self.gtk_stack_set_transition_type)(stack.0, code);
+        }
+    }
+
+    pub fn create_expander(&self) -> GtkHandle {
+        unsafe { GtkHandle((self.gtk_expander_new)(c"".as_ptr())) }
+    }
+
+    pub fn set_expander_label(&self, exp: GtkHandle, label: &str) {
+        if let Ok(c_label) = CString::new(label) {
+            unsafe {
+                (self.gtk_expander_set_label)(exp.0, c_label.as_ptr());
+            }
+        }
+    }
+
+    pub fn set_expander_expanded(&self, exp: GtkHandle, expanded: bool) {
+        unsafe {
+            (self.gtk_expander_set_expanded)(exp.0, i32::from(expanded));
+        }
+    }
+
+    pub fn get_expander_expanded(&self, exp: GtkHandle) -> bool {
+        unsafe { (self.gtk_expander_get_expanded)(exp.0) != 0 }
+    }
+
+    pub fn set_expander_child(&self, exp: GtkHandle, child: Option<GtkHandle>) {
+        let ptr = child.map_or(std::ptr::null_mut(), |h| h.0);
+        unsafe {
+            (self.gtk_expander_set_child)(exp.0, ptr);
+        }
+    }
+
     pub fn set_window_title(&self, win: GtkHandle, title: &str) {
         if let Ok(c_str) = CString::new(title) {
             unsafe {

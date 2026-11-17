@@ -135,6 +135,24 @@ impl<B: PlatformBackend> RenderEngine<B> {
                     "[FlowBox #{idx}:{generation} row_spacing={row_spacing} col_spacing={column_spacing}{class_str}]"
                 )
             }
+            WidgetKind::Paned {
+                vertical, position, ..
+            } => {
+                let dir = if *vertical { "vertical" } else { "horizontal" };
+                format!("[Paned #{idx}:{generation} dir={dir} pos={position}{class_str}]")
+            }
+            WidgetKind::Stack {
+                visible_child,
+                transition,
+                ..
+            } => format!(
+                "[Stack #{idx}:{generation} visible=\"{visible_child}\" transition=\"{transition}\"{class_str}]"
+            ),
+            WidgetKind::Expander {
+                label, expanded, ..
+            } => format!(
+                "[Expander #{idx}:{generation} label=\"{label}\" expanded={expanded}{class_str}]"
+            ),
             WidgetKind::Anchor { comment } => {
                 format!("[Anchor #{idx}:{generation} comment=\"{comment}\"]")
             }
@@ -147,11 +165,23 @@ impl<B: PlatformBackend> RenderEngine<B> {
             WidgetKind::Window {
                 header_bar, child, ..
             } => header_bar.iter().chain(child.iter()).copied().collect(),
-            WidgetKind::Scroll { child, .. } => child.iter().copied().collect(),
+            WidgetKind::Paned {
+                start_child,
+                end_child,
+                ..
+            } => start_child
+                .iter()
+                .chain(end_child.iter())
+                .copied()
+                .collect(),
+            WidgetKind::Scroll { child, .. } | WidgetKind::Expander { child, .. } => {
+                child.iter().copied().collect()
+            }
             WidgetKind::HeaderBar { children, .. }
             | WidgetKind::Box { children, .. }
             | WidgetKind::Grid { children, .. }
-            | WidgetKind::FlowBox { children, .. } => children.clone(),
+            | WidgetKind::FlowBox { children, .. }
+            | WidgetKind::Stack { children, .. } => children.clone(),
             WidgetKind::Separator { .. }
             | WidgetKind::Button { .. }
             | WidgetKind::Label { .. }
@@ -271,10 +301,35 @@ impl<B: PlatformBackend> RenderEngine<B> {
             } => Some(format!(
                 "  [FlowBox row-gap:{row_spacing}px col-gap:{column_spacing}px]"
             )),
+            WidgetKind::Paned {
+                vertical, position, ..
+            } => {
+                let dir = if *vertical { "vertical" } else { "horizontal" };
+                Some(format!("  [Paned dir:{dir}, pos:{position}px]"))
+            }
+            WidgetKind::Stack {
+                visible_child,
+                transition,
+                ..
+            } => Some(format!(
+                "  [Stack active:\"{visible_child}\", transition:{transition}]"
+            )),
+            WidgetKind::Expander {
+                label, expanded, ..
+            } => {
+                let arrow = if *expanded { "▼" } else { "▶" };
+                Some(format!("  [Expander {arrow} {label}]"))
+            }
             WidgetKind::Separator { .. } => {
                 let sep = "─".repeat(width.saturating_sub(4));
                 Some(format!("  {sep}"))
             }
+            other => Self::format_leaf_preview_line(other, style_summary),
+        }
+    }
+
+    fn format_leaf_preview_line(widget: &WidgetKind, style_summary: &str) -> Option<String> {
+        match widget {
             WidgetKind::Label { text } => Some(if style_summary.is_empty() {
                 format!("  {text}")
             } else {
@@ -322,9 +377,7 @@ impl<B: PlatformBackend> RenderEngine<B> {
             WidgetKind::LevelBar { value, max, .. } => {
                 Some(format!("  [LevelBar: {value:.0}/{max:.0}]{style_summary}"))
             }
-            WidgetKind::Window { .. } | WidgetKind::Scroll { .. } | WidgetKind::Anchor { .. } => {
-                None
-            }
+            _ => None,
         }
     }
 

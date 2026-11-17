@@ -107,6 +107,44 @@ impl GtkLinuxBackend {
                 gtk.set_flow_box_homogeneous(handle, value != "false" && value != "0");
                 true
             }
+            _ => Self::apply_phase8_container_attribute(gtk, kind, handle, key, value),
+        }
+    }
+
+    fn apply_phase8_container_attribute(
+        gtk: &Gtk4Sys,
+        kind: GtkWidgetType,
+        handle: GtkHandle,
+        key: &str,
+        value: &str,
+    ) -> bool {
+        match (kind, key) {
+            (GtkWidgetType::Paned, "orientation") => {
+                gtk.set_orientation(handle, value == "vertical");
+                true
+            }
+            (GtkWidgetType::Paned, "position") => {
+                if let Some(px) = Self::parse_px_i32(value) {
+                    gtk.set_paned_position(handle, px);
+                }
+                true
+            }
+            (GtkWidgetType::Stack, "visible-child" | "active-page") => {
+                gtk.set_stack_visible_child_name(handle, value);
+                true
+            }
+            (GtkWidgetType::Stack, "transition" | "transition-type") => {
+                gtk.set_stack_transition(handle, value);
+                true
+            }
+            (GtkWidgetType::Expander, "label" | "title") => {
+                gtk.set_expander_label(handle, value);
+                true
+            }
+            (GtkWidgetType::Expander, "expanded" | "open") => {
+                gtk.set_expander_expanded(handle, value == "true" || value == "1");
+                true
+            }
             _ => false,
         }
     }
