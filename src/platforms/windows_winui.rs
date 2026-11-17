@@ -46,9 +46,11 @@ impl WinUiBackend {
             "ng-slider" | "ng-scale" | "gtk-scale" => "Microsoft.UI.Xaml.Controls.Slider",
             "ng-select" | "ng-dropdown" | "gtk-drop-down" => "Microsoft.UI.Xaml.Controls.ComboBox",
             "ng-image" | "gtk-picture" | "ng-picture" => "Microsoft.UI.Xaml.Controls.Image",
-            "ng-level-bar" | "gtk-level-bar" | "ng-progress-bar" => {
+            // WinUI has no read-only meter control: both map to ProgressBar.
+            "ng-level-bar" | "gtk-level-bar" | "ng-progress-bar" | "gtk-progress-bar" => {
                 "Microsoft.UI.Xaml.Controls.ProgressBar"
             }
+            "ng-spinner" | "gtk-spinner" => "Microsoft.UI.Xaml.Controls.ProgressRing",
             "ng-flow" | "ng-flow-box" | "gtk-flow-box" => {
                 "Microsoft.UI.Xaml.Controls.ItemsRepeater"
             }

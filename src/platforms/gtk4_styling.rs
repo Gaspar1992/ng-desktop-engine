@@ -116,6 +116,13 @@ impl GtkLinuxBackend {
             return;
         };
         let Some(handle) = widget.handle else { return };
+        if key == "indeterminate" && widget.kind == GtkWidgetType::ProgressBar {
+            let pulsing = value != "false" && value != "0";
+            if let Some(w) = self.widgets.get_mut(&node) {
+                w.pulsing = pulsing;
+            }
+            return;
+        }
         if Self::apply_container_attribute(gtk, widget.kind, handle, key, value) {
             return;
         }
@@ -211,6 +218,14 @@ impl GtkLinuxBackend {
             (GtkWidgetType::Image, "height") => {
                 if let Some(h) = Self::parse_px_i32(value) {
                     gtk.set_size_request(handle, -1, h);
+                }
+            }
+            (GtkWidgetType::Spinner, "active") => {
+                gtk.set_spinner_active(handle, value != "false" && value != "0");
+            }
+            (GtkWidgetType::ProgressBar, "value") => {
+                if let Ok(v) = value.trim().parse::<f64>() {
+                    gtk.set_progress_fraction(handle, v.clamp(0.0, 1.0));
                 }
             }
             (GtkWidgetType::LevelBar, "value") => {

@@ -157,6 +157,36 @@ impl Gtk4Sys {
         }
     }
 
+    pub fn create_spinner(&self) -> GtkHandle {
+        unsafe {
+            let spinner = (self.gtk_spinner_new)();
+            (self.gtk_spinner_set_spinning)(spinner, 1);
+            GtkHandle(spinner)
+        }
+    }
+
+    pub fn set_spinner_active(&self, spinner: GtkHandle, active: bool) {
+        unsafe {
+            (self.gtk_spinner_set_spinning)(spinner.0, i32::from(active));
+        }
+    }
+
+    pub fn create_progress_bar(&self) -> GtkHandle {
+        unsafe { GtkHandle((self.gtk_progress_bar_new)()) }
+    }
+
+    pub fn set_progress_fraction(&self, bar: GtkHandle, fraction: f64) {
+        unsafe {
+            (self.gtk_progress_bar_set_fraction)(bar.0, fraction);
+        }
+    }
+
+    pub fn pulse_progress_bar(&self, bar: GtkHandle) {
+        unsafe {
+            (self.gtk_progress_bar_pulse)(bar.0);
+        }
+    }
+
     pub fn create_flow_box(&self) -> GtkHandle {
         unsafe {
             let flow = (self.gtk_flow_box_new)();

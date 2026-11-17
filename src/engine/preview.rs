@@ -98,12 +98,32 @@ impl<B: PlatformBackend> RenderEngine<B> {
                     "[DropDown #{idx}:{generation} selected={selected} options={options:?}{class_str}]"
                 )
             }
+            other => Self::format_tree_display_header(id, other, class_str),
+        }
+    }
+
+    /// Header lines for display-only / leaf widgets (split out to keep each match readable).
+    fn format_tree_display_header(id: NodeId, widget: &WidgetKind, class_str: &str) -> String {
+        let idx = id.index;
+        let generation = id.generation;
+        match widget {
             WidgetKind::Image { src, width, height } => {
                 format!("[Image #{idx}:{generation} src=\"{src}\" {width}x{height}{class_str}]")
             }
             WidgetKind::LevelBar { value, min, max } => {
                 format!(
                     "[LevelBar #{idx}:{generation} value={value} range={min}..{max}{class_str}]"
+                )
+            }
+            WidgetKind::Spinner { active } => {
+                format!("[Spinner #{idx}:{generation} active={active}{class_str}]")
+            }
+            WidgetKind::ProgressBar {
+                fraction,
+                indeterminate,
+            } => {
+                format!(
+                    "[ProgressBar #{idx}:{generation} fraction={fraction} indeterminate={indeterminate}{class_str}]"
                 )
             }
             WidgetKind::FlowBox {
@@ -118,6 +138,7 @@ impl<B: PlatformBackend> RenderEngine<B> {
             WidgetKind::Anchor { comment } => {
                 format!("[Anchor #{idx}:{generation} comment=\"{comment}\"]")
             }
+            other => format!("[{other:?}]"),
         }
     }
 
@@ -136,6 +157,8 @@ impl<B: PlatformBackend> RenderEngine<B> {
             | WidgetKind::Label { .. }
             | WidgetKind::Image { .. }
             | WidgetKind::LevelBar { .. }
+            | WidgetKind::Spinner { .. }
+            | WidgetKind::ProgressBar { .. }
             | WidgetKind::Entry { .. }
             | WidgetKind::Switch { .. }
             | WidgetKind::CheckButton { .. }
@@ -284,6 +307,18 @@ impl<B: PlatformBackend> RenderEngine<B> {
             WidgetKind::Image { src, width, height } => Some(format!(
                 "  [Image: \"{src}\" ({width}x{height})]{style_summary}"
             )),
+            WidgetKind::Spinner { active } => {
+                let state = if *active { "spinning" } else { "stopped" };
+                Some(format!("  [Spinner: {state}]"))
+            }
+            WidgetKind::ProgressBar {
+                fraction,
+                indeterminate,
+            } => Some(if *indeterminate {
+                String::from("  [ProgressBar: indeterminate]")
+            } else {
+                format!("  [ProgressBar: {:.0}%]", fraction * 100.0)
+            }),
             WidgetKind::LevelBar { value, max, .. } => {
                 Some(format!("  [LevelBar: {value:.0}/{max:.0}]{style_summary}"))
             }

@@ -27,6 +27,8 @@ pub(super) enum GtkWidgetType {
     DropDown,
     Image,
     LevelBar,
+    Spinner,
+    ProgressBar,
     FlowBox,
     Anchor,
 }
@@ -35,6 +37,8 @@ pub(super) struct NativeGtkWidget {
     pub(super) handle: Option<GtkHandle>,
     pub(super) kind: GtkWidgetType,
     pub(super) children: Vec<NodeId>,
+    /// Indeterminate progress bars are pulsed from the event pump (GTK has no auto-pulse).
+    pub(super) pulsing: bool,
 }
 
 /// Concrete Linux GTK4 + Libadwaita platform adapter backed by `libgtk-4.so.1`.
@@ -44,6 +48,7 @@ pub struct GtkLinuxBackend {
     pub(super) widgets: HashMap<NodeId, NativeGtkWidget>,
     pub(super) styles: HashMap<StyleId, StyleRule>,
     pub(super) header_titles: HashMap<NodeId, (String, String)>,
+    pulse_tick: std::cell::Cell<u32>,
 }
 
 impl Default for GtkLinuxBackend {
@@ -60,6 +65,7 @@ impl GtkLinuxBackend {
             widgets: HashMap::new(),
             styles: HashMap::new(),
             header_titles: HashMap::new(),
+            pulse_tick: std::cell::Cell::new(0),
         }
     }
 
@@ -83,6 +89,18 @@ impl GtkLinuxBackend {
             gtk.step_main_context(may_block);
         }
         let mut events = drain_pending_events();
+        // ~60ms cadence at the 16ms pump rate: keeps indeterminate bars animating.
+        let tick = self.pulse_tick.get().wrapping_add(1);
+        self.pulse_tick.set(tick);
+        if tick.is_multiple_of(4)
+            && let Some(gtk) = &self.gtk
+        {
+            for widget in self.widgets.values().filter(|w| w.pulsing) {
+                if let Some(handle) = widget.handle {
+                    gtk.pulse_progress_bar(handle);
+                }
+            }
+        }
         if let Some(gtk) = &self.gtk {
             for ev in &mut events {
                 if let Some(widget) = self.widgets.get(&ev.node)
@@ -123,6 +141,7 @@ impl GtkLinuxBackend {
                         handle: None,
                         kind: GtkWidgetType::Anchor,
                         children: Vec::new(),
+                        pulsing: false,
                     },
                 );
             }
@@ -258,8 +277,12 @@ impl GtkLinuxBackend {
             "ng-image" | "gtk-picture" | "ng-picture" => {
                 (Some(gtk.create_image()), GtkWidgetType::Image)
             }
-            "ng-level-bar" | "gtk-level-bar" | "ng-progress-bar" => {
+            "ng-level-bar" | "gtk-level-bar" => {
                 (Some(gtk.create_level_bar()), GtkWidgetType::LevelBar)
+            }
+            "ng-spinner" | "gtk-spinner" => (Some(gtk.create_spinner()), GtkWidgetType::Spinner),
+            "ng-progress-bar" | "gtk-progress-bar" => {
+                (Some(gtk.create_progress_bar()), GtkWidgetType::ProgressBar)
             }
             "ng-flow" | "ng-flow-box" | "gtk-flow-box" => {
                 (Some(gtk.create_flow_box()), GtkWidgetType::FlowBox)
@@ -273,6 +296,7 @@ impl GtkLinuxBackend {
                 handle,
                 kind,
                 children: Vec::new(),
+                pulsing: false,
             },
         );
     }
@@ -404,7 +428,9 @@ impl PlatformBackend for GtkLinuxBackend {
             "ng-slider" | "ng-scale" | "gtk-scale" => "GtkScale",
             "ng-select" | "ng-dropdown" | "gtk-drop-down" => "GtkDropDown",
             "ng-image" | "gtk-picture" | "ng-picture" => "GtkPicture",
-            "ng-level-bar" | "gtk-level-bar" | "ng-progress-bar" => "GtkLevelBar",
+            "ng-level-bar" | "gtk-level-bar" => "GtkLevelBar",
+            "ng-spinner" | "gtk-spinner" => "GtkSpinner",
+            "ng-progress-bar" | "gtk-progress-bar" => "GtkProgressBar",
             "ng-flow" | "ng-flow-box" | "gtk-flow-box" => "GtkFlowBox",
             "ng-anchor" | "#comment" => "GtkAnchorComment",
             _ => "GtkWidget",

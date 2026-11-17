@@ -158,6 +158,12 @@ impl WidgetKind {
                 }
                 _ => {}
             },
+            _ => self.set_display_attribute(key, value),
+        }
+    }
+
+    fn set_display_attribute(&mut self, key: &str, value: &str) {
+        match self {
             Self::Image { src, width, height } => match key {
                 "src" => value.clone_into(src),
                 "width" => {
@@ -192,6 +198,23 @@ impl WidgetKind {
                         *max = m;
                     }
                 }
+                _ => {}
+            },
+            Self::Spinner { active } => {
+                if key == "active" {
+                    *active = value != "false" && value != "0";
+                }
+            }
+            Self::ProgressBar {
+                fraction,
+                indeterminate,
+            } => match key {
+                "value" => {
+                    if let Ok(v) = value.trim().parse::<f64>() {
+                        *fraction = v.clamp(0.0, 1.0);
+                    }
+                }
+                "indeterminate" => *indeterminate = value != "false" && value != "0",
                 _ => {}
             },
             _ => {}

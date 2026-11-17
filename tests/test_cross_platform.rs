@@ -12,6 +12,9 @@ fn cross_platform_factory_supports_linux_windows_and_macos() {
     let linux = AnyPlatformBackend::from_target("linux-gtk4").unwrap();
     assert_eq!(linux.map_native_widget("ng-window"), "AdwApplicationWindow");
     assert_eq!(linux.map_native_widget("ng-flow"), "GtkFlowBox");
+    assert_eq!(linux.map_native_widget("ng-spinner"), "GtkSpinner");
+    assert_eq!(linux.map_native_widget("ng-progress-bar"), "GtkProgressBar");
+    assert_eq!(linux.map_native_widget("ng-level-bar"), "GtkLevelBar");
 
     let windows = AnyPlatformBackend::from_target("windows-winui").unwrap();
     assert_eq!(
@@ -26,6 +29,7 @@ fn cross_platform_factory_supports_linux_windows_and_macos() {
     let macos = AnyPlatformBackend::from_target("macos-appkit").unwrap();
     assert_eq!(macos.map_native_widget("ng-window"), "NSWindow");
     assert_eq!(macos.map_native_widget("ng-flow"), "NSCollectionView");
+    assert_eq!(macos.map_native_widget("ng-spinner"), "NSProgressIndicator");
 }
 
 #[test]

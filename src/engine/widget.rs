@@ -76,6 +76,13 @@ pub enum WidgetKind {
         homogeneous: bool,
         children: Vec<NodeId>,
     },
+    Spinner {
+        active: bool,
+    },
+    ProgressBar {
+        fraction: f64,
+        indeterminate: bool,
+    },
     Anchor {
         comment: String,
     },
@@ -140,7 +147,7 @@ impl WidgetKind {
                 width: 0,
                 height: 0,
             }),
-            "ng-level-bar" | "gtk-level-bar" | "ng-progress-bar" => Ok(Self::LevelBar {
+            "ng-level-bar" | "gtk-level-bar" => Ok(Self::LevelBar {
                 value: 0.0,
                 min: 0.0,
                 max: 255.0,
@@ -152,6 +159,11 @@ impl WidgetKind {
                 max_children_per_line: 0,
                 homogeneous: false,
                 children: Vec::new(),
+            }),
+            "ng-spinner" | "gtk-spinner" => Ok(Self::Spinner { active: true }),
+            "ng-progress-bar" | "gtk-progress-bar" => Ok(Self::ProgressBar {
+                fraction: 0.0,
+                indeterminate: false,
             }),
             "ng-anchor" | "#comment" => Ok(Self::Anchor {
                 comment: String::new(),
@@ -192,7 +204,9 @@ impl WidgetKind {
             | Self::Switch { .. }
             | Self::Slider { .. }
             | Self::DropDown { .. }
-            | Self::LevelBar { .. } => {
+            | Self::LevelBar { .. }
+            | Self::Spinner { .. }
+            | Self::ProgressBar { .. } => {
                 return Err(EngineError::InvalidParent(id));
             }
         }
@@ -243,6 +257,8 @@ impl WidgetKind {
             | Self::Label { .. }
             | Self::Image { .. }
             | Self::LevelBar { .. }
+            | Self::Spinner { .. }
+            | Self::ProgressBar { .. }
             | Self::Separator { .. }
             | Self::Entry { .. }
             | Self::Switch { .. }
@@ -284,6 +300,8 @@ impl WidgetKind {
             | Self::Label { .. }
             | Self::Image { .. }
             | Self::LevelBar { .. }
+            | Self::Spinner { .. }
+            | Self::ProgressBar { .. }
             | Self::Separator { .. }
             | Self::Entry { .. }
             | Self::Switch { .. }
@@ -333,6 +351,8 @@ impl WidgetKind {
             | Self::Label { .. }
             | Self::Image { .. }
             | Self::LevelBar { .. }
+            | Self::Spinner { .. }
+            | Self::ProgressBar { .. }
             | Self::Separator { .. }
             | Self::Entry { .. }
             | Self::Switch { .. }
@@ -366,6 +386,8 @@ mod tests {
             "ng-select",
             "ng-image",
             "ng-level-bar",
+            "ng-spinner",
+            "ng-progress-bar",
             "ng-flow",
             "ng-flow-box",
             "gtk-flow-box",
@@ -405,6 +427,40 @@ mod tests {
         let mut sw = WidgetKind::from_tag("ng-switch").unwrap();
         sw.set_attribute("active", "true");
         assert!(matches!(sw, WidgetKind::Switch { active: true }));
+    }
+
+    #[test]
+    fn feedback_primitives_parse_clamp_and_stay_leaf_nodes() {
+        let mut spinner = WidgetKind::from_tag("ng-spinner").unwrap();
+        assert!(matches!(spinner, WidgetKind::Spinner { active: true }));
+        spinner.set_attribute("active", "false");
+        assert!(matches!(spinner, WidgetKind::Spinner { active: false }));
+
+        let mut bar = WidgetKind::from_tag("ng-progress-bar").unwrap();
+        bar.set_attribute("value", "1.7");
+        bar.set_attribute("indeterminate", "true");
+        assert!(matches!(
+            bar,
+            WidgetKind::ProgressBar {
+                fraction,
+                indeterminate: true
+            } if (fraction - 1.0).abs() < f64::EPSILON
+        ));
+
+        // `ng-progress-bar` is no longer an alias of the level meter.
+        assert!(matches!(
+            WidgetKind::from_tag("ng-level-bar").unwrap(),
+            WidgetKind::LevelBar { .. }
+        ));
+
+        let id = NodeId {
+            index: 1,
+            generation: 0,
+        };
+        assert_eq!(
+            spinner.add_child(id, id, false).unwrap_err(),
+            EngineError::InvalidParent(id)
+        );
     }
 
     #[test]

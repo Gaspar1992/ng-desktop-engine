@@ -42,7 +42,10 @@ impl MacOsAppKitBackend {
             "ng-slider" | "ng-scale" | "gtk-scale" => "NSSlider",
             "ng-select" | "ng-dropdown" | "gtk-drop-down" => "NSPopUpButton",
             "ng-image" | "gtk-picture" | "ng-picture" => "NSImageView",
-            "ng-level-bar" | "gtk-level-bar" | "ng-progress-bar" => "NSLevelIndicator",
+            "ng-level-bar" | "gtk-level-bar" => "NSLevelIndicator",
+            "ng-spinner" | "gtk-spinner" | "ng-progress-bar" | "gtk-progress-bar" => {
+                "NSProgressIndicator"
+            }
             "ng-flow" | "ng-flow-box" | "gtk-flow-box" => "NSCollectionView",
             _ => "NSView",
         }
