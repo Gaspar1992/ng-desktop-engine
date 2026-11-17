@@ -13,7 +13,7 @@ pub fn load_or_build_test_bundle(output_path: &str) -> String {
     }
 
     let _ = Command::new("node")
-        .arg("examples/counter-app/build-bundle.mjs")
+        .arg("packages/builders-native/src/build-bundle.mjs")
         .status();
 
     fs::read_to_string(&bundle_path)

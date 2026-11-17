@@ -1,10 +1,13 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { watchBundle } from './build-bundle.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const rootDir = resolve(__dirname, '../..');
+const rootDir = existsSync(resolve(process.cwd(), 'angular.json'))
+  ? process.cwd()
+  : resolve(__dirname, '../../..');
 
 const watcher = watchBundle();
 

@@ -56,7 +56,7 @@ fn ensure_bundle_compiled(bundle_path: &str) -> String {
             "[NgNative CLI] Bundle not found at '{bundle_path}'. Auto-compiling via build-bundle.mjs..."
         );
         let _ = Command::new("node")
-            .arg("examples/counter-app/build-bundle.mjs")
+            .arg("packages/builders-native/src/build-bundle.mjs")
             .status();
     }
     fs::read_to_string(bundle_path).unwrap_or_else(|_| {

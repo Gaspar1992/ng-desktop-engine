@@ -1,4 +1,4 @@
-import { emitStyleInstruction, parseStylesCss } from '../../style-compiler.mjs';
+import { emitStyleInstruction, parseStylesCss } from './style-compiler.mjs';
 
 describe('Native style compiler (postcss AST)', () => {
   it('maps standard CSS units, gap, radius and typography into the Style IR', () => {

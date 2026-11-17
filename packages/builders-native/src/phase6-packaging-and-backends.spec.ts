@@ -1,17 +1,38 @@
-import { createNativeTargetConfig, executeNativeBuilder } from '@ng-native/builders';
-import { parseTemplateHtml } from '../../template-compiler.mjs';
+import {
+  createNativeTargetConfig,
+  executeNativeBuilder,
+  parseTemplateHtml,
+  resolveNativeBuilderConfig,
+} from '@ng-native/builders';
 
 describe('Phase 6 — @ng-native/builders & Distribution Orchestration', () => {
-  it('generates angular.json architect.native target configuration with defaults', () => {
+  it('generates minimal angular.json architect.native config with OS/CPU defaults', () => {
     const cfg = createNativeTargetConfig({
-      targetPlatform: 'linux-gtk4',
-      outputPath: 'dist/ng-linux-counter',
+      os: 'linux',
+      arch: 'x86_64',
     });
 
-    expect(cfg.builder).toBe('@ng-native/builders:build');
-    expect(cfg.options.targetPlatform).toBe('linux-gtk4');
-    expect(cfg.options.jsEngine).toBe('jsc');
-    expect(cfg.options.packageFormats).toEqual(['deb', 'appimage', 'flatpak']);
+    expect(cfg.builder).toBe('@ng-native/builders:application');
+    expect(cfg.options.os).toBe('linux');
+    expect(cfg.options.arch).toBe('x86_64');
+
+    const resolvedWin = resolveNativeBuilderConfig('my-win-app', {
+      os: 'windows',
+      arch: 'aarch64',
+      cpu: 'neon',
+    });
+    expect(resolvedWin.targetPlatform).toBe('windows-winui');
+    expect(resolvedWin.jsEngine).toBe('quickjs');
+    expect(resolvedWin.rustTargetTriple).toBe('aarch64-pc-windows-msvc');
+    expect(resolvedWin.outputPath).toBe('dist/my-win-app');
+
+    const resolvedMac = resolveNativeBuilderConfig('my-mac-app', {
+      os: 'macos',
+      arch: 'universal',
+    });
+    expect(resolvedMac.targetPlatform).toBe('macos-appkit');
+    expect(resolvedMac.jsEngine).toBe('jsc');
+    expect(resolvedMac.rustTargetTriple).toBe('universal-apple-darwin');
   });
 
   it('executes builder pipeline and produces .deb, AppImage, and Flatpak artifact paths', () => {

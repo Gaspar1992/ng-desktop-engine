@@ -3,7 +3,8 @@ import {
   ensureNgNativeBridge,
   NativeRendererFactory2,
 } from '@ng-native/platform';
-import { App } from './app';
+
+class TestRootComponent {}
 
 describe('@ng-native/platform — NativeRenderer2 & Bridge', () => {
   beforeEach(() => {
@@ -68,8 +69,8 @@ describe('@ng-native/platform — NativeRenderer2 & Bridge', () => {
   });
 
   it('bootstraps an Angular root component with provideNativePlatform()', () => {
-    const ctx = bootstrapNativeApplication(App);
-    expect(ctx.rootComponent).toBe(App);
+    const ctx = bootstrapNativeApplication(TestRootComponent);
+    expect(ctx.rootComponent).toBe(TestRootComponent);
     expect(ctx.config.providers.length).toBeGreaterThan(0);
   });
 });

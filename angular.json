@@ -1,5 +1,5 @@
 {
-  "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
+  "$schema": "./packages/builders-native/schema/angular-native-schema.json",
   "version": 1,
   "cli": {
     "packageManager": "pnpm"
@@ -51,12 +51,24 @@
           "defaultConfiguration": "production"
         },
         "native": {
-          "builder": "@ng-native/builders:engine",
+          "builder": "@ng-native/builders:application",
           "options": {
-            "targetPlatform": "linux-gtk4",
-            "jsEngine": "jsc",
-            "outputPath": "dist/ng-linux-counter",
-            "main": "examples/counter-app/src/main.ts"
+            "os": "linux",
+            "arch": "x86_64"
+          },
+          "configurations": {
+            "linux-arm64": {
+              "os": "linux",
+              "arch": "aarch64"
+            },
+            "windows-x64": {
+              "os": "windows",
+              "arch": "x86_64"
+            },
+            "macos-universal": {
+              "os": "macos",
+              "arch": "universal"
+            }
           }
         },
         "serve": {
@@ -74,7 +86,8 @@
         "test": {
           "builder": "@angular/build:unit-test",
           "options": {
-            "tsConfig": "tsconfig.spec.json"
+            "tsConfig": "tsconfig.spec.json",
+            "include": ["**/*.spec.ts", "../../../packages/**/*.spec.ts"]
           }
         }
       }

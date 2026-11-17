@@ -1,6 +1,6 @@
 import { unlinkSync } from 'node:fs';
 import net from 'node:net';
-import { pingHmr, pushHmrEval, pushHmrReload, sendHmrMessage } from '../../hmr-client.mjs';
+import { pingHmr, pushHmrEval, pushHmrReload, sendHmrMessage } from './hmr-client.mjs';
 
 describe('HMR IPC Client (Node.js)', () => {
   const testSocket = `/tmp/ng-native-hmr-vitest-${process.pid}.sock`;

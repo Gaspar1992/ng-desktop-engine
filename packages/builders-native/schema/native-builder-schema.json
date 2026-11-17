@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Angular Native Application Builder Options",
+  "type": "object",
+  "properties": {
+    "os": {
+      "type": "string",
+      "enum": ["auto", "linux", "windows", "macos"],
+      "default": "auto",
+      "description": "Target desktop operating system. Defaults to the current host OS and derives the native toolkit automatically."
+    },
+    "arch": {
+      "type": "string",
+      "enum": ["auto", "x86_64", "aarch64", "universal"],
+      "default": "auto",
+      "description": "Target CPU architecture for the compiled native binary."
+    },
+    "cpu": {
+      "type": "string",
+      "enum": ["auto", "native", "baseline", "avx2", "neon"],
+      "default": "auto",
+      "description": "Target CPU instruction profile for ahead-of-time Rust codegen."
+    },
+    "targetPlatform": {
+      "type": "string",
+      "enum": ["linux-gtk4", "windows-winui", "macos-appkit"],
+      "description": "Optional explicit native UI backend override (derived automatically from 'os' when omitted)."
+    },
+    "jsEngine": {
+      "type": "string",
+      "enum": ["jsc", "quickjs"],
+      "description": "Optional embedded JavaScript engine override (defaults to 'jsc' on Linux/macOS and 'quickjs' on Windows)."
+    },
+    "outputPath": {
+      "type": "string",
+      "description": "Optional output directory override (defaults to 'dist/<projectName>' inherited from architect.build)."
+    },
+    "main": {
+      "type": "string",
+      "description": "Optional main entrypoint override (inherited from architect.build.options.browser)."
+    },
+    "packageFormats": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["deb", "appimage", "flatpak", "msi", "dmg"]
+      },
+      "description": "Distribution package formats emitted by the native packager."
+    }
+  },
+  "additionalProperties": false
+}

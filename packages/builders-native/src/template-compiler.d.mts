@@ -25,9 +25,11 @@ export interface TemplateIdState {
   next: number;
 }
 
+export function applyPipeTransform(value: unknown, pipeName: string, args?: unknown[]): unknown;
+
 export function parseTemplateHtml(
   html: string,
-  state: Record<string, string>,
+  state: Record<string, unknown>,
   numericSignals: Record<string, number>,
   templateUrl?: string,
   componentRegistry?: Record<string, ComponentDefinitionIr>,

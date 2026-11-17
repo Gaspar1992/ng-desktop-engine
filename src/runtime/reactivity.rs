@@ -18,6 +18,24 @@ pub(super) enum HandlerAction {
     SetText { node_var: String, text: String },
 }
 
+fn format_bound_template(template: &str, rendered_value: &str) -> String {
+    if template.contains("{|uppercase}") {
+        template.replace("{|uppercase}", &rendered_value.to_uppercase())
+    } else if template.contains("{|lowercase}") {
+        template.replace("{|lowercase}", &rendered_value.to_lowercase())
+    } else if template.contains("{|titlecase}") {
+        template.replace("{|titlecase}", &rendered_value.to_uppercase())
+    } else if template.contains("{|percent}") {
+        let pct = rendered_value.parse::<f64>().map_or_else(
+            |_| rendered_value.to_string(),
+            |v| format!("{}%", v * 100.0),
+        );
+        template.replace("{|percent}", &pct)
+    } else {
+        template.replace("{}", rendered_value)
+    }
+}
+
 /// Reactivity (SRP): Signal state mutation, binding propagation, and handler registration.
 impl JsRuntime {
     pub(super) fn execute_handler_action<B: PlatformBackend>(
@@ -72,7 +90,8 @@ impl JsRuntime {
             .filter(|b| b.signal_name == signal_name)
         {
             let target_id = self.resolve_var(&binding.node_var)?;
-            engine.set_text(target_id, binding.template.replace("{}", &rendered_value))?;
+            let text = format_bound_template(&binding.template, &rendered_value);
+            engine.set_text(target_id, text)?;
         }
         Ok(())
     }
@@ -90,5 +109,20 @@ impl JsRuntime {
         engine.listen(node_id, event_name, listener_id)?;
         self.handlers.insert(listener_id, action);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_bound_template;
+
+    #[test]
+    fn formats_pipe_placeholders_for_reactive_signal_updates() {
+        assert_eq!(format_bound_template("ID: {}", "25"), "ID: 25");
+        assert_eq!(
+            format_bound_template("Name: {|uppercase}", "pikachu"),
+            "Name: PIKACHU"
+        );
+        assert_eq!(format_bound_template("Rate: {|percent}", "2"), "Rate: 200%");
     }
 }

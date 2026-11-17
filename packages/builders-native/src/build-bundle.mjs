@@ -1,22 +1,51 @@
-import { existsSync, mkdirSync, readFileSync, watch, writeFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  watch,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractComponentMetadata } from './ast-metadata-extractor.mjs';
-import { buildMultiResolutionIcons } from './icon-compiler.mjs';
 import { pushHmrReload } from './hmr-client.mjs';
+import { buildMultiResolutionIcons } from './icon-compiler.mjs';
 import { emitStyleInstruction, parseStylesCss } from './style-compiler.mjs';
 import { parseTemplateHtml } from './template-compiler.mjs';
 
 export { extractComponentMetadata, parseStylesCss, parseTemplateHtml, pushHmrReload };
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const rootDir = resolve(__dirname, '../..');
+
+function resolveWorkspaceRoot() {
+  const cwd = process.cwd();
+  if (existsSync(resolve(cwd, 'angular.json'))) {
+    return cwd;
+  }
+  return resolve(__dirname, '../../..');
+}
 
 function mapNativeEventName(evtName) {
   if (evtName === 'click') return 'clicked';
   if (evtName === 'change') return 'toggled';
   if (evtName === 'valueChange') return 'value-changed';
   return evtName;
+}
+
+function collectComponentTsFiles(dirPath, rootAppDir, out = []) {
+  if (!existsSync(dirPath)) return out;
+  for (const entry of readdirSync(dirPath)) {
+    const full = resolve(dirPath, entry);
+    const stat = statSync(full);
+    if (stat.isDirectory()) {
+      collectComponentTsFiles(full, rootAppDir, out);
+    } else if (entry.endsWith('.ts') && !entry.endsWith('.spec.ts') && entry !== 'app.ts') {
+      out.push(relative(rootAppDir, full));
+    }
+  }
+  return out;
 }
 
 /**
@@ -102,10 +131,14 @@ export function emitNgbBundle(
 }
 
 export function compileBundle({ rebuildIcons = true } = {}) {
+  const rootDir = resolveWorkspaceRoot();
   const angularConfig = JSON.parse(readFileSync(resolve(rootDir, 'angular.json'), 'utf8'));
   const projectName = angularConfig.defaultProject || Object.keys(angularConfig.projects)[0];
   const projectCfg = angularConfig.projects[projectName];
-  const nativeOptions = projectCfg.architect.native?.options || projectCfg.architect.build.options;
+  const buildOptions = projectCfg.architect.build?.options || {};
+  const nativeOptions = projectCfg.architect.native?.options || {};
+  const resolvedOutputPath =
+    nativeOptions.outputPath || buildOptions.outputPath || `dist/${projectName}`;
 
   const appDir = resolve(rootDir, projectCfg.sourceRoot, 'app');
   const tsSource = readFileSync(resolve(appDir, 'app.ts'), 'utf8');
@@ -122,14 +155,16 @@ export function compileBundle({ rebuildIcons = true } = {}) {
   const componentRegistry = {};
   const allStyleRules = [...parseStylesCss(cssSource)];
 
-  const candidateFiles = ['pokemon-card.ts', 'type-badge.ts'];
+  const candidateFiles = collectComponentTsFiles(appDir, appDir);
   for (const file of candidateFiles) {
     const filePath = resolve(appDir, file);
     if (existsSync(filePath)) {
       const ts = readFileSync(filePath, 'utf8');
       const meta = extractComponentMetadata(ts, file);
-      const tmplPath = resolve(appDir, meta.component.templateUrl);
-      const stylePath = resolve(appDir, meta.component.styleUrl);
+      if (!ts.includes('@Component')) continue;
+      const compDir = dirname(filePath);
+      const tmplPath = resolve(compDir, meta.component.templateUrl);
+      const stylePath = resolve(compDir, meta.component.styleUrl);
       const templateHtml = existsSync(tmplPath) ? readFileSync(tmplPath, 'utf8') : '';
       if (existsSync(stylePath)) {
         const rules = parseStylesCss(readFileSync(stylePath, 'utf8'));
@@ -150,7 +185,7 @@ export function compileBundle({ rebuildIcons = true } = {}) {
     componentRegistry,
   );
 
-  const outDir = resolve(rootDir, nativeOptions.outputPath);
+  const outDir = resolve(rootDir, resolvedOutputPath);
   mkdirSync(outDir, { recursive: true });
 
   let iconMeta = null;
