@@ -16,9 +16,21 @@ export interface TemplateAstNode {
   children: TemplateAstNode[];
 }
 
+export interface ComponentDefinitionIr {
+  templateHtml: string;
+  templateUrl?: string;
+}
+
+export interface TemplateIdState {
+  next: number;
+}
+
 export function parseTemplateHtml(
   html: string,
   state: Record<string, string>,
   numericSignals: Record<string, number>,
   templateUrl?: string,
+  componentRegistry?: Record<string, ComponentDefinitionIr>,
+  projectedChildren?: TemplateAstNode[] | null,
+  idState?: TemplateIdState,
 ): TemplateAstNode[];

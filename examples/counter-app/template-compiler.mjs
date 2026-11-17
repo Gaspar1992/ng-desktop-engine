@@ -68,13 +68,14 @@ export function parseTemplateHtml(
   templateUrl = 'app.html',
   componentRegistry = {},
   projectedChildren = null,
+  // Shared across nested component expansions so auto-generated ids stay globally unique
+  // within one compilation (each expansion used to restart at 1 and collide).
+  idState = { next: 1 },
 ) {
   const parsed = parseTemplate(html, templateUrl, {
     preserveWhitespaces: false,
     collectCommentNodes: true,
   });
-
-  let autoIdCounter = 1;
 
   function transformNodes(astNodes) {
     const out = [];
@@ -90,7 +91,7 @@ export function parseTemplateHtml(
       if (Array.isArray(tmplNode.branches)) {
         const firstExpr = tmplNode.branches[0]?.expression?.source?.trim() || 'cond';
         out.push({
-          id: `anchor_${autoIdCounter++}`,
+          id: `anchor_${idState.next++}`,
           tag: '#comment',
           isComment: true,
           text: `@if(${firstExpr})`,
@@ -134,6 +135,7 @@ export function parseTemplateHtml(
           compDef.templateUrl || `${tmplNode.name}.html`,
           componentRegistry,
           projected,
+          idState,
         );
 
         const hostId = tmplNode.attributes?.find((a) => a.name === 'id')?.value;
@@ -208,7 +210,7 @@ export function parseTemplateHtml(
       }
 
       out.push({
-        id: attrs.id || `node_${autoIdCounter++}`,
+        id: attrs.id || `node_${idState.next++}`,
         tag: tmplNode.name,
         title: attrs.title || null,
         classes: attrs.class ? attrs.class.split(/\s+/).filter(Boolean) : [],
