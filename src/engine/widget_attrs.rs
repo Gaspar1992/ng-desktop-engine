@@ -131,6 +131,13 @@ impl WidgetKind {
                 "expanded" | "open" => *expanded = value == "true" || value == "1",
                 _ => {}
             },
+            Self::Clamp { max_size, .. } => {
+                if matches!(key, "max-size" | "maximum-size")
+                    && let Ok(parsed) = Self::parse_px(value)
+                {
+                    *max_size = parsed;
+                }
+            }
             _ => self.set_interactive_attribute(key, value),
         }
     }
@@ -187,6 +194,65 @@ impl WidgetKind {
                 "selected" | "value" => {
                     if let Ok(idx) = value.trim().parse::<usize>() {
                         *selected = idx;
+                    }
+                }
+                _ => {}
+            },
+            _ => self.set_extended_input_attribute(key, value),
+        }
+    }
+
+    fn set_extended_input_attribute(&mut self, key: &str, value: &str) {
+        match self {
+            Self::TextView {
+                text,
+                editable,
+                monospace,
+            } => match key {
+                "value" | "text" => value.clone_into(text),
+                "editable" => *editable = value != "false" && value != "0",
+                "monospace" => *monospace = value == "true" || value == "1",
+                _ => {}
+            },
+            Self::PasswordEntry {
+                text,
+                placeholder,
+                show_peek_icon,
+            } => match key {
+                "value" | "text" => value.clone_into(text),
+                "placeholder" => value.clone_into(placeholder),
+                "show-peek-icon" | "peek" => *show_peek_icon = value != "false" && value != "0",
+                _ => {}
+            },
+            Self::SearchEntry { text, placeholder } => match key {
+                "value" | "text" => value.clone_into(text),
+                "placeholder" => value.clone_into(placeholder),
+                _ => {}
+            },
+            Self::SpinButton {
+                value: val,
+                min,
+                max,
+                step,
+            } => match key {
+                "value" => {
+                    if let Ok(v) = value.trim().parse::<i64>() {
+                        *val = v.clamp(*min, *max);
+                    }
+                }
+                "min" => {
+                    if let Ok(m) = value.trim().parse::<i64>() {
+                        *min = m;
+                    }
+                }
+                "max" => {
+                    if let Ok(m) = value.trim().parse::<i64>() {
+                        *max = m;
+                    }
+                }
+                "step" => {
+                    if let Ok(s) = value.trim().parse::<i64>() {
+                        *step = s.max(1);
                     }
                 }
                 _ => {}

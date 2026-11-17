@@ -153,6 +153,34 @@ impl<B: PlatformBackend> RenderEngine<B> {
             } => format!(
                 "[Expander #{idx}:{generation} label=\"{label}\" expanded={expanded}{class_str}]"
             ),
+            WidgetKind::Clamp { max_size, .. } => {
+                format!("[Clamp #{idx}:{generation} max_size={max_size}{class_str}]")
+            }
+            WidgetKind::TextView {
+                text,
+                editable,
+                monospace,
+            } => format!(
+                "[TextView #{idx}:{generation} text=\"{text}\" editable={editable} monospace={monospace}{class_str}]"
+            ),
+            WidgetKind::PasswordEntry {
+                placeholder,
+                show_peek_icon,
+                ..
+            } => format!(
+                "[PasswordEntry #{idx}:{generation} placeholder=\"{placeholder}\" peek={show_peek_icon}{class_str}]"
+            ),
+            WidgetKind::SearchEntry { text, placeholder } => format!(
+                "[SearchEntry #{idx}:{generation} text=\"{text}\" placeholder=\"{placeholder}\"{class_str}]"
+            ),
+            WidgetKind::SpinButton {
+                value,
+                min,
+                max,
+                step,
+            } => format!(
+                "[SpinButton #{idx}:{generation} value={value} range={min}..{max} step={step}{class_str}]"
+            ),
             WidgetKind::Anchor { comment } => {
                 format!("[Anchor #{idx}:{generation} comment=\"{comment}\"]")
             }
@@ -174,9 +202,9 @@ impl<B: PlatformBackend> RenderEngine<B> {
                 .chain(end_child.iter())
                 .copied()
                 .collect(),
-            WidgetKind::Scroll { child, .. } | WidgetKind::Expander { child, .. } => {
-                child.iter().copied().collect()
-            }
+            WidgetKind::Scroll { child, .. }
+            | WidgetKind::Expander { child, .. }
+            | WidgetKind::Clamp { child, .. } => child.iter().copied().collect(),
             WidgetKind::HeaderBar { children, .. }
             | WidgetKind::Box { children, .. }
             | WidgetKind::Grid { children, .. }
@@ -190,6 +218,10 @@ impl<B: PlatformBackend> RenderEngine<B> {
             | WidgetKind::Spinner { .. }
             | WidgetKind::ProgressBar { .. }
             | WidgetKind::Entry { .. }
+            | WidgetKind::TextView { .. }
+            | WidgetKind::PasswordEntry { .. }
+            | WidgetKind::SearchEntry { .. }
+            | WidgetKind::SpinButton { .. }
             | WidgetKind::Switch { .. }
             | WidgetKind::CheckButton { .. }
             | WidgetKind::Slider { .. }
@@ -320,6 +352,7 @@ impl<B: PlatformBackend> RenderEngine<B> {
                 let arrow = if *expanded { "▼" } else { "▶" };
                 Some(format!("  [Expander {arrow} {label}]"))
             }
+            WidgetKind::Clamp { max_size, .. } => Some(format!("  [Clamp max-width:{max_size}px]")),
             WidgetKind::Separator { .. } => {
                 let sep = "─".repeat(width.saturating_sub(4));
                 Some(format!("  {sep}"))
@@ -344,6 +377,29 @@ impl<B: PlatformBackend> RenderEngine<B> {
                 let display = if text.is_empty() { placeholder } else { text };
                 Some(format!("  [Entry: \"{display}\"]"))
             }
+            WidgetKind::TextView { text, .. } => Some(format!("  [TextView: \"{text}\"]")),
+            WidgetKind::PasswordEntry {
+                text, placeholder, ..
+            } => {
+                let display = if text.is_empty() {
+                    placeholder.clone()
+                } else {
+                    "•".repeat(text.chars().count())
+                };
+                Some(format!("  [PasswordEntry: \"{display}\"]"))
+            }
+            WidgetKind::SearchEntry { text, placeholder } => {
+                let display = if text.is_empty() { placeholder } else { text };
+                Some(format!("  [SearchEntry: \"{display}\"]"))
+            }
+            WidgetKind::SpinButton {
+                value,
+                min,
+                max,
+                step,
+            } => Some(format!(
+                "  [SpinButton: {value} ({min}..{max}, step:{step})]"
+            )),
             WidgetKind::Switch { active } => {
                 let state = if *active { "ON" } else { "OFF" };
                 Some(format!("  [Switch: {state}]"))

@@ -132,6 +132,25 @@ pub struct Gtk4Sys {
     pub(super) gtk_expander_set_expanded: unsafe extern "C" fn(*mut c_void, c_int),
     pub(super) gtk_expander_get_expanded: unsafe extern "C" fn(*mut c_void) -> c_int,
     pub(super) gtk_expander_set_child: unsafe extern "C" fn(*mut c_void, *mut c_void),
+    pub(super) gtk_text_view_new: unsafe extern "C" fn() -> *mut c_void,
+    pub(super) gtk_text_view_get_buffer: unsafe extern "C" fn(*mut c_void) -> *mut c_void,
+    pub(super) gtk_text_view_set_editable: unsafe extern "C" fn(*mut c_void, c_int),
+    pub(super) gtk_text_view_set_monospace: unsafe extern "C" fn(*mut c_void, c_int),
+    pub(super) gtk_text_view_set_wrap_mode: unsafe extern "C" fn(*mut c_void, c_int),
+    pub(super) gtk_text_buffer_set_text: unsafe extern "C" fn(*mut c_void, *const c_char, c_int),
+    pub(super) gtk_password_entry_new: unsafe extern "C" fn() -> *mut c_void,
+    pub(super) gtk_password_entry_set_show_peek_icon: unsafe extern "C" fn(*mut c_void, c_int),
+    pub(super) gtk_search_entry_new: unsafe extern "C" fn() -> *mut c_void,
+    pub(super) gtk_search_entry_set_placeholder_text:
+        unsafe extern "C" fn(*mut c_void, *const c_char),
+    pub(super) gtk_spin_button_new_with_range: unsafe extern "C" fn(f64, f64, f64) -> *mut c_void,
+    pub(super) gtk_spin_button_set_value: unsafe extern "C" fn(*mut c_void, f64),
+    pub(super) gtk_spin_button_get_value_as_int: unsafe extern "C" fn(*mut c_void) -> c_int,
+    pub(super) gtk_spin_button_set_range: unsafe extern "C" fn(*mut c_void, f64, f64),
+    pub(super) gtk_spin_button_set_increments: unsafe extern "C" fn(*mut c_void, f64, f64),
+    pub(super) adw_clamp_new: Option<unsafe extern "C" fn() -> *mut c_void>,
+    pub(super) adw_clamp_set_maximum_size: Option<unsafe extern "C" fn(*mut c_void, c_int)>,
+    pub(super) adw_clamp_set_child: Option<unsafe extern "C" fn(*mut c_void, *mut c_void)>,
     pub(super) g_main_context_iteration: unsafe extern "C" fn(*mut c_void, c_int) -> c_int,
     pub(super) g_set_prgname: unsafe extern "C" fn(*const c_char),
     pub(super) g_set_application_name: unsafe extern "C" fn(*const c_char),
@@ -179,6 +198,11 @@ impl Gtk4Sys {
             }
             let adw_window_title_new =
                 adw_lib.and_then(|lib| Self::load_fn(lib, c"adw_window_title_new"));
+            let adw_clamp_new = adw_lib.and_then(|lib| Self::load_fn(lib, c"adw_clamp_new"));
+            let adw_clamp_set_maximum_size =
+                adw_lib.and_then(|lib| Self::load_fn(lib, c"adw_clamp_set_maximum_size"));
+            let adw_clamp_set_child =
+                adw_lib.and_then(|lib| Self::load_fn(lib, c"adw_clamp_set_child"));
 
             Some(Self {
                 gtk_css_provider_load_from_string: Self::load_fn(
@@ -374,6 +398,45 @@ impl Gtk4Sys {
                 gtk_expander_set_expanded: Self::load_fn(gtk_lib, c"gtk_expander_set_expanded")?,
                 gtk_expander_get_expanded: Self::load_fn(gtk_lib, c"gtk_expander_get_expanded")?,
                 gtk_expander_set_child: Self::load_fn(gtk_lib, c"gtk_expander_set_child")?,
+                gtk_text_view_new: Self::load_fn(gtk_lib, c"gtk_text_view_new")?,
+                gtk_text_view_get_buffer: Self::load_fn(gtk_lib, c"gtk_text_view_get_buffer")?,
+                gtk_text_view_set_editable: Self::load_fn(gtk_lib, c"gtk_text_view_set_editable")?,
+                gtk_text_view_set_monospace: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_text_view_set_monospace",
+                )?,
+                gtk_text_view_set_wrap_mode: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_text_view_set_wrap_mode",
+                )?,
+                gtk_text_buffer_set_text: Self::load_fn(gtk_lib, c"gtk_text_buffer_set_text")?,
+                gtk_password_entry_new: Self::load_fn(gtk_lib, c"gtk_password_entry_new")?,
+                gtk_password_entry_set_show_peek_icon: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_password_entry_set_show_peek_icon",
+                )?,
+                gtk_search_entry_new: Self::load_fn(gtk_lib, c"gtk_search_entry_new")?,
+                gtk_search_entry_set_placeholder_text: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_search_entry_set_placeholder_text",
+                )?,
+                gtk_spin_button_new_with_range: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_spin_button_new_with_range",
+                )?,
+                gtk_spin_button_set_value: Self::load_fn(gtk_lib, c"gtk_spin_button_set_value")?,
+                gtk_spin_button_get_value_as_int: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_spin_button_get_value_as_int",
+                )?,
+                gtk_spin_button_set_range: Self::load_fn(gtk_lib, c"gtk_spin_button_set_range")?,
+                gtk_spin_button_set_increments: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_spin_button_set_increments",
+                )?,
+                adw_clamp_new,
+                adw_clamp_set_maximum_size,
+                adw_clamp_set_child,
                 g_main_context_iteration: Self::load_fn(glib_lib, c"g_main_context_iteration")?,
                 g_set_prgname,
                 g_set_application_name: Self::load_fn(glib_lib, c"g_set_application_name")?,

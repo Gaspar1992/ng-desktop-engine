@@ -18,6 +18,14 @@ fn cross_platform_factory_supports_linux_windows_and_macos() {
     assert_eq!(linux.map_native_widget("ng-paned"), "GtkPaned");
     assert_eq!(linux.map_native_widget("ng-stack"), "GtkStack");
     assert_eq!(linux.map_native_widget("ng-expander"), "GtkExpander");
+    assert_eq!(linux.map_native_widget("ng-text-view"), "GtkTextView");
+    assert_eq!(
+        linux.map_native_widget("ng-password-entry"),
+        "GtkPasswordEntry"
+    );
+    assert_eq!(linux.map_native_widget("ng-search-entry"), "GtkSearchEntry");
+    assert_eq!(linux.map_native_widget("ng-spin-button"), "GtkSpinButton");
+    assert_eq!(linux.map_native_widget("ng-clamp"), "AdwClamp");
 
     let windows = AnyPlatformBackend::from_target("windows-winui").unwrap();
     assert_eq!(
@@ -40,6 +48,26 @@ fn cross_platform_factory_supports_linux_windows_and_macos() {
         windows.map_native_widget("ng-expander"),
         "Microsoft.UI.Xaml.Controls.Expander"
     );
+    assert_eq!(
+        windows.map_native_widget("ng-text-view"),
+        "Microsoft.UI.Xaml.Controls.RichEditBox"
+    );
+    assert_eq!(
+        windows.map_native_widget("ng-password-entry"),
+        "Microsoft.UI.Xaml.Controls.PasswordBox"
+    );
+    assert_eq!(
+        windows.map_native_widget("ng-search-entry"),
+        "Microsoft.UI.Xaml.Controls.AutoSuggestBox"
+    );
+    assert_eq!(
+        windows.map_native_widget("ng-spin-button"),
+        "Microsoft.UI.Xaml.Controls.NumberBox"
+    );
+    assert_eq!(
+        windows.map_native_widget("ng-clamp"),
+        "Microsoft.UI.Xaml.Controls.Grid"
+    );
 
     let macos = AnyPlatformBackend::from_target("macos-appkit").unwrap();
     assert_eq!(macos.map_native_widget("ng-window"), "NSWindow");
@@ -48,6 +76,14 @@ fn cross_platform_factory_supports_linux_windows_and_macos() {
     assert_eq!(macos.map_native_widget("ng-paned"), "NSSplitView");
     assert_eq!(macos.map_native_widget("ng-stack"), "NSTabView");
     assert_eq!(macos.map_native_widget("ng-expander"), "NSDisclosureButton");
+    assert_eq!(macos.map_native_widget("ng-text-view"), "NSTextView");
+    assert_eq!(
+        macos.map_native_widget("ng-password-entry"),
+        "NSSecureTextField"
+    );
+    assert_eq!(macos.map_native_widget("ng-search-entry"), "NSSearchField");
+    assert_eq!(macos.map_native_widget("ng-spin-button"), "NSStepper");
+    assert_eq!(macos.map_native_widget("ng-clamp"), "NSBox");
 }
 
 #[test]

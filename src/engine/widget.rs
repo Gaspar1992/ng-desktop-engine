@@ -99,6 +99,30 @@ pub enum WidgetKind {
         expanded: bool,
         child: Option<NodeId>,
     },
+    TextView {
+        text: String,
+        editable: bool,
+        monospace: bool,
+    },
+    PasswordEntry {
+        text: String,
+        placeholder: String,
+        show_peek_icon: bool,
+    },
+    SpinButton {
+        value: i64,
+        min: i64,
+        max: i64,
+        step: i64,
+    },
+    SearchEntry {
+        text: String,
+        placeholder: String,
+    },
+    Clamp {
+        max_size: u32,
+        child: Option<NodeId>,
+    },
     Anchor {
         comment: String,
     },
@@ -181,6 +205,12 @@ impl WidgetKind {
                 fraction: 0.0,
                 indeterminate: false,
             }),
+            other => Self::from_extended_tag(other),
+        }
+    }
+
+    fn from_extended_tag(tag: &str) -> Result<Self, EngineError> {
+        match tag {
             "ng-paned" | "gtk-paned" => Ok(Self::Paned {
                 vertical: false,
                 position: 200,
@@ -195,6 +225,30 @@ impl WidgetKind {
             "ng-expander" | "gtk-expander" => Ok(Self::Expander {
                 label: String::new(),
                 expanded: false,
+                child: None,
+            }),
+            "ng-text-view" | "gtk-text-view" => Ok(Self::TextView {
+                text: String::new(),
+                editable: true,
+                monospace: false,
+            }),
+            "ng-password-entry" | "gtk-password-entry" => Ok(Self::PasswordEntry {
+                text: String::new(),
+                placeholder: String::new(),
+                show_peek_icon: true,
+            }),
+            "ng-spin-button" | "gtk-spin-button" => Ok(Self::SpinButton {
+                value: 0,
+                min: 0,
+                max: 100,
+                step: 1,
+            }),
+            "ng-search-entry" | "gtk-search-entry" => Ok(Self::SearchEntry {
+                text: String::new(),
+                placeholder: String::new(),
+            }),
+            "ng-clamp" | "adw-clamp" => Ok(Self::Clamp {
+                max_size: 800,
                 child: None,
             }),
             "ng-anchor" | "#comment" => Ok(Self::Anchor {
@@ -224,6 +278,15 @@ impl WidgetKind {
             | Self::Entry {
                 text: label_text, ..
             }
+            | Self::TextView {
+                text: label_text, ..
+            }
+            | Self::PasswordEntry {
+                text: label_text, ..
+            }
+            | Self::SearchEntry {
+                text: label_text, ..
+            }
             | Self::Image {
                 src: label_text, ..
             } => {
@@ -236,9 +299,11 @@ impl WidgetKind {
             | Self::FlowBox { .. }
             | Self::Paned { .. }
             | Self::Stack { .. }
+            | Self::Clamp { .. }
             | Self::Separator { .. }
             | Self::Switch { .. }
             | Self::Slider { .. }
+            | Self::SpinButton { .. }
             | Self::DropDown { .. }
             | Self::LevelBar { .. }
             | Self::Spinner { .. }
@@ -276,7 +341,9 @@ impl WidgetKind {
                 }
                 Ok(())
             }
-            Self::Scroll { child, .. } | Self::Expander { child, .. } => {
+            Self::Scroll { child, .. }
+            | Self::Expander { child, .. }
+            | Self::Clamp { child, .. } => {
                 *child = Some(child_id);
                 Ok(())
             }
@@ -310,6 +377,10 @@ impl WidgetKind {
             | Self::ProgressBar { .. }
             | Self::Separator { .. }
             | Self::Entry { .. }
+            | Self::TextView { .. }
+            | Self::PasswordEntry { .. }
+            | Self::SpinButton { .. }
+            | Self::SearchEntry { .. }
             | Self::Switch { .. }
             | Self::CheckButton { .. }
             | Self::Slider { .. }
@@ -344,7 +415,8 @@ impl WidgetKind {
             }
             Self::Window { child, .. }
             | Self::Scroll { child, .. }
-            | Self::Expander { child, .. } => {
+            | Self::Expander { child, .. }
+            | Self::Clamp { child, .. } => {
                 *child = Some(new_child);
                 Ok(())
             }
@@ -368,6 +440,10 @@ impl WidgetKind {
             | Self::ProgressBar { .. }
             | Self::Separator { .. }
             | Self::Entry { .. }
+            | Self::TextView { .. }
+            | Self::PasswordEntry { .. }
+            | Self::SpinButton { .. }
+            | Self::SearchEntry { .. }
             | Self::Switch { .. }
             | Self::CheckButton { .. }
             | Self::Slider { .. }
@@ -391,7 +467,9 @@ impl WidgetKind {
                     Err(EngineError::InvalidNode(child_id))
                 }
             }
-            Self::Scroll { child, .. } | Self::Expander { child, .. } => {
+            Self::Scroll { child, .. }
+            | Self::Expander { child, .. }
+            | Self::Clamp { child, .. } => {
                 if *child == Some(child_id) {
                     *child = None;
                     Ok(())
@@ -435,6 +513,10 @@ impl WidgetKind {
             | Self::ProgressBar { .. }
             | Self::Separator { .. }
             | Self::Entry { .. }
+            | Self::TextView { .. }
+            | Self::PasswordEntry { .. }
+            | Self::SpinButton { .. }
+            | Self::SearchEntry { .. }
             | Self::Switch { .. }
             | Self::CheckButton { .. }
             | Self::Slider { .. }
@@ -474,6 +556,11 @@ mod tests {
             "ng-paned",
             "ng-stack",
             "ng-expander",
+            "ng-text-view",
+            "ng-password-entry",
+            "ng-spin-button",
+            "ng-search-entry",
+            "ng-clamp",
             "ng-anchor",
         ] {
             assert!(WidgetKind::from_tag(tag).is_ok(), "Failed to parse {tag}");
@@ -643,6 +730,72 @@ mod tests {
                 expanded: true,
                 child: Some(ch),
             } if label == "Advanced" && ch == c1
+        ));
+    }
+
+    #[test]
+    fn phase8_extended_inputs_and_clamp_parse_attributes() {
+        let p_id = NodeId {
+            index: 20,
+            generation: 0,
+        };
+        let c1 = NodeId {
+            index: 21,
+            generation: 0,
+        };
+
+        let mut clamp = WidgetKind::from_tag("ng-clamp").unwrap();
+        clamp.set_attribute("max-size", "960px");
+        clamp.add_child(p_id, c1, false).unwrap();
+        assert!(matches!(
+            clamp,
+            WidgetKind::Clamp {
+                max_size: 960,
+                child: Some(ch),
+            } if ch == c1
+        ));
+
+        let mut spin = WidgetKind::from_tag("ng-spin-button").unwrap();
+        spin.set_attribute("min", "0");
+        spin.set_attribute("max", "1025");
+        spin.set_attribute("step", "5");
+        spin.set_attribute("value", "25");
+        assert!(matches!(
+            spin,
+            WidgetKind::SpinButton {
+                value: 25,
+                min: 0,
+                max: 1025,
+                step: 5,
+            }
+        ));
+
+        let mut search = WidgetKind::from_tag("ng-search-entry").unwrap();
+        search.set_attribute("placeholder", "Search Pokemon");
+        search.set_attribute("value", "pikachu");
+        assert!(matches!(
+            search,
+            WidgetKind::SearchEntry { ref text, ref placeholder }
+            if text == "pikachu" && placeholder == "Search Pokemon"
+        ));
+
+        let mut pass = WidgetKind::from_tag("ng-password-entry").unwrap();
+        pass.set_attribute("show-peek-icon", "false");
+        pass.set_text(p_id, "secret").unwrap();
+        assert!(matches!(
+            pass,
+            WidgetKind::PasswordEntry { ref text, show_peek_icon: false, .. }
+            if text == "secret"
+        ));
+
+        let mut tv = WidgetKind::from_tag("ng-text-view").unwrap();
+        tv.set_attribute("editable", "false");
+        tv.set_attribute("monospace", "true");
+        tv.set_text(p_id, "Trainer log").unwrap();
+        assert!(matches!(
+            tv,
+            WidgetKind::TextView { ref text, editable: false, monospace: true }
+            if text == "Trainer log"
         ));
     }
 }

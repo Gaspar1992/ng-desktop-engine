@@ -50,6 +50,11 @@ impl MacOsAppKitBackend {
             "ng-paned" | "gtk-paned" => "NSSplitView",
             "ng-stack" | "gtk-stack" | "adw-navigation-view" => "NSTabView",
             "ng-expander" | "gtk-expander" => "NSDisclosureButton",
+            "ng-text-view" | "gtk-text-view" => "NSTextView",
+            "ng-password-entry" | "gtk-password-entry" => "NSSecureTextField",
+            "ng-search-entry" | "gtk-search-entry" => "NSSearchField",
+            "ng-spin-button" | "gtk-spin-button" => "NSStepper",
+            "ng-clamp" | "adw-clamp" => "NSBox",
             _ => "NSView",
         }
     }

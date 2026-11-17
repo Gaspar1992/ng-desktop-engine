@@ -145,6 +145,12 @@ impl GtkLinuxBackend {
                 gtk.set_expander_expanded(handle, value == "true" || value == "1");
                 true
             }
+            (GtkWidgetType::Clamp, "max-size" | "maximum-size") => {
+                if let Some(px) = Self::parse_px_i32(value) {
+                    gtk.set_clamp_max_size(handle, px);
+                }
+                true
+            }
             _ => false,
         }
     }
@@ -274,6 +280,49 @@ impl GtkLinuxBackend {
             (GtkWidgetType::LevelBar, "max") => {
                 if let Ok(m) = value.trim().parse::<f64>() {
                     gtk.set_level_bar_max(handle, m);
+                }
+            }
+            _ => Self::apply_extended_input_attribute(gtk, kind, handle, key, value),
+        }
+    }
+
+    fn apply_extended_input_attribute(
+        gtk: &Gtk4Sys,
+        kind: GtkWidgetType,
+        handle: GtkHandle,
+        key: &str,
+        value: &str,
+    ) {
+        match (kind, key) {
+            (GtkWidgetType::TextView, "value" | "text") => gtk.set_text_view_text(handle, value),
+            (GtkWidgetType::TextView, "editable") => {
+                gtk.set_text_view_editable(handle, value != "false" && value != "0");
+            }
+            (GtkWidgetType::TextView, "monospace") => {
+                gtk.set_text_view_monospace(handle, value == "true" || value == "1");
+            }
+            (GtkWidgetType::PasswordEntry | GtkWidgetType::SearchEntry, "value" | "text") => {
+                gtk.set_entry_text(handle, value);
+            }
+            (GtkWidgetType::PasswordEntry, "show-peek-icon" | "peek") => {
+                gtk.set_password_peek_icon(handle, value != "false" && value != "0");
+            }
+            (GtkWidgetType::SearchEntry, "placeholder") => {
+                gtk.set_search_entry_placeholder(handle, value);
+            }
+            (GtkWidgetType::SpinButton, "value") => {
+                if let Ok(v) = value.trim().parse::<f64>() {
+                    gtk.set_spin_button_value(handle, v);
+                }
+            }
+            (GtkWidgetType::SpinButton, "max") => {
+                if let Ok(m) = value.trim().parse::<f64>() {
+                    gtk.set_spin_button_range(handle, 0.0, m);
+                }
+            }
+            (GtkWidgetType::SpinButton, "step") => {
+                if let Ok(s) = value.trim().parse::<f64>() {
+                    gtk.set_spin_button_step(handle, s.max(1.0));
                 }
             }
             _ => {}

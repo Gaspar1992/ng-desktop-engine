@@ -16,7 +16,7 @@ interface NativeWidgetEvent {
  */
 @Directive({
   selector:
-    'ng-entry[formControlName],ng-entry[formControl],ng-entry[ngModel],gtk-entry[formControlName],gtk-entry[formControl],gtk-entry[ngModel]',
+    'ng-entry[formControlName],ng-entry[formControl],ng-entry[ngModel],gtk-entry[formControlName],gtk-entry[formControl],gtk-entry[ngModel],ng-search-entry[formControlName],ng-search-entry[formControl],ng-search-entry[ngModel],ng-password-entry[formControlName],ng-password-entry[formControl],ng-password-entry[ngModel],ng-text-view[formControlName],ng-text-view[formControl],ng-text-view[ngModel]',
   standalone: true,
   providers: [
     {
@@ -151,7 +151,7 @@ export class NativeBooleanValueAccessor implements ControlValueAccessor, OnDestr
  */
 @Directive({
   selector:
-    'ng-slider[formControlName],ng-slider[formControl],ng-slider[ngModel],ng-scale[formControlName],ng-scale[formControl],ng-scale[ngModel],ng-select[formControlName],ng-select[formControl],ng-select[ngModel],ng-dropdown[formControlName],ng-dropdown[formControl],ng-dropdown[ngModel]',
+    'ng-slider[formControlName],ng-slider[formControl],ng-slider[ngModel],ng-scale[formControlName],ng-scale[formControl],ng-scale[ngModel],ng-select[formControlName],ng-select[formControl],ng-select[ngModel],ng-dropdown[formControlName],ng-dropdown[formControl],ng-dropdown[ngModel],ng-spin-button[formControlName],ng-spin-button[formControl],ng-spin-button[ngModel]',
   standalone: true,
   providers: [
     {

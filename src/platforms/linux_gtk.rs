@@ -33,6 +33,11 @@ pub(super) enum GtkWidgetType {
     Paned,
     Stack,
     Expander,
+    TextView,
+    PasswordEntry,
+    SearchEntry,
+    SpinButton,
+    Clamp,
     Anchor,
 }
 
@@ -110,12 +115,19 @@ impl GtkLinuxBackend {
                     && let Some(handle) = widget.handle
                 {
                     ev.payload = match widget.kind {
-                        GtkWidgetType::Entry => EventPayload::Text(gtk.get_entry_text(handle)),
+                        GtkWidgetType::Entry
+                        | GtkWidgetType::SearchEntry
+                        | GtkWidgetType::PasswordEntry => {
+                            EventPayload::Text(gtk.get_entry_text(handle))
+                        }
                         GtkWidgetType::Switch => EventPayload::Bool(gtk.get_switch_active(handle)),
                         GtkWidgetType::CheckButton => {
                             EventPayload::Bool(gtk.get_check_button_active(handle))
                         }
                         GtkWidgetType::Slider => EventPayload::Int(gtk.get_slider_value(handle)),
+                        GtkWidgetType::SpinButton => {
+                            EventPayload::Int(gtk.get_spin_button_value(handle))
+                        }
                         GtkWidgetType::DropDown => {
                             EventPayload::Int(gtk.get_drop_down_selected(handle))
                         }
@@ -166,7 +178,10 @@ impl GtkLinuxBackend {
                     }
                     GtkWidgetType::Label => gtk.set_label_text(handle, text),
                     GtkWidgetType::Button => gtk.set_button_label(handle, text),
-                    GtkWidgetType::Entry => gtk.set_entry_text(handle, text),
+                    GtkWidgetType::Entry
+                    | GtkWidgetType::SearchEntry
+                    | GtkWidgetType::PasswordEntry => gtk.set_entry_text(handle, text),
+                    GtkWidgetType::TextView => gtk.set_text_view_text(handle, text),
                     GtkWidgetType::CheckButton => gtk.set_check_button_label(handle, text),
                     GtkWidgetType::Expander => gtk.set_expander_label(handle, text),
                     GtkWidgetType::Image => gtk.set_image_file(handle, text),
@@ -331,6 +346,44 @@ impl GtkLinuxBackend {
                 (Some(exp), GtkWidgetType::Expander)
             }
             "ng-anchor" | "#comment" => (None, GtkWidgetType::Anchor),
+            other => return Self::create_phase8_native_widget(gtk, id, other),
+        };
+        Some(pair)
+    }
+
+    fn create_phase8_native_widget(
+        gtk: &Gtk4Sys,
+        id: NodeId,
+        tag: &str,
+    ) -> Option<(Option<GtkHandle>, GtkWidgetType)> {
+        let pair = match tag {
+            "ng-text-view" | "gtk-text-view" => {
+                let tv = gtk.create_text_view();
+                let buf = gtk.text_view_buffer(tv);
+                gtk.connect_signal(buf, c"changed", on_gtk_entry_changed, pack_node_id(id));
+                (Some(tv), GtkWidgetType::TextView)
+            }
+            "ng-password-entry" | "gtk-password-entry" => {
+                let pe = gtk.create_password_entry();
+                gtk.connect_signal(pe, c"changed", on_gtk_entry_changed, pack_node_id(id));
+                (Some(pe), GtkWidgetType::PasswordEntry)
+            }
+            "ng-search-entry" | "gtk-search-entry" => {
+                let se = gtk.create_search_entry();
+                gtk.connect_signal(se, c"changed", on_gtk_entry_changed, pack_node_id(id));
+                (Some(se), GtkWidgetType::SearchEntry)
+            }
+            "ng-spin-button" | "gtk-spin-button" => {
+                let sb = gtk.create_spin_button();
+                gtk.connect_signal(
+                    sb,
+                    c"value-changed",
+                    on_gtk_scale_value_changed,
+                    pack_node_id(id),
+                );
+                (Some(sb), GtkWidgetType::SpinButton)
+            }
+            "ng-clamp" | "adw-clamp" => (Some(gtk.create_clamp()), GtkWidgetType::Clamp),
             _ => return None,
         };
         Some(pair)
@@ -369,6 +422,7 @@ impl GtkLinuxBackend {
                     gtk.stack_add_named(p_h, c_h, &format!("page_{child_index}"));
                 }
                 GtkWidgetType::Expander => gtk.set_expander_child(p_h, Some(c_h)),
+                GtkWidgetType::Clamp => gtk.set_clamp_child(p_h, Some(c_h)),
                 GtkWidgetType::Grid => {
                     gtk.grid_attach(p_h, c_h, child_index % 2, child_index / 2);
                 }
@@ -458,6 +512,7 @@ impl GtkLinuxBackend {
                     }
                 }
                 GtkWidgetType::Expander => gtk.set_expander_child(p_h, None),
+                GtkWidgetType::Clamp => gtk.set_clamp_child(p_h, None),
                 _ => {}
             }
         }
@@ -499,6 +554,11 @@ impl PlatformBackend for GtkLinuxBackend {
             "ng-paned" | "gtk-paned" => "GtkPaned",
             "ng-stack" | "gtk-stack" | "adw-navigation-view" => "GtkStack",
             "ng-expander" | "gtk-expander" => "GtkExpander",
+            "ng-text-view" | "gtk-text-view" => "GtkTextView",
+            "ng-password-entry" | "gtk-password-entry" => "GtkPasswordEntry",
+            "ng-search-entry" | "gtk-search-entry" => "GtkSearchEntry",
+            "ng-spin-button" | "gtk-spin-button" => "GtkSpinButton",
+            "ng-clamp" | "adw-clamp" => "AdwClamp",
             "ng-anchor" | "#comment" => "GtkAnchorComment",
             _ => "GtkWidget",
         }

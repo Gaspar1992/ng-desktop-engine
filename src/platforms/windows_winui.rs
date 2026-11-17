@@ -34,7 +34,7 @@ impl WinUiBackend {
             }
             "ng-scroll" | "gtk-scrolled-window" => "Microsoft.UI.Xaml.Controls.ScrollViewer",
             "ng-box" | "gtk-box" => "Microsoft.UI.Xaml.Controls.StackPanel",
-            "ng-grid" | "gtk-grid" => "Microsoft.UI.Xaml.Controls.Grid",
+            "ng-grid" | "gtk-grid" | "ng-clamp" | "adw-clamp" => "Microsoft.UI.Xaml.Controls.Grid",
             "ng-separator" | "gtk-separator" => "Microsoft.UI.Xaml.Controls.AppBarSeparator",
             "ng-label" | "gtk-label" => "Microsoft.UI.Xaml.Controls.TextBlock",
             "ng-button" | "gtk-button" => "Microsoft.UI.Xaml.Controls.Button",
@@ -59,6 +59,10 @@ impl WinUiBackend {
                 "Microsoft.UI.Xaml.Controls.NavigationView"
             }
             "ng-expander" | "gtk-expander" => "Microsoft.UI.Xaml.Controls.Expander",
+            "ng-text-view" | "gtk-text-view" => "Microsoft.UI.Xaml.Controls.RichEditBox",
+            "ng-password-entry" | "gtk-password-entry" => "Microsoft.UI.Xaml.Controls.PasswordBox",
+            "ng-search-entry" | "gtk-search-entry" => "Microsoft.UI.Xaml.Controls.AutoSuggestBox",
+            "ng-spin-button" | "gtk-spin-button" => "Microsoft.UI.Xaml.Controls.NumberBox",
             _ => "Microsoft.UI.Xaml.UIElement",
         }
     }

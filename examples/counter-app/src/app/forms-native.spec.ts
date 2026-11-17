@@ -107,4 +107,45 @@ describe('@ng-native/forms — ControlValueAccessor Directives', () => {
     sliderAccessor.ngOnDestroy();
     selectAccessor.ngOnDestroy();
   });
+
+  it('binds NativeTextValueAccessor and NativeNumberValueAccessor with Phase 8 inputs (<ng-search-entry>, <ng-text-view>, <ng-spin-button>)', () => {
+    const bridge = ensureNgNativeBridge();
+
+    const searchNode = renderer.createElement('ng-search-entry') as NativeElementNode;
+    const searchAccessor = createDirective(NativeTextValueAccessor, searchNode);
+    const searchControl = new FormControl('pikachu');
+    searchAccessor.writeValue(searchControl.value);
+    searchAccessor.registerOnChange((val) => searchControl.setValue(val, { emitEvent: false }));
+    expect(bridge.__drainQueue()).toContain(`attr ${searchNode.id} value pikachu`);
+
+    bridge.__dispatchEvent(searchNode.id, 'input', {
+      type: 'input',
+      targetId: searchNode.id,
+      value: 'charizard',
+    });
+    expect(searchControl.value).toBe('charizard');
+
+    const textViewNode = renderer.createElement('ng-text-view') as NativeElementNode;
+    const textViewAccessor = createDirective(NativeTextValueAccessor, textViewNode);
+    textViewAccessor.writeValue('Captured at Viridian Forest');
+    expect(bridge.__drainQueue()).toContain(`text ${textViewNode.id} Captured at Viridian Forest`);
+
+    const spinNode = renderer.createElement('ng-spin-button') as NativeElementNode;
+    const spinAccessor = createDirective(NativeNumberValueAccessor, spinNode);
+    const idControl = new FormControl(25);
+    spinAccessor.writeValue(idControl.value);
+    spinAccessor.registerOnChange((val) => idControl.setValue(val, { emitEvent: false }));
+    expect(bridge.__drainQueue()).toContain(`attr ${spinNode.id} value 25`);
+
+    bridge.__dispatchEvent(spinNode.id, 'value-changed', {
+      type: 'value-changed',
+      targetId: spinNode.id,
+      value: 150,
+    });
+    expect(idControl.value).toBe(150);
+
+    searchAccessor.ngOnDestroy();
+    textViewAccessor.ngOnDestroy();
+    spinAccessor.ngOnDestroy();
+  });
 });
