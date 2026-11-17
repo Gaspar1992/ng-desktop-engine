@@ -5,10 +5,12 @@ This project adheres to [Conventional Commits](https://www.conventionalcommits.o
 
 ## [Unreleased]
 
-### Features (Phase 8 — Advanced Container Primitives)
+### Features (Phase 8 — Advanced Layout Containers, Extended Primitives, & Pokédex Split View)
 
-- **widgets:** add `<ng-paned>` (`GtkPaned` / `SplitView` / `NSSplitView`), `<ng-stack>` (`GtkStack` / `NavigationView` / `NSTabView`), and `<ng-expander>` (`GtkExpander` / `Expander` / `NSDisclosureButton`) across `WidgetKind`, `widget_attrs.rs`, `preview.rs`, `Gtk4Sys`, `GtkLinuxBackend`, `WinUiBackend`, and `MacOsAppKitBackend`.
-- **testing:** add unit and scene-graph/cross-platform E2E tests for Phase 8 container primitives, bringing total coverage to 68 automated tests (26 Rust unit tests + 15 Rust E2E tests + 27 Vitest tests).
+- **widgets:** add `<ng-paned>` (`GtkPaned` / `SplitView` / `NSSplitView`), `<ng-stack>` (`GtkStack` / `NavigationView` / `NSTabView`), `<ng-expander>` (`GtkExpander` / `Expander` / `NSDisclosureButton`), `<ng-text-view>` (`GtkTextView` / `RichEditBox` / `NSTextView`), `<ng-password-entry>` (`GtkPasswordEntry` / `PasswordBox` / `NSSecureTextField`), `<ng-search-entry>` (`GtkSearchEntry` / `AutoSuggestBox` / `NSSearchField`), `<ng-spin-button>` (`GtkSpinButton` / `NumberBox` / `NSStepper`), and `<ng-clamp>` (`AdwClamp` / `Grid` / `NSBox`) across `WidgetKind`, `widget_attrs.rs`, `preview.rs`, `Gtk4Sys`, `GtkLinuxBackend`, `WinUiBackend`, and `MacOsAppKitBackend`.
+- **forms:** extend `NativeTextValueAccessor` (`<ng-search-entry>`, `<ng-password-entry>`, `<ng-text-view>`) and `NativeNumberValueAccessor` (`<ng-spin-button>`) in `@ng-native/forms`.
+- **pokedex:** upgrade `examples/counter-app` and `PokedexController` with `<ng-clamp>`, `<ng-search-entry>`, `<ng-spin-button>` ID stepper, `<ng-paned>` master-detail split layout, collapsible `<ng-expander>` panels, and `<ng-text-view>` trainer notes.
+- **testing:** add unit, `@ng-native/forms`, cross-platform, and scene-graph/pipeline E2E tests for all 27 primitives, bringing total coverage to 70 automated tests (27 Rust unit tests + 15 Rust E2E tests + 28 Vitest tests).
 
 ### Features (Phase 7 — AST-Driven Toolchain, Real-Time Socket HMR, & SRP Hardening)
 

@@ -1,6 +1,6 @@
 use ng_native_engine::config::AngularNativeConfig;
 use ng_native_engine::desktop::PokedexController;
-use ng_native_engine::engine::{EventPayload, NodeId, RenderEngine};
+use ng_native_engine::engine::{NodeId, RenderEngine};
 use ng_native_engine::ipc::{HmrIpcServer, HmrMessage, HmrResponse};
 use ng_native_engine::packager::stage_linux_distribution;
 use ng_native_engine::platforms::AnyPlatformBackend;
@@ -86,9 +86,7 @@ fn run_interactive_loop(
 
     while engine.backend().open_window_count() > 0 {
         for ev in engine.backend().step_native_events(false) {
-            if let EventPayload::Text(ref query) = ev.payload {
-                pokedex.queue_search(query);
-            }
+            pokedex.handle_event(&ev, &mut engine, &mut js_runtime);
             js_runtime
                 .trigger_node_event_with_payload(&mut engine, ev.node, &ev.event_name, &ev.payload)
                 .unwrap();

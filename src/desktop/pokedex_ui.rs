@@ -4,7 +4,7 @@
 //! state is surfaced through the `ng-spinner` primitive.
 
 use super::{DesktopServices, PokemonInfo};
-use crate::engine::{NodeId, RenderEngine};
+use crate::engine::{EventPayload, NativeEvent, NodeId, RenderEngine};
 use crate::platforms::AnyPlatformBackend;
 use crate::runtime::JsRuntime;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -24,6 +24,7 @@ struct UiNodes {
     list_view: Option<NodeId>,
     detail_view: Option<NodeId>,
     spinner: Option<NodeId>,
+    id_spin: Option<NodeId>,
     name: Option<NodeId>,
     stats_label: Option<NodeId>,
     number: Option<NodeId>,
@@ -45,6 +46,7 @@ impl UiNodes {
             list_view: node("list_view"),
             detail_view: node("detail_view"),
             spinner: node("loading_spinner"),
+            id_spin: node("poke_id_spin"),
             name: node("hello"),
             stats_label: node("lbl_stats"),
             number: node("poke_num"),
@@ -91,6 +93,19 @@ impl PokedexController {
 
     pub fn show_list(&self, engine: &mut Engine) {
         self.set_view(engine, false);
+    }
+
+    /// Handles native widget events relevant to the Pokédex (search input & ID stepper).
+    pub fn handle_event(&mut self, ev: &NativeEvent, engine: &mut Engine, runtime: &mut JsRuntime) {
+        if let EventPayload::Text(ref query) = ev.payload {
+            self.queue_search(query);
+        }
+        if Some(ev.node) == self.nodes.id_spin
+            && let EventPayload::Int(id) = ev.payload
+            && id > 0
+        {
+            let _ = runtime.set_signal(engine, "pokemonId", id);
+        }
     }
 
     /// Queues a search; the request fires once typing pauses (see [`SEARCH_DEBOUNCE`]).
@@ -168,13 +183,14 @@ impl PokedexController {
     }
 
     fn set_view(&self, engine: &mut Engine, show_detail: bool) {
-        for (node, visible) in [
-            (self.nodes.list_view, !show_detail),
-            (self.nodes.detail_view, show_detail),
-        ] {
-            if let Some(node) = node {
-                let _ = engine.set_attribute(node, "visible", visible.to_string());
-            }
+        for node in [self.nodes.list_view, self.nodes.detail_view]
+            .into_iter()
+            .flatten()
+        {
+            let _ = engine.set_attribute(node, "visible", "true");
+        }
+        if !show_detail && let Some(spin) = self.nodes.id_spin {
+            let _ = engine.set_attribute(spin, "value", "0");
         }
     }
 
@@ -211,6 +227,7 @@ impl PokedexController {
             }
         }
         let bars = [
+            (nodes.id_spin, poke.id),
             (nodes.hp_bar, poke.hp),
             (nodes.atk_bar, poke.attack),
             (nodes.def_bar, poke.defense),

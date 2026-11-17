@@ -142,16 +142,18 @@ When `@angular/platform-browser` is removed, Angular's Ivy runtime still require
 - [x] **Comprehensive Automated Test Coverage:**
   - [x] 66 automated tests passing (25 Rust unit tests + 14 Rust E2E integration tests + 27 Angular Vitest tests).
 
-### Phase 8: Advanced Layout Containers & Extended Primitives (In Progress 🚧)
+### Phase 8: Advanced Layout Containers & Extended Primitives (Completed ✅)
 
 - [x] **Priority Layout & Container Primitives:**
   - [x] `<ng-paned>` (`GtkPaned` / `Microsoft.UI.Xaml.Controls.SplitView` / `NSSplitView`): Resizable two-pane split container supporting `orientation` (`horizontal` | `vertical`), divider `position` (px), and start/end child slots.
   - [x] `<ng-stack>` (`GtkStack` / `Microsoft.UI.Xaml.Controls.NavigationView` / `NSTabView`): Multi-page view container supporting indexed named child views (`page_0`...), `visible-child` / `active-page` switching, and `transition` / `transition-type`.
   - [x] `<ng-expander>` (`GtkExpander` / `Microsoft.UI.Xaml.Controls.Expander` / `NSDisclosureButton`): Collapsible disclosure/accordion container supporting `label` / `title`, `expanded` / `open` state attribute, and `notify::expanded` signal emission.
-  - [x] **Automated Test Coverage:** 68 automated tests passing (26 Rust unit tests + 15 Rust E2E integration tests + 27 Angular Vitest tests).
-- [ ] **Extended Form & Adaptive Primitives (Backlog):**
-  - [ ] `<ng-text-view>` (`GtkTextView` multi-line text editor with `NativeTextValueAccessor` support)
-  - [ ] `<ng-password-entry>` (`GtkPasswordEntry` with `show-peek-icon`)
-  - [ ] `<ng-spin-button>` (`GtkSpinButton` numeric stepper with `min`, `max`, `step`, `value`)
-  - [ ] `<ng-search-entry>` (`GtkSearchEntry` with native search icon, clear button, and `search-changed`)
-  - [ ] `<ng-clamp>` (`AdwClamp` responsive maximum-width container)
+- [x] **Extended Form & Adaptive Primitives:**
+  - [x] `<ng-text-view>` (`GtkTextView` multi-line text editor with `editable`, `monospace`, and `NativeTextValueAccessor` support)
+  - [x] `<ng-password-entry>` (`GtkPasswordEntry` with `show-peek-icon` / `peek` and `NativeTextValueAccessor` support)
+  - [x] `<ng-spin-button>` (`GtkSpinButton` numeric stepper with `min`, `max`, `step`, `value`, and `NativeNumberValueAccessor` support)
+  - [x] `<ng-search-entry>` (`GtkSearchEntry` with native search icon, `placeholder`, and `NativeTextValueAccessor` support)
+  - [x] `<ng-clamp>` (`AdwClamp` responsive maximum-width container with `max-size` / `maximum-size`)
+- [x] **Pokédex Master-Detail Split Upgrade (`examples/counter-app` & `PokedexController`):**
+  - [x] Upgraded the showcase to use `<ng-clamp>`, `<ng-search-entry>`, `<ng-spin-button>`, `<ng-paned>` master-detail layout, collapsible `<ng-expander>` sections, and `<ng-text-view>` trainer notes.
+- [x] **Automated Test Coverage:** 70 automated tests passing (27 Rust unit tests + 15 Rust E2E integration tests + 28 Angular Vitest tests).

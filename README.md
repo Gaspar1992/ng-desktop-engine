@@ -8,7 +8,7 @@ A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22
 
 ## 🎯 Architectural Principles
 
-1. **Zero WebView Overhead:** Angular templates compile and execute against native operating system controls (`AdwApplicationWindow`, `GtkHeaderBar`, `GtkBox`, `GtkGrid`, `GtkFlowBox`, `GtkPaned`, `GtkStack`, `GtkExpander`, `GtkScrolledWindow`, `GtkLabel`, `GtkPicture`, `GtkLevelBar`, `GtkProgressBar`, `GtkSpinner`, `GtkButton`, `GtkEntry`, `GtkSwitch`, `GtkCheckButton`, `GtkScale`, `GtkDropDown`), delivering sub-second startup and a tiny memory footprint.
+1. **Zero WebView Overhead:** Angular templates compile and execute against native operating system controls (`AdwApplicationWindow`, `GtkHeaderBar`, `AdwClamp`, `GtkBox`, `GtkGrid`, `GtkFlowBox`, `GtkPaned`, `GtkStack`, `GtkExpander`, `GtkScrolledWindow`, `GtkLabel`, `GtkPicture`, `GtkLevelBar`, `GtkProgressBar`, `GtkSpinner`, `GtkButton`, `GtkEntry`, `GtkSearchEntry`, `GtkPasswordEntry`, `GtkTextView`, `GtkSpinButton`, `GtkSwitch`, `GtkCheckButton`, `GtkScale`, `GtkDropDown`), delivering sub-second startup and a tiny memory footprint.
 2. **Rust-Grade Memory Safety Across the JS/Native Boundary:**
    - **Generational Arena (`Arena` + `NodeId`):** JavaScript never holds raw C/GTK pointers. Every native widget is stored inside a Rust generational arena (`index` + `generation`), preventing use-after-free bugs when components unmount.
    - **Runtime Borrow Checker (`BorrowState`):** Enforces Rust's aliasing rules (`Shared(usize)` vs `Exclusive`) at runtime across asynchronous UI events, blocking illegal node destruction while an event callback is actively borrowing a widget.
@@ -32,12 +32,13 @@ A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22
 
 ## 🧩 Native Primitives Catalog
 
-### Implemented Native Primitives (22 Primitives)
+### Implemented Native Primitives (27 Primitives)
 
 | Tag (Aliases)                                          | Category             | Linux (GTK4 / Libadwaita) | Windows (WinUI 3)                            | macOS (AppKit)        | Attributes & Events                                                                                                               |
 | :----------------------------------------------------- | :------------------- | :------------------------ | :------------------------------------------- | :-------------------- | :-------------------------------------------------------------------------------------------------------------------------------- |
 | `<ng-window>` (`adw-window`)                           | Window               | `AdwApplicationWindow`    | `Microsoft.UI.Xaml.Window`                   | `NSWindow`            | `title`, window icon                                                                                                              |
 | `<ng-header-bar>` (`adw-header-bar`, `gtk-header-bar`) | Window Chrome        | `AdwHeaderBar`            | `Microsoft.UI.Xaml.Controls.TitleBar`        | `NSToolbar`           | `title`, `subtitle`, `show-title-buttons`                                                                                         |
+| `<ng-clamp>` (`adw-clamp`)                             | Adaptive Container   | `AdwClamp`                | `Microsoft.UI.Xaml.Controls.Grid`            | `NSBox`               | `max-size` / `maximum-size` (px), single centered child                                                                           |
 | `<ng-box>` (`gtk-box`)                                 | Layout Container     | `GtkBox`                  | `Microsoft.UI.Xaml.Controls.StackPanel`      | `NSStackView`         | `orientation` (`vertical` \| `horizontal`), `spacing` / `gap`                                                                     |
 | `<ng-grid>` (`gtk-grid`)                               | Layout Container     | `GtkGrid`                 | `Microsoft.UI.Xaml.Controls.Grid`            | `NSGridView`          | `spacing` / `gap`, `row-spacing`, `column-spacing`                                                                                |
 | `<ng-flow>` (`ng-flow-box`, `gtk-flow-box`)            | Responsive Layout    | `GtkFlowBox`              | `Microsoft.UI.Xaml.Controls.ItemsRepeater`   | `NSCollectionView`    | `spacing` / `gap`, `row-spacing`, `column-spacing`, `min-children` / `min-per-row`, `max-children` / `max-per-row`, `homogeneous` |
@@ -53,6 +54,10 @@ A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22
 | `<ng-spinner>` (`gtk-spinner`)                         | Feedback             | `GtkSpinner`              | `Microsoft.UI.Xaml.Controls.ProgressRing`    | `NSProgressIndicator` | `active`                                                                                                                          |
 | `<ng-button>` (`gtk-button`)                           | Action Control       | `GtkButton`               | `Microsoft.UI.Xaml.Controls.Button`          | `NSButton`            | label text, `(click)`                                                                                                             |
 | `<ng-entry>` (`gtk-entry`)                             | Form Input           | `GtkEntry`                | `Microsoft.UI.Xaml.Controls.TextBox`         | `NSTextFieldEditable` | `value` / `text`, `placeholder`, `(input)` + `NativeTextValueAccessor`                                                            |
+| `<ng-search-entry>` (`gtk-search-entry`)               | Search Input         | `GtkSearchEntry`          | `Microsoft.UI.Xaml.Controls.AutoSuggestBox`  | `NSSearchField`       | `value` / `text`, `placeholder`, `(input)` + `NativeTextValueAccessor`                                                            |
+| `<ng-password-entry>` (`gtk-password-entry`)           | Password Input       | `GtkPasswordEntry`        | `Microsoft.UI.Xaml.Controls.PasswordBox`     | `NSSecureTextField`   | `value` / `text`, `placeholder`, `show-peek-icon` / `peek`, `(input)` + `NativeTextValueAccessor`                                 |
+| `<ng-text-view>` (`gtk-text-view`)                     | Multiline Text       | `GtkTextView`             | `Microsoft.UI.Xaml.Controls.RichEditBox`     | `NSTextView`          | `value` / `text`, `editable`, `monospace`, `(input)` + `NativeTextValueAccessor`                                                  |
+| `<ng-spin-button>` (`gtk-spin-button`)                 | Numeric Stepper      | `GtkSpinButton`           | `Microsoft.UI.Xaml.Controls.NumberBox`       | `NSStepper`           | `value`, `min`, `max`, `step`, `(valueChange)` + `NativeNumberValueAccessor`                                                      |
 | `<ng-switch>` (`gtk-switch`)                           | Form Toggle          | `GtkSwitch`               | `Microsoft.UI.Xaml.Controls.ToggleSwitch`    | `NSSwitch`            | `active` / `checked` / `value`, `(change)` + `NativeBooleanValueAccessor`                                                         |
 | `<ng-checkbox>` (`ng-check`, `gtk-check-button`)       | Form Toggle          | `GtkCheckButton`          | `Microsoft.UI.Xaml.Controls.CheckBox`        | `NSButtonCheckbox`    | `label`, `active` / `checked` / `value`, `(change)` + `NativeBooleanValueAccessor`                                                |
 | `<ng-slider>` (`ng-scale`, `gtk-scale`)                | Form Range           | `GtkScale`                | `Microsoft.UI.Xaml.Controls.Slider`          | `NSSlider`            | `value`, `min`, `max`, `(valueChange)` + `NativeNumberValueAccessor`                                                              |
@@ -60,11 +65,6 @@ A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22
 | `<ng-anchor>` (`#comment`)                             | Virtual Control Flow | `GtkAnchorComment`        | `Microsoft.UI.Xaml.AnchorComment`            | `NSAnchorComment`     | `@if`, `@for`, `@switch` anchor                                                                                                   |
 
 > **Common Widget Attributes:** `visible`, `hexpand`, `vexpand`, `halign`, `valign`, `margin`, `margin-top`, `margin-bottom`, `margin-start`, `margin-end` (plus `sensitive` emitted by `@ng-native/forms` `setDisabledState`).
-
-### Pending Primitives (Phase 8 Backlog)
-
-- **Extended Form & Adaptive Controls:**
-  - `<ng-text-view>` (`GtkTextView`), `<ng-password-entry>` (`GtkPasswordEntry`), `<ng-spin-button>` (`GtkSpinButton`), `<ng-search-entry>` (`GtkSearchEntry`), `<ng-clamp>` (`AdwClamp`).
 
 ---
 
@@ -213,10 +213,10 @@ NG_NATIVE_BATCH=1 cargo run
 | `pnpm run format`                           | Format TypeScript, HTML, CSS, JSON, and Markdown via `oxfmt`         |
 | `pnpm run format:check`                     | Verify formatting with `oxfmt`                                       |
 | `pnpm run lint`                             | Lint TypeScript & Angular templates via `oxlint` + `angular-eslint`  |
-| `pnpm run test`                             | Run all 27 Vitest specs for packages and showcase app                |
+| `pnpm run test`                             | Run all 28 Vitest specs for packages and showcase app                |
 | `cargo fmt --all -- --check`                | Verify Rust formatting                                               |
 | `cargo clippy --all-targets -- -D warnings` | Run strict Rust Clippy lints (pedantic + nursery, zero warnings)     |
-| `cargo test`                                | Execute all 26 unit tests + 15 E2E integration tests in Rust         |
+| `cargo test`                                | Execute all 27 unit tests + 15 E2E integration tests in Rust         |
 
 ---
 

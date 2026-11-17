@@ -21,7 +21,7 @@ fn full_mvp_pipeline_with_headless_backend() {
     // Tick 1: Mount Angular component (signals + styles + template + icon + declarative events)
     runtime.eval_tick(&mut engine, &script).unwrap();
     assert_eq!(engine.backend().frames.len(), 1);
-    assert_eq!(engine.backend().frames[0].len(), 366);
+    assert_eq!(engine.backend().frames[0].len(), 400);
 
     let win = runtime.resolve_var("win").unwrap();
     let hello = runtime.resolve_var("hello").unwrap();
@@ -38,7 +38,12 @@ fn full_mvp_pipeline_with_headless_backend() {
         ".hero-title(bg:transparent, fg:#78aeed, pad:8px, font-size:22px, font-weight:800)"
     ));
     assert!(preview.contains(".main-card(bg:#242424, fg:#ffffff, pad:16px, radius:14px)"));
-    assert!(preview.contains("[Entry: \"ng-native-dev\"]"));
+    assert!(preview.contains("[Clamp max-width:1080px]"));
+    assert!(preview.contains("[SearchEntry: \"ng-native-dev\"]"));
+    assert!(preview.contains("[SpinButton: 0 (0..1025, step:1)]"));
+    assert!(preview.contains("[Paned dir:horizontal, pos:520px]"));
+    assert!(preview.contains("[Expander ▼ Estadísticas Base (HP / ATK / DEF / SPD)]"));
+    assert!(preview.contains("[TextView: \"Pokédex Nacional Kanto/Johto\"]"));
     assert!(preview.contains("Pokémon destacados"));
     assert!(preview.contains("[Spinner:"));
     assert!(preview.contains("Bulbasaur"));
