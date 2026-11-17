@@ -12,9 +12,12 @@ This project adheres to [Conventional Commits](https://www.conventionalcommits.o
 - **compiler:** implement `ast-metadata-extractor.mjs` using Rust-based `oxc-parser` (`parseSync`) for TypeScript 6.0 AST extraction, `template-compiler.mjs` using `@angular/compiler`'s official `parseTemplate` AST, and `style-compiler.mjs` using `postcss` AST (zero regex parsing).
 - **styles:** extend `StyleRule` and GTK4 CSS generator with `border-radius`, `font-size`, and `font-weight`, maintaining 100% backward compatibility with legacy 6-token style instructions.
 - **platforms:** extract DRY cross-platform state machine `src/platforms/scene_state.rs` (`NativeSceneState` + `NativeSceneNode`) shared by `WinUiBackend` and `MacOsAppKitBackend`.
-- **runtime:** refactor `src/runtime/mod.rs` into `js_bridge.rs` (JS eval & event routing), `reactivity.rs` (Signal propagation & text bindings), and `scene_exec.rs` (scene instruction execution).
+- **runtime:** refactor `src/runtime/mod.rs` into `js_bridge.rs` (JS eval & event routing), `reactivity.rs` (Signal propagation, text bindings & `set_signal`), and `scene_exec.rs` (scene instruction execution).
 - **engine:** extract layout and interactive attribute mutators into `src/engine/widget_attrs.rs`.
-- **testing:** expand automated test suite to 54 passing tests (23 Rust unit tests + 10 Rust E2E tests + 21 Vitest tests).
+- **widgets:** add `<ng-spinner>` (`GtkSpinner`), standalone `<ng-progress-bar>` (`GtkProgressBar` with fraction clamping and indeterminate pulsing), `<ng-image>` (`GtkPicture`), `<ng-level-bar>` (`GtkLevelBar`), and `<ng-flow>` (`GtkFlowBox`) across `WidgetKind`, `GtkLinuxBackend`, `WinUiBackend`, and `MacOsAppKitBackend`.
+- **desktop:** implement live PokéAPI HTTP client (`src/desktop/pokedex.rs`) and async `PokedexController` (`src/desktop/pokedex_ui.rs`) with worker-thread HTTP requests, 500ms search debounce, `<ng-spinner>` loading indicator, and `JsRuntime::set_signal`.
+- **compiler:** support modular Angular components with `<ng-content>` projection and shared `idState` counter in `template-compiler.mjs` (`template-compiler.d.mts` + `template-compiler.spec.ts`) so auto-generated node IDs never collide across nested component expansions.
+- **testing:** split integration tests into 5 modular suites under `tests/` (`test_scene_graph.rs`, `test_pipeline_and_hmr.rs`, `test_forms_and_desktop.rs`, `test_js_engines.rs`, `test_cross_platform.rs`) and expand coverage to 66 automated tests (25 Rust unit tests + 14 Rust E2E tests + 27 Vitest tests).
 
 ### Features (Phase 6 — `@ng-native/builders`, Linux Distribution Packager, & Stateful Cross-Platform Backends)
 

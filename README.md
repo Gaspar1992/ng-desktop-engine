@@ -8,7 +8,7 @@ A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22
 
 ## 🎯 Architectural Principles
 
-1. **Zero WebView Overhead:** Angular templates compile and execute against native operating system controls (`AdwApplicationWindow`, `GtkHeaderBar`, `GtkBox`, `GtkGrid`, `GtkScrolledWindow`, `GtkLabel`, `GtkButton`, `GtkEntry`, `GtkSwitch`, `GtkCheckButton`, `GtkScale`, `GtkDropDown`), delivering sub-second startup and a tiny memory footprint.
+1. **Zero WebView Overhead:** Angular templates compile and execute against native operating system controls (`AdwApplicationWindow`, `GtkHeaderBar`, `GtkBox`, `GtkGrid`, `GtkFlowBox`, `GtkScrolledWindow`, `GtkLabel`, `GtkPicture`, `GtkLevelBar`, `GtkProgressBar`, `GtkSpinner`, `GtkButton`, `GtkEntry`, `GtkSwitch`, `GtkCheckButton`, `GtkScale`, `GtkDropDown`), delivering sub-second startup and a tiny memory footprint.
 2. **Rust-Grade Memory Safety Across the JS/Native Boundary:**
    - **Generational Arena (`Arena` + `NodeId`):** JavaScript never holds raw C/GTK pointers. Every native widget is stored inside a Rust generational arena (`index` + `generation`), preventing use-after-free bugs when components unmount.
    - **Runtime Borrow Checker (`BorrowState`):** Enforces Rust's aliasing rules (`Shared(usize)` vs `Exclusive`) at runtime across asynchronous UI events, blocking illegal node destruction while an event callback is actively borrowing a widget.
@@ -30,6 +30,45 @@ A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22
 
 ---
 
+## 🧩 Native Primitives Catalog
+
+### Implemented Native Primitives (19 Primitives)
+
+| Tag (Aliases)                                          | Category             | Linux (GTK4 / Libadwaita) | Windows (WinUI 3)                            | macOS (AppKit)        | Attributes & Events                                                                                                               |
+| :----------------------------------------------------- | :------------------- | :------------------------ | :------------------------------------------- | :-------------------- | :-------------------------------------------------------------------------------------------------------------------------------- |
+| `<ng-window>` (`adw-window`)                           | Window               | `AdwApplicationWindow`    | `Microsoft.UI.Xaml.Window`                   | `NSWindow`            | `title`, window icon                                                                                                              |
+| `<ng-header-bar>` (`adw-header-bar`, `gtk-header-bar`) | Window Chrome        | `AdwHeaderBar`            | `Microsoft.UI.Xaml.Controls.TitleBar`        | `NSToolbar`           | `title`, `subtitle`, `show-title-buttons`                                                                                         |
+| `<ng-box>` (`gtk-box`)                                 | Layout Container     | `GtkBox`                  | `Microsoft.UI.Xaml.Controls.StackPanel`      | `NSStackView`         | `orientation` (`vertical` \| `horizontal`), `spacing` / `gap`                                                                     |
+| `<ng-grid>` (`gtk-grid`)                               | Layout Container     | `GtkGrid`                 | `Microsoft.UI.Xaml.Controls.Grid`            | `NSGridView`          | `spacing` / `gap`, `row-spacing`, `column-spacing`                                                                                |
+| `<ng-flow>` (`ng-flow-box`, `gtk-flow-box`)            | Responsive Layout    | `GtkFlowBox`              | `Microsoft.UI.Xaml.Controls.ItemsRepeater`   | `NSCollectionView`    | `spacing` / `gap`, `row-spacing`, `column-spacing`, `min-children` / `min-per-row`, `max-children` / `max-per-row`, `homogeneous` |
+| `<ng-scroll>` (`gtk-scrolled-window`)                  | Scroll Container     | `GtkScrolledWindow`       | `Microsoft.UI.Xaml.Controls.ScrollViewer`    | `NSScrollView`        | `min-height`                                                                                                                      |
+| `<ng-separator>` (`gtk-separator`)                     | Layout Divider       | `GtkSeparator`            | `Microsoft.UI.Xaml.Controls.AppBarSeparator` | `NSBoxSeparator`      | `orientation` (`horizontal` \| `vertical`)                                                                                        |
+| `<ng-label>` (`gtk-label`)                             | Typography           | `GtkLabel`                | `Microsoft.UI.Xaml.Controls.TextBlock`       | `NSTextField`         | text content / `{{ signal() }}`                                                                                                   |
+| `<ng-image>` (`ng-picture`, `gtk-picture`)             | Media                | `GtkPicture`              | `Microsoft.UI.Xaml.Controls.Image`           | `NSImageView`         | `src`, `width`, `height`                                                                                                          |
+| `<ng-level-bar>` (`gtk-level-bar`)                     | Meter / Indicator    | `GtkLevelBar`             | `Microsoft.UI.Xaml.Controls.ProgressBar`     | `NSLevelIndicator`    | `value`, `min`, `max`                                                                                                             |
+| `<ng-progress-bar>` (`gtk-progress-bar`)               | Feedback             | `GtkProgressBar`          | `Microsoft.UI.Xaml.Controls.ProgressBar`     | `NSProgressIndicator` | `value` (`0.0..1.0`), `indeterminate`                                                                                             |
+| `<ng-spinner>` (`gtk-spinner`)                         | Feedback             | `GtkSpinner`              | `Microsoft.UI.Xaml.Controls.ProgressRing`    | `NSProgressIndicator` | `active`                                                                                                                          |
+| `<ng-button>` (`gtk-button`)                           | Action Control       | `GtkButton`               | `Microsoft.UI.Xaml.Controls.Button`          | `NSButton`            | label text, `(click)`                                                                                                             |
+| `<ng-entry>` (`gtk-entry`)                             | Form Input           | `GtkEntry`                | `Microsoft.UI.Xaml.Controls.TextBox`         | `NSTextFieldEditable` | `value` / `text`, `placeholder`, `(input)` + `NativeTextValueAccessor`                                                            |
+| `<ng-switch>` (`gtk-switch`)                           | Form Toggle          | `GtkSwitch`               | `Microsoft.UI.Xaml.Controls.ToggleSwitch`    | `NSSwitch`            | `active` / `checked` / `value`, `(change)` + `NativeBooleanValueAccessor`                                                         |
+| `<ng-checkbox>` (`ng-check`, `gtk-check-button`)       | Form Toggle          | `GtkCheckButton`          | `Microsoft.UI.Xaml.Controls.CheckBox`        | `NSButtonCheckbox`    | `label`, `active` / `checked` / `value`, `(change)` + `NativeBooleanValueAccessor`                                                |
+| `<ng-slider>` (`ng-scale`, `gtk-scale`)                | Form Range           | `GtkScale`                | `Microsoft.UI.Xaml.Controls.Slider`          | `NSSlider`            | `value`, `min`, `max`, `(valueChange)` + `NativeNumberValueAccessor`                                                              |
+| `<ng-select>` (`ng-dropdown`, `gtk-drop-down`)         | Form Select          | `GtkDropDown`             | `Microsoft.UI.Xaml.Controls.ComboBox`        | `NSPopUpButton`       | `options` (CSV), `selected` / `value`, `(valueChange)` + `NativeNumberValueAccessor`                                              |
+| `<ng-anchor>` (`#comment`)                             | Virtual Control Flow | `GtkAnchorComment`        | `Microsoft.UI.Xaml.AnchorComment`            | `NSAnchorComment`     | `@if`, `@for`, `@switch` anchor                                                                                                   |
+
+> **Common Widget Attributes:** `visible`, `hexpand`, `vexpand`, `halign`, `valign`, `margin`, `margin-top`, `margin-bottom`, `margin-start`, `margin-end` (plus `sensitive` emitted by `@ng-native/forms` `setDisabledState`).
+
+### Pending Primitives (Phase 8 Roadmap)
+
+- **Priority Containers:**
+  - `<ng-paned>` (`GtkPaned`): Resizable two-pane split container (`orientation`, `position`, start/end child slots).
+  - `<ng-stack>` (`GtkStack` / `AdwNavigationView`): Multi-page view container (`visible-child`, `transition-type`, router integration).
+  - `<ng-expander>` (`GtkExpander`): Collapsible disclosure / accordion container (`label`, `expanded`, `notify::expanded`).
+- **Secondary Form & Adaptive Controls:**
+  - `<ng-text-view>` (`GtkTextView`), `<ng-password-entry>` (`GtkPasswordEntry`), `<ng-spin-button>` (`GtkSpinButton`), `<ng-search-entry>` (`GtkSearchEntry`), `<ng-clamp>` (`AdwClamp`).
+
+---
+
 ## 📂 Repository Structure
 
 ```text
@@ -40,7 +79,9 @@ ng-native-engine/
 │   ├── config/
 │   │   └── mod.rs                # Angular CLI (angular.json) native target parser
 │   ├── desktop/
-│   │   └── mod.rs                # Desktop OS services (Theme, Clipboard, Notifications, Dialogs, HTTP)
+│   │   ├── mod.rs                # Desktop OS services (Theme, Clipboard, Notifications, Dialogs, HTTP)
+│   │   ├── pokedex.rs            # Live PokéAPI HTTP client & sprite cache
+│   │   └── pokedex_ui.rs         # Async Pokédex controller, debounced search & loading spinner
 │   ├── ipc/
 │   │   └── mod.rs                # Non-blocking Unix Domain Socket HMR IPC Server & Client
 │   ├── packager/
@@ -95,7 +136,12 @@ ng-native-engine/
 │       ├── template-compiler.mjs # @angular/compiler AST template parser
 │       └── src/app/              # Angular 22 Component (app.ts, app.html, app.css)
 ├── tests/
-│   └── engine_integration.rs     # End-to-end integration test suite (Headless, HMR IPC, Forms)
+│   ├── common/mod.rs             # Shared test helpers & headless harness
+│   ├── test_cross_platform.rs    # WinUI 3, AppKit, Linux GTK4 & packager tests
+│   ├── test_forms_and_desktop.rs # Phase 4 forms & Phase 5 desktop/HTTP bridge tests
+│   ├── test_js_engines.rs        # Dual JSC & QuickJS engine parity tests
+│   ├── test_pipeline_and_hmr.rs  # Full bundle pipeline, HMR & Unix socket IPC tests
+│   └── test_scene_graph.rs       # Arena invariants, anchors & reverse event dispatch tests
 ├── ROADMAP.md                    # Deep architectural roadmap & completed milestone history
 └── CHANGELOG.md                  # Release notes and version changelog
 ```
@@ -168,10 +214,10 @@ NG_NATIVE_BATCH=1 cargo run
 | `pnpm run format`                           | Format TypeScript, HTML, CSS, JSON, and Markdown via `oxfmt`         |
 | `pnpm run format:check`                     | Verify formatting with `oxfmt`                                       |
 | `pnpm run lint`                             | Lint TypeScript & Angular templates via `oxlint` + `angular-eslint`  |
-| `pnpm run test`                             | Run all Vitest specs for packages and showcase app                   |
+| `pnpm run test`                             | Run all 27 Vitest specs for packages and showcase app                |
 | `cargo fmt --all -- --check`                | Verify Rust formatting                                               |
 | `cargo clippy --all-targets -- -D warnings` | Run strict Rust Clippy lints (pedantic + nursery, zero warnings)     |
-| `cargo test`                                | Execute all 23 unit tests + 10 E2E integration tests in Rust         |
+| `cargo test`                                | Execute all 25 unit tests + 14 E2E integration tests in Rust         |
 
 ---
 

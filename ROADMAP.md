@@ -133,5 +133,24 @@ When `@angular/platform-browser` is removed, Angular's Ivy runtime still require
   - [x] Split `src/runtime/mod.rs` into `js_bridge.rs`, `reactivity.rs`, and `scene_exec.rs`.
 - [x] **Angular 22 & TypeScript 6.0 Workspace Upgrade:**
   - [x] Upgraded root workspace and all packages to `@angular/*@22.2.5`, `@angular/build@22.2.6`, and `typescript@6.0.3`.
+- [x] **Media, Meter, Feedback, & Responsive Flow Primitives:**
+  - [x] Added `<ng-image>` (`GtkPicture`), `<ng-level-bar>` (`GtkLevelBar`), `<ng-flow>` (`GtkFlowBox`), `<ng-spinner>` (`GtkSpinner`), and `<ng-progress-bar>` (`GtkProgressBar` with indeterminate pulsing).
+- [x] **Modular Angular Components & Content Projection:**
+  - [x] Support nested custom components (`<app-pokemon-card>`, `<app-type-badge>`) with `<ng-content>` projection and collision-free `idState` generation across expansions.
+- [x] **Live Pokédex Desktop Showcase (`PokedexController`):**
+  - [x] Non-blocking worker-thread PokéAPI client (`src/desktop/pokedex.rs` & `src/desktop/pokedex_ui.rs`) with 500ms search debounce, `<ng-spinner>` loading feedback, and `JsRuntime::set_signal`.
 - [x] **Comprehensive Automated Test Coverage:**
-  - [x] 54 automated tests passing (23 Rust unit tests + 10 Rust E2E integration tests + 21 Angular Vitest tests).
+  - [x] 66 automated tests passing (25 Rust unit tests + 14 Rust E2E integration tests + 27 Angular Vitest tests).
+
+### Phase 8: Advanced Layout Containers & Extended Primitives (Pending 🚧)
+
+- [ ] **Priority Layout & Container Primitives:**
+  - [ ] `<ng-paned>` (`GtkPaned` / `Microsoft.UI.Xaml.Controls.SplitView` / `NSSplitView`): Resizable two-pane split container supporting `orientation` (`horizontal` | `vertical`), divider `position` (px), and start/end child slots.
+  - [ ] `<ng-stack>` (`GtkStack` / `AdwNavigationView` / `NSTabView`): Multi-page view container supporting named child views, `visible-child` active page switching, `transition-type`, and `@ng-native/router` integration.
+  - [ ] `<ng-expander>` (`GtkExpander` / `Microsoft.UI.Xaml.Controls.Expander` / `NSDisclosureButton`): Collapsible disclosure/accordion container supporting `label`, `expanded` state attribute, and `notify::expanded` signal emission.
+- [ ] **Extended Form & Adaptive Primitives (Backlog):**
+  - [ ] `<ng-text-view>` (`GtkTextView` multi-line text editor with `NativeTextValueAccessor` support)
+  - [ ] `<ng-password-entry>` (`GtkPasswordEntry` with `show-peek-icon`)
+  - [ ] `<ng-spin-button>` (`GtkSpinButton` numeric stepper with `min`, `max`, `step`, `value`)
+  - [ ] `<ng-search-entry>` (`GtkSearchEntry` with native search icon, clear button, and `search-changed`)
+  - [ ] `<ng-clamp>` (`AdwClamp` responsive maximum-width container)
