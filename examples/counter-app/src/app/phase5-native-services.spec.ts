@@ -1,8 +1,19 @@
-import { HttpClient, HttpInterceptorFn, withInterceptors } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpInterceptorFn } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { NativeDesktopService } from '@ng-native/desktop';
-import { NativeHttpBackend, provideNativeHttpClient } from '@ng-native/http';
-import { ensureNgNativeBridge } from '@ng-native/platform';
+import {
+  NATIVE_HTTP_CONFIG,
+  NativeHttpBackend,
+  provideHttpClient,
+  provideNativeHttpClient,
+  withFetch,
+  withHttpCaching,
+  withInterceptors,
+  withNoXsrfProtection,
+  withParallelBatching,
+  withXsrfConfiguration,
+} from '@ng-native/http';
+import { ensureNgNativeBridge, NativeHttpRequestOptions } from '@ng-native/platform';
 import { NativePlatformLocation } from '@ng-native/router';
 import { firstValueFrom } from 'rxjs';
 
@@ -93,5 +104,118 @@ describe('Phase 5 — @ng-native/router, @ng-native/http & @ng-native/desktop', 
     expect(desktop.saveFileDialog({ suggestedName: '/home/dev/bundle.ngb' })).toBe(
       '/home/dev/bundle.ngb',
     );
+  });
+
+  it('translates drop-in provideHttpClient features into NativeHttpConfig and forwards callKind & headers', async () => {
+    const bridge = ensureNgNativeBridge();
+    const capturedCalls: Array<{
+      url: string;
+      options?: NativeHttpRequestOptions;
+    }> = [];
+    const originalHttp = bridge.httpRequest.bind(bridge);
+
+    bridge.registerHttpEndpoint(
+      'GET',
+      'https://pokeapi.co/api/v2/pokemon/25',
+      200,
+      JSON.stringify({ id: 25, name: 'pikachu' }),
+    );
+    bridge.registerHttpEndpoint(
+      'POST',
+      'https://beta.pokeapi.co/graphql/v1beta',
+      200,
+      JSON.stringify({ data: { pokemon: { name: 'charizard' } } }),
+    );
+    bridge.registerHttpEndpoint(
+      'GET',
+      'https://cdn.ng-native.dev/sprites/25.png',
+      200,
+      'PNG_BINARY_STUB',
+    );
+    bridge.registerHttpEndpoint(
+      'GET',
+      'https://cdn.ng-native.dev/notes.txt',
+      200,
+      'Bulbasaur notes',
+    );
+
+    bridge.httpRequest = (method, url, body, options) => {
+      capturedCalls.push({ url, options });
+      return originalHttp(method, url, body, options);
+    };
+
+    try {
+      const traceInterceptor: HttpInterceptorFn = (req, next) =>
+        next(req.clone({ setHeaders: { 'X-Client-Trace': 'pokedex-v2' } }));
+
+      TestBed.configureTestingModule({
+        providers: [
+          provideHttpClient(
+            withFetch(),
+            withInterceptors([traceInterceptor]),
+            withXsrfConfiguration({ cookieName: 'MY-XSRF', headerName: 'X-MY-XSRF' }),
+            withHttpCaching(true),
+            withParallelBatching(16),
+          ),
+        ],
+      });
+
+      const resolvedConfig = TestBed.inject(NATIVE_HTTP_CONFIG);
+      expect(provideNativeHttpClient).toBe(provideHttpClient);
+      expect(resolvedConfig.useFetchTransport).toBe(true);
+      expect(resolvedConfig.xsrfEnabled).toBe(true);
+      expect(resolvedConfig.xsrfCookieName).toBe('MY-XSRF');
+      expect(resolvedConfig.xsrfHeaderName).toBe('X-MY-XSRF');
+      expect(resolvedConfig.cacheEnabled).toBe(true);
+      expect(resolvedConfig.maxParallelConnections).toBe(16);
+      expect(bridge.getHttpConfig().xsrfHeaderName).toBe('X-MY-XSRF');
+
+      const http = TestBed.inject(HttpClient);
+      const poke = await firstValueFrom(
+        http.get<{ id: number; name: string }>('https://pokeapi.co/api/v2/pokemon/25'),
+      );
+      expect(poke.name).toBe('pikachu');
+
+      const gql = await firstValueFrom(
+        http.post<{ data: { pokemon: { name: string } } }>(
+          'https://beta.pokeapi.co/graphql/v1beta',
+          { query: '{ pokemon(id: 6) { name } }' },
+        ),
+      );
+      expect(gql.data.pokemon.name).toBe('charizard');
+
+      const asset = await firstValueFrom(
+        http.get('https://cdn.ng-native.dev/sprites/25.png', {
+          responseType: 'blob',
+        }),
+      );
+      expect(asset).toBeInstanceOf(Blob);
+      expect(await asset.text()).toBe('PNG_BINARY_STUB');
+
+      const txt = await firstValueFrom(
+        http.get('https://cdn.ng-native.dev/notes.txt', {
+          headers: new HttpHeaders({ 'X-Custom': 'yes' }),
+          responseType: 'text',
+        }),
+      );
+      expect(txt).toBe('Bulbasaur notes');
+
+      expect(capturedCalls.map((c) => c.options?.callKind)).toEqual([
+        'json',
+        'graphql',
+        'asset',
+        'text',
+      ]);
+      expect(capturedCalls[0].options?.headers?.['X-Client-Trace']).toBe('pokedex-v2');
+      expect(capturedCalls[3].options?.headers?.['X-Custom']).toBe('yes');
+
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [provideHttpClient(withNoXsrfProtection())],
+      });
+      expect(TestBed.inject(NATIVE_HTTP_CONFIG).xsrfEnabled).toBe(false);
+    } finally {
+      bridge.httpRequest = originalHttp;
+    }
   });
 });

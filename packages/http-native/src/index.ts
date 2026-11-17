@@ -1,1 +1,20 @@
-export { NativeHttpBackend, provideNativeHttpClient } from './http-backend';
+export {
+  detectNativeCallKind,
+  HttpFeatureKind,
+  NATIVE_HTTP_CONFIG,
+  NativeHttpBackend,
+  provideHttpClient,
+  provideNativeHttpClient,
+  resolveNativeHttpConfig,
+  withFetch,
+  withHttpCaching,
+  withInterceptors,
+  withInterceptorsFromDi,
+  withJsonpSupport,
+  withNativeHttpConfig,
+  withNoXsrfProtection,
+  withParallelBatching,
+  withRequestsMadeViaParent,
+  withXhr,
+  withXsrfConfiguration,
+} from './http-backend';

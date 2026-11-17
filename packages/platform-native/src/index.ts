@@ -1,4 +1,11 @@
-export { ensureNgNativeBridge, type NativeHttpBridgeResponse, type NgNativeBridge } from './bridge';
+export {
+  ensureNgNativeBridge,
+  type NativeHttpBridgeResponse,
+  type NativeHttpCallKind,
+  type NativeHttpConfig,
+  type NativeHttpRequestOptions,
+  type NgNativeBridge,
+} from './bridge';
 export { NativeElementNode } from './native-element';
 export { NativeRenderer2, NativeRendererFactory2 } from './native-renderer';
 export {

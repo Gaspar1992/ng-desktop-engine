@@ -46,10 +46,12 @@ impl JsRuntime {
         Self::with_engine(AnyJsEngine::default())
     }
 
-    pub fn with_engine(js_engine: AnyJsEngine) -> Self {
+    pub fn with_engine(mut js_engine: AnyJsEngine) -> Self {
+        let desktop = DesktopServices::new();
+        js_engine.attach_http_engine(desktop.shared_http_engine());
         Self {
             js_engine,
-            desktop: DesktopServices::new(),
+            desktop,
             variables: HashMap::new(),
             node_vars: HashMap::new(),
             signals: HashMap::new(),

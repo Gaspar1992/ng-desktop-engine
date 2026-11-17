@@ -1,7 +1,35 @@
+export type NativeHttpCallKind = 'json' | 'graphql' | 'asset' | 'batch' | 'text';
+
+export interface NativeHttpRequestOptions {
+  headers?: Record<string, string>;
+  responseType?: string;
+  callKind?: NativeHttpCallKind;
+  withCredentials?: boolean;
+}
+
+export interface NativeHttpConfig {
+  platform?: string;
+  useFetchTransport?: boolean;
+  interceptorsEnabled?: boolean;
+  xsrfEnabled?: boolean;
+  xsrfCookieName?: string;
+  xsrfHeaderName?: string;
+  xsrfTokenValue?: string;
+  jsonpEnabled?: boolean;
+  requestsViaParent?: boolean;
+  maxParallelConnections?: number;
+  cacheEnabled?: boolean;
+  timeoutMs?: number;
+}
+
 export interface NativeHttpBridgeResponse {
   status: number;
   statusText: string;
   body: string;
+  headers?: Record<string, string>;
+  transport?: string;
+  callKind?: NativeHttpCallKind;
+  cached?: boolean;
 }
 
 /**
@@ -32,8 +60,23 @@ export interface NgNativeBridge {
   sendNotification(title: string, body: string, icon?: string): void;
   openFileDialog(title?: string, defaultPath?: string): string;
   saveFileDialog(title?: string, suggestedName?: string): string;
+  configureHttp(config: NativeHttpConfig): NativeHttpConfig;
+  getHttpConfig(): NativeHttpConfig;
   registerHttpEndpoint(method: string, url: string, status: number, body: string): void;
-  httpRequest(method: string, url: string, body?: string): NativeHttpBridgeResponse;
+  httpRequest(
+    method: string,
+    url: string,
+    body?: string,
+    options?: NativeHttpRequestOptions,
+  ): NativeHttpBridgeResponse;
+  httpBatchRequest?(
+    requests: Array<{
+      method: string;
+      url: string;
+      body?: string;
+      options?: NativeHttpRequestOptions;
+    }>,
+  ): NativeHttpBridgeResponse[];
   __dispatchEvent(id: string, eventName: string, eventPayload?: unknown): void;
   __flushTimers(): void;
   __drainQueue(): string;
@@ -57,6 +100,20 @@ export function ensureNgNativeBridge(): NgNativeBridge {
   let systemTheme: 'dark' | 'light' = 'dark';
   let clipboardText = '';
   const httpEndpoints = new Map<string, NativeHttpBridgeResponse>();
+  let httpConfig: NativeHttpConfig = {
+    platform: 'js-fallback',
+    useFetchTransport: true,
+    interceptorsEnabled: true,
+    xsrfEnabled: true,
+    xsrfCookieName: 'XSRF-TOKEN',
+    xsrfHeaderName: 'X-XSRF-TOKEN',
+    xsrfTokenValue: '',
+    jsonpEnabled: false,
+    requestsViaParent: false,
+    maxParallelConnections: 24,
+    cacheEnabled: true,
+    timeoutMs: 15_000,
+  };
   const listeners = new Map<
     number,
     { id: string; eventName: string; callback: (e?: unknown) => void }
@@ -143,22 +200,42 @@ export function ensureNgNativeBridge(): NgNativeBridge {
     saveFileDialog(_title = 'Save File', suggestedName = '/home/user/untitled.txt') {
       return suggestedName;
     },
+    configureHttp(config) {
+      httpConfig = { ...httpConfig, ...config };
+      return { ...httpConfig };
+    },
+    getHttpConfig() {
+      return { ...httpConfig };
+    },
     registerHttpEndpoint(method, url, status, body) {
       const key = `${method.trim().toUpperCase()} ${url.trim()}`;
       httpEndpoints.set(key, {
         status,
         statusText: status < 400 ? 'OK' : 'Error',
         body,
+        headers: {},
+        transport: 'mock-route',
+        callKind: 'json',
+        cached: false,
       });
     },
-    httpRequest(method, url, _body) {
+    httpRequest(method, url, _body, options) {
       const key = `${method.trim().toUpperCase()} ${url.trim()}`;
       return (
         httpEndpoints.get(key) ?? {
           status: 404,
           statusText: 'Not Found',
           body: '{"error":"Endpoint not registered"}',
+          headers: {},
+          transport: 'js-fallback',
+          callKind: options?.callKind ?? 'json',
+          cached: false,
         }
+      );
+    },
+    httpBatchRequest(requests) {
+      return requests.map((req) =>
+        fallbackBridge.httpRequest(req.method, req.url, req.body, req.options),
       );
     },
     __dispatchEvent(id, eventName, eventPayload = {}) {

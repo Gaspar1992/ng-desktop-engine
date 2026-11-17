@@ -1,6 +1,6 @@
 use super::{DesktopServices, NativeHttpRequest};
 use std::fs;
-use std::process::Command;
+use std::path::{Path, PathBuf};
 
 const CACHE_DIR: &str = "/tmp/ng_native_pokedex";
 
@@ -308,28 +308,18 @@ fn parse_id_from_pokeapi_url(url: &str) -> Option<u32> {
         .ok()
 }
 
-fn ensure_official_artwork_cached(id: u32) -> String {
-    let cache_path = format!("{CACHE_DIR}/{id}.png");
-    let has_valid_png = fs::metadata(&cache_path).is_ok_and(|m| m.len() > 256);
-    if !has_valid_png {
-        let _ = fs::create_dir_all(CACHE_DIR);
-        let artwork_url = format!(
-            "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/{id}.png"
-        );
-        let _ = Command::new("curl")
-            .args([
-                "-s",
-                "-f",
-                "-L",
-                "--max-time",
-                "5",
-                &artwork_url,
-                "-o",
-                &cache_path,
-            ])
-            .status();
-    }
-    cache_path
+fn artwork_cache_path(id: u32) -> PathBuf {
+    PathBuf::from(format!("{CACHE_DIR}/{id}.png"))
+}
+
+fn artwork_url(id: u32) -> String {
+    format!(
+        "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/{id}.png"
+    )
+}
+
+fn has_valid_cached_file(path: &Path, min_bytes: u64) -> bool {
+    fs::metadata(path).is_ok_and(|m| m.len() > min_bytes)
 }
 
 fn read_cached_json(name: &str) -> Option<String> {
@@ -429,7 +419,7 @@ fn offline_fallback_pokemon(clean: &str) -> Option<PokemonInfo> {
         ability: String::from(spec.ability),
         genus: String::from(spec.genus),
         description: String::from(spec.description),
-        sprite_path: ensure_official_artwork_cached(spec.id),
+        sprite_path: artwork_cache_path(spec.id).to_string_lossy().into_owned(),
     })
 }
 
@@ -465,11 +455,10 @@ impl DesktopServices {
                 return entries;
             }
         }
-        let response = self.execute_http(&NativeHttpRequest {
-            method: String::from("GET"),
-            url: String::from("https://pokeapi.co/api/v2/pokemon?limit=1025&offset=0"),
-            body: None,
-        });
+        let response = self.execute_http(&NativeHttpRequest::new(
+            "GET",
+            "https://pokeapi.co/api/v2/pokemon?limit=1025&offset=0",
+        ));
         if response.status < 400 {
             let entries = PokemonInfo::parse_index_json(&response.body);
             if !entries.is_empty() {
@@ -480,14 +469,39 @@ impl DesktopServices {
         default_index_fallback()
     }
 
-    /// Retrieves a batch of Pokémon (e.g. an infinite-scroll page or filtered search matches).
+    /// Retrieves a batch of Pokémon using HTTP/2 parallel multiplexing for uncached JSON + sprites.
+    /// Species flavor descriptions are intentionally deferred until `fetch_pokemon_detail`.
     pub fn fetch_pokemon_batch(&mut self, ids: &[u32]) -> Vec<PokemonInfo> {
+        let mut pairs: Vec<(String, PathBuf)> = Vec::new();
+        for &id in ids {
+            let json_path = PathBuf::from(format!("{CACHE_DIR}/poke_{id}.json"));
+            if !has_valid_cached_file(&json_path, 16) {
+                pairs.push((format!("https://pokeapi.co/api/v2/pokemon/{id}"), json_path));
+            }
+            let img_path = artwork_cache_path(id);
+            if !has_valid_cached_file(&img_path, 256) {
+                pairs.push((artwork_url(id), img_path));
+            }
+        }
+        if !pairs.is_empty() {
+            let _ = self.download_files_parallel(&pairs);
+        }
+
         ids.iter()
-            .filter_map(|id| self.fetch_pokemon(&id.to_string()).ok())
+            .filter_map(|&id| {
+                read_cached_json(&format!("poke_{id}.json"))
+                    .and_then(|json| PokemonInfo::parse_json(&json))
+                    .or_else(|| offline_fallback_pokemon(&id.to_string()))
+            })
             .collect()
     }
 
-    /// Retrieves Pokémon + species metadata from `PokéAPI v2` with disk caching.
+    /// Retrieves complete Pokémon detail (including localized `/pokemon-species/{id}` metadata).
+    pub fn fetch_pokemon_detail(&mut self, id: u32) -> Result<PokemonInfo, String> {
+        self.fetch_pokemon(&id.to_string())
+    }
+
+    /// Retrieves Pokémon + species metadata from `PokéAPI v2` with warm `SoupSession` + disk caching.
     pub fn fetch_pokemon(&mut self, query: &str) -> Result<PokemonInfo, String> {
         let clean = query.trim().to_ascii_lowercase();
         if clean.is_empty() {
@@ -500,11 +514,7 @@ impl DesktopServices {
 
         if parsed.is_none() {
             let url = format!("https://pokeapi.co/api/v2/pokemon/{clean}");
-            let response = self.execute_http(&NativeHttpRequest {
-                method: String::from("GET"),
-                url,
-                body: None,
-            });
+            let response = self.execute_http(&NativeHttpRequest::new("GET", url));
             last_status = (response.status, response.status_text.clone());
             if response.status < 400
                 && let Some(info) = PokemonInfo::parse_json(&response.body)
@@ -516,7 +526,11 @@ impl DesktopServices {
         }
 
         if let Some(mut poke) = parsed {
-            poke.sprite_path = ensure_official_artwork_cached(poke.id);
+            let img_path = artwork_cache_path(poke.id);
+            if !has_valid_cached_file(&img_path, 256) {
+                let _ = self.download_files_parallel(&[(artwork_url(poke.id), img_path.clone())]);
+            }
+            poke.sprite_path = img_path.to_string_lossy().into_owned();
             self.populate_species_metadata(&mut poke);
             return Ok(poke);
         }
@@ -536,11 +550,7 @@ impl DesktopServices {
             return;
         }
         let url = format!("https://pokeapi.co/api/v2/pokemon-species/{}", poke.id);
-        let response = self.execute_http(&NativeHttpRequest {
-            method: String::from("GET"),
-            url,
-            body: None,
-        });
+        let response = self.execute_http(&NativeHttpRequest::new("GET", url));
         if response.status < 400 && response.body.contains("\"genera\"") {
             write_cached_json(&species_key, &response.body);
             poke.apply_species_json(&response.body);

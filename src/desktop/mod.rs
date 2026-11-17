@@ -1,8 +1,16 @@
-use std::collections::HashMap;
 use std::env;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
+pub mod http_native;
+mod libsoup_sys;
 pub mod pokedex;
 pub mod pokedex_ui;
+
+pub use http_native::{
+    NativeHttpCallKind, NativeHttpConfig, NativeHttpEngine, NativeHttpRequest, NativeHttpResponse,
+    OsHttpPlatform,
+};
 pub use pokedex::{PokemonIndexEntry, PokemonInfo};
 pub use pokedex_ui::PokedexController;
 
@@ -52,30 +60,13 @@ pub struct FileDialogRequest {
     pub suggested_path: String,
 }
 
-/// Native HTTP request dispatched by `@ng-native/http` (`NativeHttpBackend`).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NativeHttpRequest {
-    pub method: String,
-    pub url: String,
-    pub body: Option<String>,
-}
-
-/// Native HTTP response returned to `@ng-native/http` (`HttpClient`).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NativeHttpResponse {
-    pub status: u16,
-    pub status_text: String,
-    pub body: String,
-}
-
 /// Cross-platform Desktop OS & Native HTTP service hub for Phase 5 (`@ng-native/desktop` & `@ng-native/http`).
 pub struct DesktopServices {
     theme: DesktopTheme,
     clipboard: String,
     notifications: Vec<DesktopNotification>,
     file_dialogs: Vec<FileDialogRequest>,
-    http_routes: HashMap<String, NativeHttpResponse>,
-    http_history: Vec<NativeHttpRequest>,
+    http_engine: Arc<Mutex<NativeHttpEngine>>,
 }
 
 impl Default for DesktopServices {
@@ -86,6 +77,11 @@ impl Default for DesktopServices {
 
 impl DesktopServices {
     pub fn new() -> Self {
+        Self::with_http_engine(Arc::new(Mutex::new(NativeHttpEngine::new())))
+    }
+
+    /// Creates a `DesktopServices` instance sharing an existing warm `NativeHttpEngine` pool.
+    pub fn with_http_engine(http_engine: Arc<Mutex<NativeHttpEngine>>) -> Self {
         let detected_theme = env::var("GTK_THEME").map_or(DesktopTheme::Dark, |val| {
             if val.to_ascii_lowercase().contains("light") {
                 DesktopTheme::Light
@@ -98,9 +94,12 @@ impl DesktopServices {
             clipboard: String::new(),
             notifications: Vec::new(),
             file_dialogs: Vec::new(),
-            http_routes: HashMap::new(),
-            http_history: Vec::new(),
+            http_engine,
         }
+    }
+
+    pub fn shared_http_engine(&self) -> Arc<Mutex<NativeHttpEngine>> {
+        Arc::clone(&self.http_engine)
     }
 
     pub const fn theme(&self) -> DesktopTheme {
@@ -163,67 +162,59 @@ impl DesktopServices {
         &self.file_dialogs
     }
 
+    pub fn configure_http(&mut self, config: NativeHttpConfig) {
+        if let Ok(mut engine) = self.http_engine.lock() {
+            engine.set_config(config);
+        }
+    }
+
+    pub fn http_config(&self) -> NativeHttpConfig {
+        self.http_engine
+            .lock()
+            .map_or_else(|_| NativeHttpConfig::default(), |e| e.config().clone())
+    }
+
     pub fn register_http_endpoint(&mut self, method: &str, url: &str, status: u16, body: &str) {
-        let key = format!("{} {}", method.trim().to_ascii_uppercase(), url.trim());
-        self.http_routes.insert(
-            key,
-            NativeHttpResponse {
-                status,
-                status_text: if status < 400 {
-                    String::from("OK")
-                } else {
-                    String::from("Error")
-                },
-                body: String::from(body),
-            },
-        );
+        if let Ok(mut engine) = self.http_engine.lock() {
+            engine.register_http_endpoint(method, url, status, body);
+        }
     }
 
     pub fn execute_http(&mut self, request: &NativeHttpRequest) -> NativeHttpResponse {
-        let key = format!(
-            "{} {}",
-            request.method.trim().to_ascii_uppercase(),
-            request.url.trim()
-        );
-        self.http_history.push(request.clone());
-        if let Some(res) = self.http_routes.get(&key) {
-            return res.clone();
-        }
-
-        // Outbound HTTP call via curl if not intercepted by mock route
-        if request.url.starts_with("http://") || request.url.starts_with("https://") {
-            let mut cmd = std::process::Command::new("curl");
-            cmd.arg("-s")
-                .arg("-L")
-                .arg("-X")
-                .arg(&request.method)
-                .arg(&request.url);
-
-            if let Some(body) = &request.body {
-                cmd.arg("-d").arg(body);
-            }
-
-            if let Ok(output) = cmd.output() {
-                let body = String::from_utf8_lossy(&output.stdout).to_string();
-                let status = if output.status.success() { 200 } else { 500 };
-                let status_text = if status == 200 { "OK" } else { "Error" }.to_string();
-                return NativeHttpResponse {
-                    status,
-                    status_text,
-                    body,
-                };
-            }
-        }
-
-        NativeHttpResponse {
-            status: 404,
-            status_text: String::from("Not Found"),
-            body: String::from(r#"{"error":"Endpoint not registered"}"#),
-        }
+        self.http_engine.lock().map_or_else(
+            |_| NativeHttpResponse {
+                status: 500,
+                status_text: String::from("Lock Error"),
+                body: String::new(),
+                headers: std::collections::HashMap::new(),
+                transport: String::from("error"),
+                call_kind: request.call_kind,
+                cached: false,
+            },
+            |mut engine| engine.execute_http(request),
+        )
     }
 
-    pub fn http_history(&self) -> &[NativeHttpRequest] {
-        &self.http_history
+    pub fn execute_http_batch(
+        &mut self,
+        requests: &[NativeHttpRequest],
+    ) -> Vec<NativeHttpResponse> {
+        self.http_engine
+            .lock()
+            .map_or_else(|_| Vec::new(), |mut engine| engine.execute_batch(requests))
+    }
+
+    pub fn download_files_parallel(&self, pairs: &[(String, PathBuf)]) -> Vec<bool> {
+        self.http_engine.lock().map_or_else(
+            |_| vec![false; pairs.len()],
+            |engine| engine.download_files_parallel(pairs),
+        )
+    }
+
+    pub fn http_history(&self) -> Vec<NativeHttpRequest> {
+        self.http_engine
+            .lock()
+            .map_or_else(|_| Vec::new(), |engine| engine.http_history().to_vec())
     }
 }
 
@@ -256,11 +247,10 @@ mod tests {
             200,
             r#"{"ok":true}"#,
         );
-        let res = desktop.execute_http(&NativeHttpRequest {
-            method: String::from("GET"),
-            url: String::from("https://api.ng-native.dev/status"),
-            body: None,
-        });
+        let res = desktop.execute_http(&NativeHttpRequest::new(
+            "GET",
+            "https://api.ng-native.dev/status",
+        ));
         assert_eq!(res.status, 200);
         assert_eq!(res.body, r#"{"ok":true}"#);
         assert_eq!(desktop.http_history().len(), 1);

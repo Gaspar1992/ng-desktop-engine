@@ -1,6 +1,6 @@
 use ng_native_engine::engine::{EventPayload, RenderEngine};
 use ng_native_engine::platforms::HeadlessBackend;
-use ng_native_engine::runtime::JsRuntime;
+use ng_native_engine::runtime::{JsEngineBackend, JsRuntime};
 
 #[test]
 fn phase4_interactive_form_controls_and_typed_event_payloads() {
@@ -98,8 +98,24 @@ fn phase4_interactive_form_controls_and_typed_event_payloads() {
 #[test]
 fn phase5_desktop_services_and_native_http_bridge() {
     let js_bundle = r#"
+        const cfg = __NG_NATIVE__.configureHttp({
+            useFetchTransport: true,
+            xsrfEnabled: true,
+            xsrfCookieName: "NG-XSRF",
+            xsrfHeaderName: "X-NG-XSRF",
+            xsrfTokenValue: "tok-99",
+            maxParallelConnections: 12,
+            cacheEnabled: true
+        });
         __NG_NATIVE__.registerHttpEndpoint("GET", "https://api.ng-native.dev/version", 200, '{"version":"0.5.0"}');
-        const res = __NG_NATIVE__.httpRequest("GET", "https://api.ng-native.dev/version");
+        __NG_NATIVE__.registerHttpEndpoint("POST", "https://beta.pokeapi.co/graphql/v1beta", 200, '{"data":{"ok":true}}');
+        const res = __NG_NATIVE__.httpRequest("GET", "https://api.ng-native.dev/version", undefined, {
+            headers: { "Accept": "application/json", "X-App": "pokedex" }
+        });
+        const batchRes = __NG_NATIVE__.httpBatchRequest([
+            { method: "GET", url: "https://api.ng-native.dev/version" },
+            { method: "POST", url: "https://beta.pokeapi.co/graphql/v1beta", body: '{"query":"{ok}"}' }
+        ]);
         const parsed = JSON.parse(res.body);
         __NG_NATIVE__.setSystemTheme("light");
         __NG_NATIVE__.setClipboard("Clip:" + parsed.version);
@@ -110,7 +126,7 @@ fn phase5_desktop_services_and_native_http_bridge() {
         __NG_NATIVE__.createElement("win", "ng-window");
         __NG_NATIVE__.setText("win", "Phase 5 Desktop Window");
         __NG_NATIVE__.createElement("lbl", "ng-label");
-        __NG_NATIVE__.setText("lbl", `Theme:${theme} | ${clip} | File:${opened}`);
+        __NG_NATIVE__.setText("lbl", `Theme:${theme} | ${clip} | File:${opened} | Platform:${cfg.platform} | Gql:${batchRes[1].callKind}`);
         __NG_NATIVE__.appendChild("win", "lbl");
     "#;
 
@@ -123,4 +139,23 @@ fn phase5_desktop_services_and_native_http_bridge() {
     assert!(preview.contains("Theme:light | Clip:0.5.0 | File:/etc/hostname"));
     assert_eq!(runtime.desktop().theme().as_str(), "light");
     assert_eq!(runtime.desktop().clipboard(), "Clip:0.5.0");
+
+    if runtime.js_engine().is_jit_enabled() {
+        assert!(
+            preview.contains("Platform:linux-libsoup-3.0")
+                || preview.contains("Platform:macos-")
+                || preview.contains("Platform:windows-")
+        );
+        assert!(preview.contains("Gql:graphql"));
+        let history = runtime.desktop().http_history();
+        assert_eq!(history.len(), 3);
+        assert_eq!(
+            history[0].headers.get("X-App").map(String::as_str),
+            Some("pokedex")
+        );
+        assert_eq!(
+            history[2].headers.get("X-NG-XSRF").map(String::as_str),
+            Some("tok-99")
+        );
+    }
 }

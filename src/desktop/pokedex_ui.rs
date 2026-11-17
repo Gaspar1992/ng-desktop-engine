@@ -1,12 +1,14 @@
 //! Pokédex controller: drives infinite-scroll `@defer` pagination, live `PokéAPI` v2
 //! search filtering, and full Pokémon species detail sheets over native GTK4 widgets.
 
-use super::{DesktopServices, PokemonIndexEntry, PokemonInfo};
+use super::{DesktopServices, NativeHttpEngine, PokemonIndexEntry, PokemonInfo};
 use crate::engine::{EventPayload, NativeEvent, NodeId, RenderEngine};
 use crate::platforms::AnyPlatformBackend;
 use crate::runtime::JsRuntime;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -15,14 +17,16 @@ type DetailResult = Result<PokemonInfo, String>;
 
 const PAGE_SIZE: usize = 12;
 const SEARCH_LIMIT: usize = 18;
-const SEARCH_DEBOUNCE: Duration = Duration::from_millis(300);
+const SEARCH_DEBOUNCE: Duration = Duration::from_millis(120);
 
 enum BatchOutcome {
     Initial {
+        generation: u64,
         index: Vec<PokemonIndexEntry>,
         batch: Vec<PokemonInfo>,
     },
     Page {
+        generation: u64,
         batch: Vec<PokemonInfo>,
         replace: bool,
         next_loaded: Option<usize>,
@@ -111,6 +115,8 @@ impl UiNodes {
 /// Drives infinite-scroll Pokédex pagination, live search filtering, and detail sheets.
 pub struct PokedexController {
     nodes: UiNodes,
+    http_engine: Arc<Mutex<NativeHttpEngine>>,
+    active_batch_gen: Arc<AtomicU64>,
     last_signal: i64,
     in_detail_view: bool,
     catalog: Vec<PokemonIndexEntry>,
@@ -127,6 +133,8 @@ impl PokedexController {
     pub fn new(runtime: &JsRuntime) -> Self {
         Self {
             nodes: UiNodes::resolve(runtime),
+            http_engine: runtime.desktop().shared_http_engine(),
+            active_batch_gen: Arc::new(AtomicU64::new(0)),
             last_signal: 0,
             in_detail_view: false,
             catalog: Vec::new(),
@@ -140,16 +148,30 @@ impl PokedexController {
         }
     }
 
+    fn next_batch_generation(&self) -> u64 {
+        self.active_batch_gen.fetch_add(1, Ordering::Relaxed) + 1
+    }
+
     /// Loads the `PokéAPI` v2 catalog index and first page of 12 Pokémon asynchronously.
     pub fn start_initial_load(&mut self, engine: &mut Engine) {
         self.set_subtitle(engine, "Conectando con PokéAPI v2 (lote inicial 1..12)...");
+        let generation = self.next_batch_generation();
+        let gen_flag = Arc::clone(&self.active_batch_gen);
+        let http = Arc::clone(&self.http_engine);
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
-            let mut svc = DesktopServices::new();
+            if gen_flag.load(Ordering::Relaxed) != generation {
+                return;
+            }
+            let mut svc = DesktopServices::with_http_engine(http);
             let index = svc.fetch_pokemon_index();
             let ids: Vec<u32> = index.iter().take(PAGE_SIZE).map(|e| e.id).collect();
             let batch = svc.fetch_pokemon_batch(&ids);
-            let _ = tx.send(BatchOutcome::Initial { index, batch });
+            let _ = tx.send(BatchOutcome::Initial {
+                generation,
+                index,
+                batch,
+            });
         });
         self.pending_batch = Some(rx);
         self.sync_loading_spinner(engine);
@@ -250,10 +272,17 @@ impl PokedexController {
             &format!("Cargando Pokémon {}..{end}...", self.loaded_count + 1),
         );
 
+        let generation = self.next_batch_generation();
+        let gen_flag = Arc::clone(&self.active_batch_gen);
+        let http = Arc::clone(&self.http_engine);
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
-            let batch = DesktopServices::new().fetch_pokemon_batch(&ids);
+            if gen_flag.load(Ordering::Relaxed) != generation {
+                return;
+            }
+            let batch = DesktopServices::with_http_engine(http).fetch_pokemon_batch(&ids);
             let _ = tx.send(BatchOutcome::Page {
+                generation,
                 batch,
                 replace: false,
                 next_loaded: Some(end),
@@ -267,6 +296,10 @@ impl PokedexController {
     fn start_search_filter(&mut self, engine: &mut Engine, query: &str) {
         self.active_query = query.to_string();
         self.set_view(engine, false);
+        let generation = self.next_batch_generation();
+        let gen_flag = Arc::clone(&self.active_batch_gen);
+        let http = Arc::clone(&self.http_engine);
+
         if query.is_empty() {
             let ids: Vec<u32> = self.catalog.iter().take(PAGE_SIZE).map(|e| e.id).collect();
             let count = ids.len();
@@ -277,8 +310,12 @@ impl PokedexController {
             self.set_subtitle(engine, "Restaurando catálogo inicial...");
             let (tx, rx) = mpsc::channel();
             thread::spawn(move || {
-                let batch = DesktopServices::new().fetch_pokemon_batch(&ids);
+                if gen_flag.load(Ordering::Relaxed) != generation {
+                    return;
+                }
+                let batch = DesktopServices::with_http_engine(http).fetch_pokemon_batch(&ids);
                 let _ = tx.send(BatchOutcome::Page {
+                    generation,
                     batch,
                     replace: true,
                     next_loaded: Some(count),
@@ -305,7 +342,10 @@ impl PokedexController {
 
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
-            let mut svc = DesktopServices::new();
+            if gen_flag.load(Ordering::Relaxed) != generation {
+                return;
+            }
+            let mut svc = DesktopServices::with_http_engine(http);
             let batch = if matched_ids.is_empty() {
                 svc.fetch_pokemon(&owned_query).into_iter().collect()
             } else {
@@ -320,6 +360,7 @@ impl PokedexController {
                 )
             };
             let _ = tx.send(BatchOutcome::Page {
+                generation,
                 batch,
                 replace: true,
                 next_loaded: None,
@@ -349,8 +390,15 @@ impl PokedexController {
     fn start_detail_fetch(&mut self, engine: &mut Engine, query: &str) {
         let (tx, rx) = mpsc::channel();
         let query = query.to_string();
+        let http = Arc::clone(&self.http_engine);
         thread::spawn(move || {
-            let _ = tx.send(DesktopServices::new().fetch_pokemon(&query));
+            let mut svc = DesktopServices::with_http_engine(http);
+            let res = if let Ok(id) = query.parse::<u32>() {
+                svc.fetch_pokemon_detail(id)
+            } else {
+                svc.fetch_pokemon(&query)
+            };
+            let _ = tx.send(res);
         });
         self.pending_detail = Some(rx);
         self.sync_loading_spinner(engine);
@@ -372,8 +420,16 @@ impl PokedexController {
         self.pending_batch = None;
         self.sync_loading_spinner(engine);
 
+        let current_gen = self.active_batch_gen.load(Ordering::Relaxed);
         match outcome {
-            BatchOutcome::Initial { index, batch } => {
+            BatchOutcome::Initial {
+                generation,
+                index,
+                batch,
+            } => {
+                if generation != current_gen {
+                    return;
+                }
                 self.catalog = index;
                 self.clear_grid_cards(engine);
                 self.loaded_count = batch.len();
@@ -392,11 +448,15 @@ impl PokedexController {
                 );
             }
             BatchOutcome::Page {
+                generation,
                 batch,
                 replace,
                 next_loaded,
                 subtitle,
             } => {
+                if generation != current_gen {
+                    return;
+                }
                 if replace {
                     self.clear_grid_cards(engine);
                 }
