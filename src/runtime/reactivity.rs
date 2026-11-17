@@ -43,6 +43,22 @@ impl JsRuntime {
         }
     }
 
+    /// Host-side signal write (e.g. async results): updates the value and re-renders bindings.
+    pub fn set_signal<B: PlatformBackend>(
+        &mut self,
+        engine: &mut RenderEngine<B>,
+        name: &str,
+        value: i64,
+    ) -> Result<(), EngineError> {
+        self.execute_handler_action(
+            engine,
+            HandlerAction::SetSignal {
+                signal_name: name.to_string(),
+                value,
+            },
+        )
+    }
+
     pub(super) fn propagate_signal<B: PlatformBackend>(
         &self,
         engine: &mut RenderEngine<B>,

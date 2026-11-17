@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::env;
 
 pub mod pokedex;
+pub mod pokedex_ui;
 pub use pokedex::PokemonInfo;
+pub use pokedex_ui::PokedexController;
 
 /// Native system color scheme synchronized with GTK4 (`GtkSettings`) / Libadwaita (`AdwStyleManager`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

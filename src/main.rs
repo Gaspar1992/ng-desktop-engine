@@ -1,5 +1,6 @@
 use ng_native_engine::config::AngularNativeConfig;
-use ng_native_engine::engine::{NodeId, RenderEngine};
+use ng_native_engine::desktop::PokedexController;
+use ng_native_engine::engine::{EventPayload, NodeId, RenderEngine};
 use ng_native_engine::ipc::{HmrIpcServer, HmrMessage, HmrResponse};
 use ng_native_engine::packager::stage_linux_distribution;
 use ng_native_engine::platforms::AnyPlatformBackend;
@@ -20,7 +21,8 @@ fn handle_hmr_messages(
     engine: &mut RenderEngine<AnyPlatformBackend>,
     js_runtime: &mut JsRuntime,
     win_id: NodeId,
-) {
+) -> bool {
+    let mut reloaded = false;
     for (cid, msg) in server.poll_messages() {
         match msg {
             HmrMessage::Reload { script } => {
@@ -28,6 +30,7 @@ fn handle_hmr_messages(
                     eprintln!("[HMR IPC Error] Failed to reload bundle: {err:?}");
                     server.send_response(cid, &HmrResponse::Error(format!("{err:?}")));
                 } else {
+                    reloaded = true;
                     println!("\n[HMR IPC] Applied live update (signals preserved):");
                     println!("{}", engine.render_window_preview(win_id).unwrap());
                     server.send_response(cid, &HmrResponse::Ok { reloaded: true });
@@ -44,6 +47,7 @@ fn handle_hmr_messages(
             }
         }
     }
+    reloaded
 }
 
 fn ensure_bundle_compiled(bundle_path: &str) -> String {
@@ -58,141 +62,6 @@ fn ensure_bundle_compiled(bundle_path: &str) -> String {
     fs::read_to_string(bundle_path).unwrap_or_else(|_| {
         panic!("Bundle not found at '{bundle_path}'. Run `pnpm run build` first.")
     })
-}
-
-struct PokedexUiNodes {
-    list_view: Option<NodeId>,
-    detail_view: Option<NodeId>,
-    hello: Option<NodeId>,
-    lbl: Option<NodeId>,
-    num: Option<NodeId>,
-    sprite: Option<NodeId>,
-    type_primary: Option<NodeId>,
-    type_secondary: Option<NodeId>,
-    height: Option<NodeId>,
-    weight: Option<NodeId>,
-    hp_bar: Option<NodeId>,
-    atk_bar: Option<NodeId>,
-    def_bar: Option<NodeId>,
-    spd_bar: Option<NodeId>,
-}
-
-impl PokedexUiNodes {
-    fn resolve(runtime: &JsRuntime) -> Self {
-        Self {
-            list_view: runtime.resolve_var("list_view").ok(),
-            detail_view: runtime.resolve_var("detail_view").ok(),
-            hello: runtime.resolve_var("hello").ok(),
-            lbl: runtime.resolve_var("lbl").ok(),
-            num: runtime.resolve_var("poke_num").ok(),
-            sprite: runtime.resolve_var("poke_sprite").ok(),
-            type_primary: runtime.resolve_var("poke_type_primary").ok(),
-            type_secondary: runtime.resolve_var("poke_type_secondary").ok(),
-            height: runtime.resolve_var("lbl_height").ok(),
-            weight: runtime.resolve_var("lbl_weight").ok(),
-            hp_bar: runtime.resolve_var("hp_bar").ok(),
-            atk_bar: runtime.resolve_var("atk_bar").ok(),
-            def_bar: runtime.resolve_var("def_bar").ok(),
-            spd_bar: runtime.resolve_var("spd_bar").ok(),
-        }
-    }
-}
-
-fn update_pokedex_ui(
-    engine: &mut RenderEngine<AnyPlatformBackend>,
-    nodes: &PokedexUiNodes,
-    poke: &ng_native_engine::desktop::PokemonInfo,
-) {
-    if let Some(h) = nodes.hello {
-        let _ = engine.set_text(h, poke.display_name().to_uppercase());
-    }
-    if let Some(n) = nodes.num {
-        let _ = engine.set_text(n, poke.format_id());
-    }
-    if let Some(s) = nodes.sprite {
-        let _ = engine.set_text(s, &poke.sprite_path);
-    }
-    if let Some(tp) = nodes.type_primary {
-        let _ = engine.set_text(tp, poke.primary_type.to_uppercase());
-    }
-    if let Some(ts) = nodes.type_secondary {
-        let sec = poke.secondary_type.as_deref().unwrap_or("").to_uppercase();
-        let _ = engine.set_text(ts, sec);
-    }
-    if let Some(h) = nodes.height {
-        let _ = engine.set_text(h, poke.format_height());
-    }
-    if let Some(w) = nodes.weight {
-        let _ = engine.set_text(w, poke.format_weight());
-    }
-    if let Some(l) = nodes.lbl {
-        let _ = engine.set_text(
-            l,
-            format!(
-                "HP: {} | ATK: {} | DEF: {} | SPD: {}",
-                poke.hp, poke.attack, poke.defense, poke.speed
-            ),
-        );
-    }
-    if let Some(bar) = nodes.hp_bar {
-        let _ = engine.set_attribute(bar, "value", poke.hp.to_string());
-    }
-    if let Some(bar) = nodes.atk_bar {
-        let _ = engine.set_attribute(bar, "value", poke.attack.to_string());
-    }
-    if let Some(bar) = nodes.def_bar {
-        let _ = engine.set_attribute(bar, "value", poke.defense.to_string());
-    }
-    if let Some(bar) = nodes.spd_bar {
-        let _ = engine.set_attribute(bar, "value", poke.speed.to_string());
-    }
-}
-
-fn set_view_visibility(
-    engine: &mut RenderEngine<AnyPlatformBackend>,
-    nodes: &PokedexUiNodes,
-    show_detail: bool,
-) {
-    if let Some(lv) = nodes.list_view {
-        let _ = engine.set_attribute(lv, "visible", if show_detail { "false" } else { "true" });
-    }
-    if let Some(dv) = nodes.detail_view {
-        let _ = engine.set_attribute(dv, "visible", if show_detail { "true" } else { "false" });
-    }
-}
-
-fn sync_pokedex_navigation(
-    engine: &mut RenderEngine<AnyPlatformBackend>,
-    js_runtime: &mut JsRuntime,
-    nodes: &PokedexUiNodes,
-    last_view_id: &mut Option<i64>,
-) {
-    let current_id = js_runtime
-        .signal_value("pokemonId")
-        .or_else(|| js_runtime.signal_value("count"))
-        .unwrap_or(0);
-
-    if Some(current_id) != *last_view_id {
-        if current_id == 0 {
-            set_view_visibility(engine, nodes, false);
-            println!("\n[PokéAPI] Navigated -> Pantalla principal (Listado)");
-        } else {
-            set_view_visibility(engine, nodes, true);
-            if let Ok(poke) = js_runtime
-                .desktop_mut()
-                .fetch_pokemon(&current_id.to_string())
-            {
-                println!(
-                    "\n[PokéAPI] Navigated -> {} {} ({})",
-                    poke.format_id(),
-                    poke.display_name(),
-                    poke.primary_type
-                );
-                update_pokedex_ui(engine, nodes, &poke);
-            }
-        }
-        *last_view_id = Some(current_id);
-    }
 }
 
 struct InteractiveContext<'a> {
@@ -212,44 +81,28 @@ fn run_interactive_loop(
         "\n[GTK4 Native Window Active] Opened native Linux window '{}'. Watching '{}' for Hot Reload...",
         ctx.cfg.project_name, ctx.bundle_path
     );
-    let mut last_view_id: Option<i64> = Some(0);
-    let mut nodes = PokedexUiNodes::resolve(&js_runtime);
-
-    // Initial state: Start in main list view
-    set_view_visibility(&mut engine, &nodes, false);
+    let mut pokedex = PokedexController::new(&js_runtime);
+    pokedex.show_list(&mut engine);
 
     while engine.backend().open_window_count() > 0 {
-        let native_events = engine.backend().step_native_events(false);
-        for ev in native_events {
-            if let ng_native_engine::engine::EventPayload::Text(ref query) = ev.payload {
-                let clean = query.trim();
-                if !clean.is_empty()
-                    && clean != "ng-native-dev"
-                    && let Ok(poke) = js_runtime.desktop_mut().fetch_pokemon(clean)
-                {
-                    println!(
-                        "\n[PokéAPI] Searched '{}' -> {} {} ({})",
-                        clean,
-                        poke.format_id(),
-                        poke.display_name(),
-                        poke.primary_type
-                    );
-                    set_view_visibility(&mut engine, &nodes, true);
-                    update_pokedex_ui(&mut engine, &nodes, &poke);
-                    last_view_id = Some(i64::from(poke.id));
-                }
+        for ev in engine.backend().step_native_events(false) {
+            if let EventPayload::Text(ref query) = ev.payload {
+                pokedex.queue_search(query);
             }
-
             js_runtime
                 .trigger_node_event_with_payload(&mut engine, ev.node, &ev.event_name, &ev.payload)
                 .unwrap();
         }
 
-        sync_pokedex_navigation(&mut engine, &mut js_runtime, &nodes, &mut last_view_id);
+        pokedex.tick(&mut engine, &mut js_runtime);
+        // Commands queued outside event dispatch (async results, view switches) must be
+        // flushed explicitly, otherwise they only reach GTK on the *next* user event.
+        engine.flush_frame();
 
-        if let Some(ref mut server) = hmr_server {
-            handle_hmr_messages(server, &mut engine, &mut js_runtime, ctx.win_id);
-            nodes = PokedexUiNodes::resolve(&js_runtime);
+        if let Some(ref mut server) = hmr_server
+            && handle_hmr_messages(server, &mut engine, &mut js_runtime, ctx.win_id)
+        {
+            pokedex.refresh_after_reload(&mut engine, &js_runtime);
         }
 
         let current_mtime = bundle_modified_time(ctx.bundle_path);
@@ -262,6 +115,7 @@ fn run_interactive_loop(
             if let Err(err) = js_runtime.hot_reload(&mut engine, &updated_script) {
                 eprintln!("[Hot Reload Error] Failed to apply bundle update: {err:?}");
             } else {
+                pokedex.refresh_after_reload(&mut engine, &js_runtime);
                 println!(
                     "\n[Hot Reload] Applied live update from '{}' (signals preserved):",
                     ctx.bundle_path

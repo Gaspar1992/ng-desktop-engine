@@ -8,6 +8,8 @@
         value="{{ author() }}"
       />
 
+      <ng-spinner id="loading_spinner" visible="false" halign="center" />
+
       <!-- POKÉDEX MAIN VIEW: LIST / GRID OF POKÉMON -->
       <ng-box id="list_view" visible="true" orientation="vertical" spacing="12px">
         <ng-box id="list_header" orientation="vertical" spacing="4px">
@@ -163,6 +165,9 @@
             <ng-label id="lbl_height" class="spec-val">0.7 m</ng-label>
             <ng-label id="lbl_weight" class="spec-val">6.9 kg</ng-label>
           </ng-grid>
+          <ng-label id="lbl_stats" class="stats-label"
+            >HP: 45 | ATK: 49 | DEF: 49 | SPD: 45</ng-label
+          >
           <ng-label id="lbl" class="stats-label">Pokémon #{{ pokemonId() }}</ng-label>
           <ng-level-bar id="hp_bar" value="45" max="255" />
           <ng-level-bar id="atk_bar" value="49" max="255" />

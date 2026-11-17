@@ -21,7 +21,7 @@ fn full_mvp_pipeline_with_headless_backend() {
     // Tick 1: Mount Angular component (signals + styles + template + icon + declarative events)
     runtime.eval_tick(&mut engine, &script).unwrap();
     assert_eq!(engine.backend().frames.len(), 1);
-    assert_eq!(engine.backend().frames[0].len(), 358);
+    assert_eq!(engine.backend().frames[0].len(), 366);
 
     let win = runtime.resolve_var("win").unwrap();
     let hello = runtime.resolve_var("hello").unwrap();
@@ -40,6 +40,7 @@ fn full_mvp_pipeline_with_headless_backend() {
     assert!(preview.contains(".main-card(bg:#242424, fg:#ffffff, pad:16px, radius:14px)"));
     assert!(preview.contains("[Entry: \"ng-native-dev\"]"));
     assert!(preview.contains("Pokémon destacados"));
+    assert!(preview.contains("[Spinner:"));
     assert!(preview.contains("Bulbasaur"));
     assert!(preview.contains("Pikachu"));
     assert!(preview.contains("Charizard"));
