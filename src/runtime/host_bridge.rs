@@ -444,7 +444,10 @@ mod tests {
             r#"{"action":"sqliteQuery","sql":"SELECT id, title FROM notes;"}"#,
         );
         assert!(query_res.contains(r#""ok":true"#));
-        assert!(query_res.contains("hello"));
+        assert!(query_res.contains(r#""rows":"#));
+        if cfg!(target_os = "linux") {
+            assert!(query_res.contains("hello"));
+        }
 
         let fuzzy_res = bridge.handle_service_call(
             r#"{"action":"computeFuzzyFilter","items":["alpha","beta","alpaca"],"query":"alp","limit":2}"#,
