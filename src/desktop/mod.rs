@@ -136,7 +136,7 @@ impl DesktopServices {
             file_dialogs: Vec::new(),
             http_engine,
             sqlite: NativeSqliteDatabase::new_in_memory(),
-            system_env: NativeSystemEnv::detect(),
+            system_env: NativeSystemEnv::detect_for_app(app_id),
             compute: NativeComputePool::new(),
             fs_manager: NativeFsManager::new(app_id),
         }
@@ -381,7 +381,11 @@ mod tests {
         desktop.set_clipboard("NgNative Clipboard Text");
         assert_eq!(desktop.clipboard(), "NgNative Clipboard Text");
 
-        desktop.send_notification("Build Complete", "main.ngb ready", Some("ng-linux-counter"));
+        desktop.send_notification(
+            "Build Complete",
+            "main.ngb ready",
+            Some("sample-desktop-app"),
+        );
         assert_eq!(desktop.notifications().len(), 1);
         assert_eq!(desktop.notifications()[0].title, "Build Complete");
 
@@ -424,7 +428,7 @@ mod tests {
         assert_eq!(desktop.notifications().len(), 0);
         assert_eq!(desktop.open_file_dialog("Open", "/tmp/a"), "");
 
-        let req = NativeHttpRequest::new("GET", "https://pokeapi.co/api/v2/pokemon/pikachu");
+        let req = NativeHttpRequest::new("GET", "https://api.example.test/v2/items/1");
         let blocked = desktop.execute_http(&req);
         assert_eq!(blocked.status, 403);
         assert_eq!(blocked.status_text, "Forbidden");

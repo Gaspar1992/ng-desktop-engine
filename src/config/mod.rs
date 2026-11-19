@@ -376,15 +376,40 @@ mod tests {
     use super::*;
 
     #[test]
-    fn loads_workspace_angular_json_configuration() {
-        let cfg = AngularNativeConfig::from_file("angular.json").unwrap();
-        assert_eq!(cfg.project_name, "ng-linux-counter");
+    fn loads_angular_json_configuration_from_file() {
+        let tmp_dir =
+            env::temp_dir().join(format!("ng-desktop-config-test-{}", std::process::id()));
+        fs::create_dir_all(&tmp_dir).unwrap();
+        let cfg_path = tmp_dir.join("angular.json");
+        fs::write(
+            &cfg_path,
+            r#"{
+                "projects": {
+                    "sample-desktop-app": {
+                        "architect": {
+                            "native": {
+                                "options": {
+                                    "os": "linux",
+                                    "arch": "x86_64"
+                                }
+                            }
+                        }
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let cfg = AngularNativeConfig::from_file(&cfg_path).unwrap();
+        let _ = fs::remove_dir_all(&tmp_dir);
+
+        assert_eq!(cfg.project_name, "sample-desktop-app");
         assert_eq!(cfg.os, "linux");
         assert_eq!(cfg.arch, "x86_64");
         assert_eq!(cfg.target_platform, "linux-gtk4");
         assert_eq!(cfg.js_engine, "jsc");
-        assert_eq!(cfg.output_path, "dist/ng-linux-counter");
-        assert_eq!(cfg.icon_search_dir, "dist/ng-linux-counter/icons");
+        assert_eq!(cfg.output_path, "dist/sample-desktop-app");
+        assert_eq!(cfg.icon_search_dir, "dist/sample-desktop-app/icons");
         assert!(!cfg.permissions.full_system_access);
     }
 

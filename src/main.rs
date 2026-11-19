@@ -112,27 +112,37 @@ fn run_interactive_loop(
         "\n[GTK4 Native Window Active] Opened native Linux window '{}'. Watching '{}' for Hot Reload...",
         ctx.cfg.project_name, ctx.bundle_path
     );
-    let mut pokedex = PokedexController::new(&js_runtime);
-    pokedex.show_list(&mut engine);
-    pokedex.start_initial_load(&mut engine);
+    let mut pokedex = js_runtime
+        .resolve_var("pokemon_grid")
+        .ok()
+        .map(|_| PokedexController::new(&js_runtime));
+    if let Some(ctrl) = pokedex.as_mut() {
+        ctrl.show_list(&mut engine);
+        ctrl.start_initial_load(&mut engine);
+    }
 
     while engine.backend().open_window_count() > 0 {
         for ev in engine.backend().step_native_events(false) {
-            pokedex.handle_event(&ev, &mut engine, &mut js_runtime);
+            if let Some(ctrl) = pokedex.as_mut() {
+                ctrl.handle_event(&ev, &mut engine, &mut js_runtime);
+            }
             js_runtime
                 .trigger_node_event_with_payload(&mut engine, ev.node, &ev.event_name, &ev.payload)
                 .unwrap();
         }
 
-        pokedex.tick(&mut engine, &mut js_runtime);
+        if let Some(ctrl) = pokedex.as_mut() {
+            ctrl.tick(&mut engine, &mut js_runtime);
+        }
         // Commands queued outside event dispatch (async results, view switches) must be
         // flushed explicitly, otherwise they only reach GTK on the *next* user event.
         engine.flush_frame();
 
         if let Some(ref mut server) = hmr_server
             && handle_hmr_messages(server, &mut engine, &mut js_runtime, ctx.win_id)
+            && let Some(ctrl) = pokedex.as_mut()
         {
-            pokedex.refresh_after_reload(&mut engine, &js_runtime);
+            ctrl.refresh_after_reload(&mut engine, &js_runtime);
         }
 
         let current_mtime = bundle_modified_time(ctx.bundle_path);
@@ -145,7 +155,9 @@ fn run_interactive_loop(
             if let Err(err) = js_runtime.hot_reload(&mut engine, &updated_script) {
                 eprintln!("[Hot Reload Error] Failed to apply bundle update: {err:?}");
             } else {
-                pokedex.refresh_after_reload(&mut engine, &js_runtime);
+                if let Some(ctrl) = pokedex.as_mut() {
+                    ctrl.refresh_after_reload(&mut engine, &js_runtime);
+                }
                 println!(
                     "\n[Hot Reload] Applied live update from '{}' (signals preserved):",
                     ctx.bundle_path
@@ -238,7 +250,7 @@ fn main() {
         .unwrap();
 
     // 4. Render visual preview of the mounted native window
-    let win_id = js_runtime.resolve_var("win").unwrap();
+    let win_id = js_runtime.resolve_primary_window().unwrap();
     println!("\n--- Rendered Window Preview ---");
     println!("{}", engine.render_window_preview(win_id).unwrap());
 
@@ -261,12 +273,8 @@ fn main() {
             hmr_server,
         );
     } else {
-        // Pump non-blocking GTK4 events if available and run declarative click simulation
+        // Pump non-blocking native events if available and print the mounted scene graph
         let _ = engine.backend().step_event_loop(false);
-        println!("\n--- Simulating declarative (click)=\"increment()\" on 'btn' ---");
-        js_runtime
-            .trigger_event(&mut engine, "btn", "clicked")
-            .unwrap();
         println!("\n--- Scene Graph Snapshot ---");
         engine.print_tree(win_id, 0).unwrap();
     }

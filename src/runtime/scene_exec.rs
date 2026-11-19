@@ -18,6 +18,10 @@ impl JsRuntime {
                 if !is_hmr || !self.variables.contains_key(&var_name) {
                     let id = engine.create_element(&tag)?;
                     self.register_handle(&var_name, id);
+                    if (tag == "ng-window" || tag == "adw-window") && self.primary_window.is_none()
+                    {
+                        self.primary_window = Some(id);
+                    }
                     newly_created.insert(var_name);
                 }
                 Ok(())
@@ -93,6 +97,9 @@ impl JsRuntime {
                 let id = self.resolve_var(&var_name)?;
                 self.variables.remove(&var_name);
                 self.node_vars.remove(&id);
+                if self.primary_window == Some(id) {
+                    self.primary_window = None;
+                }
                 engine.destroy_node(id)
             }
             _ => Ok(()),

@@ -9,7 +9,7 @@
 - [ ] `src/runtime/` (JSC / QuickJS Bridges, `.ngb` Parser, Reactivity, HMR)
 - [ ] `src/desktop/` (HTTP/2, SQLite3, XDG/`inotify` Watcher, Compute Pool, System Env)
 - [ ] `packages/*` (`@ng-desktop/{platform,forms,router,http,desktop,builders}`)
-- [ ] `examples/counter-app` (Pokédex Showcase Demo)
+- [ ] `examples/` (Example Applications)
 - [ ] `.github/`, `docker/`, `scripts/`, or documentation
 
 ## Architecture & SOLID Checklist

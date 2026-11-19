@@ -3,15 +3,13 @@ import { execSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 
 /**
- * Generates structured, Angular-monorepo-style release notes for:
- *   1. `--kind=engine` (`v*` tags): Core Rust Engine (`ng-desktop-engine`) + Individual Angular 22+ Packages (`@ng-desktop/*`) + Demo impact summary.
- *   2. `--kind=demo` (`pokedex-demo-v*` tags): Dedicated Pokédex Nacional Desktop Showcase release with `.deb`, `.exe`, and `.dmg` native installers.
+ * Generates structured release notes for `ng-desktop-engine` (`v*` tags):
+ * Core Rust Engine (`ng-desktop-engine`) + Individual Angular 22+ Packages (`@ng-desktop/*`).
  */
 
 const args = process.argv.slice(2);
-const kindArg = args.find((a) => a.startsWith('--kind='))?.split('=')[1] ?? 'engine';
-const versionArg = (args.find((a) => a.startsWith('--version='))?.split('=')[1] ?? '0.2.0').replace(
-  /^(pokedex-demo-)?v/,
+const versionArg = (args.find((a) => a.startsWith('--version='))?.split('=')[1] ?? '0.3.0').replace(
+  /^v/,
   '',
 );
 const outArg = args.find((a) => a.startsWith('--out='))?.split('=')[1];
@@ -38,15 +36,15 @@ function categorizeCommits(commits) {
     desktop: [],
     http: [],
     builders: [],
-    demo: [],
+    examples: [],
     ci: [],
   };
 
   for (const c of commits) {
     const s = c.subject.toLowerCase();
     const formatted = `- (\`${c.hash}\`) ${c.subject}`;
-    if (s.includes('pokedex') || s.includes('counter-app') || s.includes('demo')) {
-      groups.demo.push(formatted);
+    if (s.includes('examples/') || s.includes('example') || s.includes('docs')) {
+      groups.examples.push(formatted);
     } else if (
       s.includes('platform') ||
       s.includes('gtk') ||
@@ -84,7 +82,6 @@ function buildEngineReleaseNotes(version, commits) {
   return `# 🚀 NgDesktop Engine & Angular 22+ Packages — \`v${version}\`
 
 > **Release Scope:** Core Rust Native Rendering Engine (\`ng-desktop-engine\`) + Modular Angular 22+ Packages (\`@ng-desktop/*\`).
-> Looking for the ready-to-run **Pokédex Nacional** desktop installers (\`.deb\`, \`.exe\`, \`.dmg\`)? See the companion showcase release **[Pokédex Demo \`pokedex-demo-v${version}\`](https://github.com/Gaspar1992/ng-desktop-engine/releases/tag/pokedex-demo-v${version})**.
 
 ---
 
@@ -147,17 +144,6 @@ Following the official Angular monorepo publishing model, each package is versio
 
 ---
 
-## 🎮 Impact on the Pokédex Showcase Demo (\`examples/counter-app\`)
-
-Every improvement in \`ng-desktop-engine\` and \`@ng-desktop/*\` directly powers the **Pokédex Nacional** desktop showcase:
-1. **HTTP/2 Batching & \`createNativeHttpResource\` (\`@ng-desktop/http\`):** Loads Pokémon details and 18-card batches concurrently over persistent \`libsoup-3.0\` TLS sockets with local sprite caching.
-2. **Embedded SQLite3 Favorites (\`@ng-desktop/desktop\`):** Persists trainer favorites and notes via \`NativeSqliteService.liveQuery()\`, updating the UI immediately on \`INSERT\`/\`DELETE\`.
-3. **Multithreaded Fuzzy Search (\`NativeComputeService\`):** Filters the catalog off the UI thread using Rust's \`std::thread::scope\` worker pool.
-4. **XDG Backup Export/Import & Live File Watcher (\`NativeFileSystemService\`):** Atomically exports and imports favorites JSON files inside XDG data directories with \`inotify\` change detection.
-5. **Standalone Native Installers:** Packaged directly as installable **\`.deb\`** (Linux), **\`.exe\`** (Windows), and **\`.dmg\`** (macOS) executables.
-
----
-
 ## 📜 Categorized Commit Log
 
 ### Engine & Runtime (\`src/engine\`, \`src/runtime\`, \`src/ipc\`)
@@ -175,58 +161,20 @@ ${groups.http.join('\n') || '- Native HTTP/2 transport and resource signals'}
 ### Compiler & CLI Builders (\`@ng-desktop/builders\`)
 ${groups.builders.join('\n') || '- AST template, metadata, and style compilers'}
 
-### Pokédex Showcase Demo (\`examples/counter-app\`)
-${groups.demo.join('\n') || '- Pokédex showcase integration'}
+### Examples & Documentation (\`examples/\`, \`docs/\`)
+${groups.examples.join('\n') || '- Documentation and example updates'}
 
 ### CI/CD, Containers & Packaging (\`.github/workflows\`, \`docker/\`, \`src/packager\`)
 ${groups.ci.join('\n') || '- Multi-OS CI and release automation'}
 `;
 }
 
-function buildDemoReleaseNotes(version) {
-  return `# 🎮 Pokédex Nacional — Native Desktop Showcase Demo (\`pokedex-demo-v${version}\`)
-
-> **Built with Angular 22.2.6 + \`ng-desktop-engine\` \`v${version}\` (100% Native OS Widgets — Zero WebView / Zero Electron).**
-> For the underlying Rust engine binaries and individual \`@ng-desktop/*\` Angular library tarballs, see the **[NgDesktop Engine \`v${version}\` Release](https://github.com/Gaspar1992/ng-desktop-engine/releases/tag/v${version})**.
-
----
-
-## 📥 Direct Native Installers & Executables
-
-| Operating System | Downloadable Executable / Installer | How to Install & Run |
-| :--- | :--- | :--- |
-| **🐧 Linux (Ubuntu / Debian x86_64)** | **\`pokedex-demo_${version}_amd64.deb\`** | \`sudo dpkg -i pokedex-demo_${version}_amd64.deb && ng-linux-counter\` (or launch **Pokédex Nacional** from your GNOME / KDE / Cosmic application menu) |
-| **🪟 Windows 11 / 10 (x64)** | **\`pokedex-demo-${version}-windows-x64.exe\`** | Self-contained single-file \`.exe\` (with embedded \`.ngb\` bundle and icon). Download and run \`pokedex-demo-${version}-windows-x64.exe\` directly. |
-| **🍎 macOS (Apple Silicon arm64)** | **\`pokedex-demo-${version}-macos-arm64.dmg\`** | Double-click \`pokedex-demo-${version}-macos-arm64.dmg\`, drag **\`ng-linux-counter.app\`** to Applications (or run \`Contents/MacOS/ng-linux-counter\`). |
-
-> **Security & Least Privilege:** All installers bundle their statically analyzed \`permissions.manifest.json\` and \`ng-desktop.runtime.json\`, omitting unrestricted Windows \`runFullTrust\` / host filesystem permissions unless explicitly requested.
-
----
-
-## ✨ How \`ng-desktop-engine\` \`v${version}\` Improvements Power This Demo
-
-1. **Master-Detail Split Layout & Adaptive Chrome (\`Phase 8–10\`):**
-   - Uses native \`<ng-header-bar>\` (\`AdwHeaderBar\` / \`TitleBar\` / \`NSToolbar\`), \`<ng-clamp>\` (\`AdwClamp\`), \`<ng-paned>\` resizable master-detail split view, \`<ng-flow>\` responsive Pokémon grid, \`<ng-expander>\` collapsible stats sections, and \`<ng-level-bar>\` base-stat meters (\`HP\`, \`Attack\`, \`Defense\`, \`Sp. Atk\`, \`Sp. Def\`, \`Speed\`).
-2. **Native HTTP/2 PokéAPI Client & Disk Sprite Cache (\`@ng-desktop/http\`):**
-   - Fetches live Pokémon data and official artwork over persistent \`libsoup-3.0\` HTTP/2 connections and caches PNG sprites in \`/tmp/ng_native_pokedex/\` for instant rendering in \`<ng-image>\` (\`GtkPicture\` / \`Image\` / \`NSImageView\`).
-3. **Reactive SQLite3 Trainer Favorites (\`@ng-desktop/desktop\`):**
-   - Uses \`NativeSqliteService.liveQuery()\` bound to \`libsqlite3.so.0\` (WAL mode) to store favorite Pokémon and trainer notes with zero-latency Signal updates.
-4. **Multithreaded Rust Fuzzy Search (\`NativeComputeService\`):**
-   - Searches Pokémon by name or National Dex number across worker threads via \`NativeComputePool::fuzzy_filter\`.
-5. **XDG Favorites Export/Import & Drag-and-Drop (\`NativeFileSystemService\` & \`[ngNativeDropTarget]\`):**
-   - Exports and imports favorite teams as JSON inside the OS XDG data directory with atomic file writes and kernel \`inotify\` watching.
-`;
-}
-
 const commits = getRecentCommits(35);
-const markdown =
-  kindArg === 'demo'
-    ? buildDemoReleaseNotes(versionArg)
-    : buildEngineReleaseNotes(versionArg, commits);
+const markdown = buildEngineReleaseNotes(versionArg, commits);
 
 if (outArg) {
   writeFileSync(outArg, markdown, 'utf8');
-  process.stdout.write(`[Release Notes] Generated ${kindArg} release notes -> ${outArg}\n`);
+  process.stdout.write(`[Release Notes] Generated engine release notes -> ${outArg}\n`);
 } else {
   process.stdout.write(markdown);
 }

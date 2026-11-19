@@ -527,20 +527,20 @@ mod tests {
             ..AppPermissions::minimal()
         };
 
-        let flatpak = generate_flatpak_manifest_with_permissions("pokedex-demo", &perms);
+        let flatpak = generate_flatpak_manifest_with_permissions("sample-desktop-app", &perms);
         assert!(flatpak.contains("--share=network"));
         assert!(!flatpak.contains("--filesystem=host"));
 
         let win_manifest = generate_windows_appx_manifest_with_permissions(
-            "pokedex-demo",
-            "Pokedex Demo",
+            "sample-desktop-app",
+            "Sample Desktop App",
             "0.3.0",
             &perms,
         );
         assert!(win_manifest.contains("<Capability Name=\"internetClient\" />"));
         assert!(!win_manifest.contains("runFullTrust"));
 
-        let mac_entitlements = generate_macos_entitlements_plist("pokedex-demo", &perms);
+        let mac_entitlements = generate_macos_entitlements_plist("sample-desktop-app", &perms);
         assert!(mac_entitlements.contains("com.apple.security.app-sandbox"));
         assert!(mac_entitlements.contains("com.apple.security.network.client"));
         assert!(mac_entitlements.contains("com.apple.security.files.user-selected.read-write"));

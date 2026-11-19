@@ -18,18 +18,18 @@ describe('@ng-desktop/desktop Nivel 1-3 services', () => {
   it('provides NativeComputeService for fuzzy filtering and deterministic FNV-1a hashing', () => {
     const compute = TestBed.inject(NativeComputeService);
     const items = [
-      { id: 1, name: 'Bulbasaur' },
-      { id: 4, name: 'Charmander' },
-      { id: 25, name: 'Pikachu' },
-      { id: 26, name: 'Raichu' },
+      { id: 1, name: 'Alpha' },
+      { id: 4, name: 'Bravo' },
+      { id: 25, name: 'Delta' },
+      { id: 26, name: 'Deluxe' },
     ];
 
-    const filtered = compute.fuzzyFilter(items, (i) => i.name, 'pikachu', 3);
+    const filtered = compute.fuzzyFilter(items, (i) => i.name, 'delta', 3);
     expect(filtered[0]?.item.id).toBe(25);
     expect(filtered[0]?.score).toBe(1000);
 
-    const sub = compute.fuzzyFilterStrings(['bulbasaur', 'pikachu', 'raichu'], 'chu', 5);
-    expect(sub.map((m) => m.value)).toEqual(['raichu', 'pikachu']);
+    const sub = compute.fuzzyFilterStrings(['alpha', 'delta', 'deluxe'], 'del', 5);
+    expect(sub.map((m) => m.value)).toEqual(['delta', 'deluxe']);
 
     const hashA = compute.hash('ng-native-engine');
     const hashB = compute.hash('ng-native-engine');
@@ -41,7 +41,7 @@ describe('@ng-desktop/desktop Nivel 1-3 services', () => {
     const fs = TestBed.inject(NativeFileSystemService);
 
     const cfgPath = fs.resolveXdgPath('config', 'settings/theme.json');
-    expect(cfgPath).toContain('.config/ng-linux-counter/settings/theme.json');
+    expect(cfgPath).toContain('.config/ng-desktop-app/settings/theme.json');
     expect(() => fs.resolveXdgPath('config', '../etc/passwd')).toThrow();
 
     const watched = fs.watchJson<{ theme: string }>(cfgPath, { theme: 'dark' });

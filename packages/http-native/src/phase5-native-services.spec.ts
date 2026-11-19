@@ -86,7 +86,7 @@ describe('Phase 5 — @ng-desktop/router, @ng-desktop/http & @ng-desktop/desktop
       'GET',
       'https://api.ng-native.dev/projects?platform=linux',
       200,
-      JSON.stringify({ project: 'ng-linux-counter', fps: 60 }),
+      JSON.stringify({ project: 'sample-desktop-app', fps: 60 }),
     );
 
     let interceptedUrl = '';
@@ -106,7 +106,7 @@ describe('Phase 5 — @ng-desktop/router, @ng-desktop/http & @ng-desktop/desktop
       ),
     );
     expect(interceptedUrl).toBe('https://api.ng-native.dev/projects?platform=linux');
-    expect(data).toEqual({ project: 'ng-linux-counter', fps: 60 });
+    expect(data).toEqual({ project: 'sample-desktop-app', fps: 60 });
   });
 
   it('synchronizes NativeDesktopService theme Signal, clipboard, notifications, and file dialogs', () => {
@@ -142,15 +142,15 @@ describe('Phase 5 — @ng-desktop/router, @ng-desktop/http & @ng-desktop/desktop
 
     bridge.registerHttpEndpoint(
       'GET',
-      'https://pokeapi.co/api/v2/pokemon/25',
+      'https://api.example.test/v2/items/25',
       200,
-      JSON.stringify({ id: 25, name: 'pikachu' }),
+      JSON.stringify({ id: 25, name: 'widget' }),
     );
     bridge.registerHttpEndpoint(
       'POST',
-      'https://beta.pokeapi.co/graphql/v1beta',
+      'https://api.example.test/graphql',
       200,
-      JSON.stringify({ data: { pokemon: { name: 'charizard' } } }),
+      JSON.stringify({ data: { item: { name: 'gadget' } } }),
     );
     bridge.registerHttpEndpoint(
       'GET',
@@ -158,12 +158,7 @@ describe('Phase 5 — @ng-desktop/router, @ng-desktop/http & @ng-desktop/desktop
       200,
       'PNG_BINARY_STUB',
     );
-    bridge.registerHttpEndpoint(
-      'GET',
-      'https://cdn.ng-native.dev/notes.txt',
-      200,
-      'Bulbasaur notes',
-    );
+    bridge.registerHttpEndpoint('GET', 'https://cdn.ng-native.dev/notes.txt', 200, 'Item notes');
 
     bridge.httpRequest = (method, url, body, options) => {
       capturedCalls.push({ url, options });
@@ -172,7 +167,7 @@ describe('Phase 5 — @ng-desktop/router, @ng-desktop/http & @ng-desktop/desktop
 
     try {
       const traceInterceptor: HttpInterceptorFn = (req, next) =>
-        next(req.clone({ setHeaders: { 'X-Client-Trace': 'pokedex-v2' } }));
+        next(req.clone({ setHeaders: { 'X-Client-Trace': 'desktop-v2' } }));
 
       TestBed.configureTestingModule({
         providers: [
@@ -197,18 +192,17 @@ describe('Phase 5 — @ng-desktop/router, @ng-desktop/http & @ng-desktop/desktop
       expect(bridge.getHttpConfig().xsrfHeaderName).toBe('X-MY-XSRF');
 
       const http = TestBed.inject(HttpClient);
-      const poke = await firstValueFrom(
-        http.get<{ id: number; name: string }>('https://pokeapi.co/api/v2/pokemon/25'),
+      const item = await firstValueFrom(
+        http.get<{ id: number; name: string }>('https://api.example.test/v2/items/25'),
       );
-      expect(poke.name).toBe('pikachu');
+      expect(item.name).toBe('widget');
 
       const gql = await firstValueFrom(
-        http.post<{ data: { pokemon: { name: string } } }>(
-          'https://beta.pokeapi.co/graphql/v1beta',
-          { query: '{ pokemon(id: 6) { name } }' },
-        ),
+        http.post<{ data: { item: { name: string } } }>('https://api.example.test/graphql', {
+          query: '{ item(id: 6) { name } }',
+        }),
       );
-      expect(gql.data.pokemon.name).toBe('charizard');
+      expect(gql.data.item.name).toBe('gadget');
 
       const asset = await firstValueFrom(
         http.get('https://cdn.ng-native.dev/sprites/25.png', {
@@ -224,7 +218,7 @@ describe('Phase 5 — @ng-desktop/router, @ng-desktop/http & @ng-desktop/desktop
           responseType: 'text',
         }),
       );
-      expect(txt).toBe('Bulbasaur notes');
+      expect(txt).toBe('Item notes');
 
       expect(capturedCalls.map((c) => c.options?.callKind)).toEqual([
         'json',
@@ -232,7 +226,7 @@ describe('Phase 5 — @ng-desktop/router, @ng-desktop/http & @ng-desktop/desktop
         'asset',
         'text',
       ]);
-      expect(capturedCalls[0].options?.headers?.['X-Client-Trace']).toBe('pokedex-v2');
+      expect(capturedCalls[0].options?.headers?.['X-Client-Trace']).toBe('desktop-v2');
       expect(capturedCalls[3].options?.headers?.['X-Custom']).toBe('yes');
 
       TestBed.resetTestingModule();
@@ -249,20 +243,20 @@ describe('Phase 5 — @ng-desktop/router, @ng-desktop/http & @ng-desktop/desktop
     const bridge = ensureNgNativeBridge();
     bridge.registerHttpEndpoint(
       'GET',
-      'https://pokeapi.co/api/v2/pokemon/1',
+      'https://api.example.test/v2/items/1',
       200,
-      JSON.stringify({ id: 1, name: 'bulbasaur' }),
+      JSON.stringify({ id: 1, name: 'alpha' }),
     );
     bridge.registerHttpEndpoint(
       'GET',
-      'https://pokeapi.co/api/v2/pokemon/25',
+      'https://api.example.test/v2/items/25',
       200,
-      JSON.stringify({ id: 25, name: 'pikachu' }),
+      JSON.stringify({ id: 25, name: 'widget' }),
     );
 
-    const pokeId = signal<number | undefined>(undefined);
+    const itemId = signal<number | undefined>(undefined);
     const resource = createNativeHttpResource<string>(
-      () => (pokeId() ? `https://pokeapi.co/api/v2/pokemon/${pokeId()}` : undefined),
+      () => (itemId() ? `https://api.example.test/v2/items/${itemId()}` : undefined),
       {
         map: (raw) => (raw as { name: string }).name.toUpperCase(),
       },
@@ -272,17 +266,17 @@ describe('Phase 5 — @ng-desktop/router, @ng-desktop/http & @ng-desktop/desktop
     expect(resource.hasValue()).toBe(false);
     expect(resource.isLoading()).toBe(false);
 
-    pokeId.set(1);
+    itemId.set(1);
     expect(resource.reload()).toBe(true);
     expect(resource.status()).toBe('resolved');
     expect(resource.hasValue()).toBe(true);
-    expect(resource.value()).toBe('BULBASAUR');
+    expect(resource.value()).toBe('ALPHA');
 
-    pokeId.set(25);
+    itemId.set(25);
     expect(resource.reload()).toBe(true);
-    expect(resource.value()).toBe('PIKACHU');
+    expect(resource.value()).toBe('WIDGET');
 
-    pokeId.set(9999);
+    itemId.set(9999);
     expect(resource.reload()).toBe(false);
     expect(resource.status()).toBe('error');
     expect(resource.error()).toMatchObject({ status: 404 });
@@ -293,7 +287,7 @@ describe('Phase 5 — @ng-desktop/router, @ng-desktop/http & @ng-desktop/desktop
       providers: [
         provideNativeDesktop(),
         provideNativeRouter([]),
-        withNativeTitleStrategy('Pokédex'),
+        withNativeTitleStrategy('Workspace'),
         withNativeRouteReuse(),
       ],
     });
@@ -306,13 +300,13 @@ describe('Phase 5 — @ng-desktop/router, @ng-desktop/http & @ng-desktop/desktop
     );
     expect(liveNotes.count()).toBe(0);
 
-    sqlite.execute("INSERT INTO notes (id, body) VALUES ('25', 'Voltaje')");
-    sqlite.execute("INSERT INTO notes (id, body) VALUES ('1', 'Semilla')");
+    sqlite.execute("INSERT INTO notes (id, body) VALUES ('25', 'Note B')");
+    sqlite.execute("INSERT INTO notes (id, body) VALUES ('1', 'Note A')");
     expect(liveNotes.count()).toBe(2);
     expect(liveNotes.rows().map((r) => r.id)).toEqual(['1', '25']);
 
     sqlite.execute("DELETE FROM notes WHERE id = '1'");
-    expect(liveNotes.rows()).toEqual([{ id: '25', body: 'Voltaje' }]);
+    expect(liveNotes.rows()).toEqual([{ id: '25', body: 'Note B' }]);
 
     const network = TestBed.inject(NativeNetworkService);
     expect(network.connectivity()).toBe('full');
@@ -324,9 +318,9 @@ describe('Phase 5 — @ng-desktop/router, @ng-desktop/http & @ng-desktop/desktop
 
     const titleStrategy = TestBed.inject(TitleStrategy) as NativeTitleStrategy;
     const nativeTitle = TestBed.inject(NativeTitleService);
-    vi.spyOn(titleStrategy, 'buildTitle').mockReturnValue('Pikachu');
+    vi.spyOn(titleStrategy, 'buildTitle').mockReturnValue('Overview');
     titleStrategy.updateTitle({} as RouterStateSnapshot);
-    expect(nativeTitle.getTitle()).toBe('Pokédex — Pikachu');
+    expect(nativeTitle.getTitle()).toBe('Workspace — Overview');
 
     const reuse = TestBed.inject(RouteReuseStrategy) as NativeStackRouteReuseStrategy;
     const mockSnapshot = {

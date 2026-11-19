@@ -36,18 +36,20 @@ describe('Phase 6 — @ng-desktop/builders & Distribution Orchestration', () => 
   });
 
   it('executes builder pipeline and produces .deb, AppImage, and Flatpak artifact paths', () => {
-    const result = executeNativeBuilder('ng-linux-counter', {
+    const result = executeNativeBuilder('sample-desktop-app', {
       targetPlatform: 'linux-gtk4',
       jsEngine: 'jsc',
-      outputPath: 'dist/ng-linux-counter/',
+      outputPath: 'dist/sample-desktop-app/',
     });
 
     expect(result.success).toBe(true);
-    expect(result.bundlePath).toBe('dist/ng-linux-counter/main.ngb');
-    expect(result.packageArtifacts).toContain('dist/ng-linux-counter/packages/deb/DEBIAN/control');
-    expect(result.packageArtifacts).toContain('dist/ng-linux-counter/packages/appimage/AppRun');
+    expect(result.bundlePath).toBe('dist/sample-desktop-app/main.ngb');
     expect(result.packageArtifacts).toContain(
-      'dist/ng-linux-counter/packages/flatpak/ng-linux-counter.yml',
+      'dist/sample-desktop-app/packages/deb/DEBIAN/control',
+    );
+    expect(result.packageArtifacts).toContain('dist/sample-desktop-app/packages/appimage/AppRun');
+    expect(result.packageArtifacts).toContain(
+      'dist/sample-desktop-app/packages/flatpak/sample-desktop-app.yml',
     );
   });
 

@@ -254,10 +254,6 @@ export function compileBundle({
   const runtimeConfigFile = resolve(outDir, 'ng-desktop.runtime.json');
   writeFileSync(runtimeConfigFile, JSON.stringify(runtimeConfig, null, 2) + '\n', 'utf8');
 
-  const standaloneFallback = resolve(rootDir, 'src/standalone_pokedex.ngb');
-  if (projectName === 'ng-linux-counter' && existsSync(standaloneFallback)) {
-    writeFileSync(standaloneFallback, bundle, 'utf8');
-  }
   console.log(
     `[Angular Native Compiler] Compiled ${projectName} v${resolvedVersion} (${workspace.workspaceKind}) -> ${bundleFile}`,
   );

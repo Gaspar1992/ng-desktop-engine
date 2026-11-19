@@ -407,18 +407,18 @@ mod tests {
     #[test]
     fn parses_bind_attr_and_bind_visible_instructions() {
         let script = r"
-            bind_attr hp_bar value pokemonId {}
-            bind_attr lbl_badge label pokemonId #{}
-            bind_visible detail_view pokemonId != 0
-            bind_visible list_view pokemonId == 0
+            bind_attr progress_bar value itemId {}
+            bind_attr lbl_badge label itemId #{}
+            bind_visible detail_view itemId != 0
+            bind_visible list_view itemId == 0
         ";
         let parsed = parse_script(script).unwrap();
         assert_eq!(
             parsed[0],
             Instruction::BindAttr {
-                var_name: String::from("hp_bar"),
+                var_name: String::from("progress_bar"),
                 attr_key: String::from("value"),
-                signal_name: String::from("pokemonId"),
+                signal_name: String::from("itemId"),
                 template: String::from("{}"),
             }
         );
@@ -427,7 +427,7 @@ mod tests {
             Instruction::BindAttr {
                 var_name: String::from("lbl_badge"),
                 attr_key: String::from("label"),
-                signal_name: String::from("pokemonId"),
+                signal_name: String::from("itemId"),
                 template: String::from("#{}"),
             }
         );
@@ -435,7 +435,7 @@ mod tests {
             parsed[2],
             Instruction::BindVisible {
                 var_name: String::from("detail_view"),
-                signal_name: String::from("pokemonId"),
+                signal_name: String::from("itemId"),
                 op: String::from("!="),
                 rhs: 0,
             }
@@ -444,7 +444,7 @@ mod tests {
             parsed[3],
             Instruction::BindVisible {
                 var_name: String::from("list_view"),
-                signal_name: String::from("pokemonId"),
+                signal_name: String::from("itemId"),
                 op: String::from("=="),
                 rhs: 0,
             }

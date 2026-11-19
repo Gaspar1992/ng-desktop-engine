@@ -113,22 +113,22 @@ describe('@ng-desktop/forms — ControlValueAccessor Directives', () => {
 
     const searchNode = renderer.createElement('ng-search-entry') as NativeElementNode;
     const searchAccessor = createDirective(NativeTextValueAccessor, searchNode);
-    const searchControl = new FormControl('pikachu');
+    const searchControl = new FormControl('angular');
     searchAccessor.writeValue(searchControl.value);
     searchAccessor.registerOnChange((val) => searchControl.setValue(val, { emitEvent: false }));
-    expect(bridge.__drainQueue()).toContain(`attr ${searchNode.id} value pikachu`);
+    expect(bridge.__drainQueue()).toContain(`attr ${searchNode.id} value angular`);
 
     bridge.__dispatchEvent(searchNode.id, 'input', {
       type: 'input',
       targetId: searchNode.id,
-      value: 'charizard',
+      value: 'desktop',
     });
-    expect(searchControl.value).toBe('charizard');
+    expect(searchControl.value).toBe('desktop');
 
     const textViewNode = renderer.createElement('ng-text-view') as NativeElementNode;
     const textViewAccessor = createDirective(NativeTextValueAccessor, textViewNode);
-    textViewAccessor.writeValue('Captured at Viridian Forest');
-    expect(bridge.__drainQueue()).toContain(`text ${textViewNode.id} Captured at Viridian Forest`);
+    textViewAccessor.writeValue('Release notes draft');
+    expect(bridge.__drainQueue()).toContain(`text ${textViewNode.id} Release notes draft`);
 
     const spinNode = renderer.createElement('ng-spin-button') as NativeElementNode;
     const spinAccessor = createDirective(NativeNumberValueAccessor, spinNode);

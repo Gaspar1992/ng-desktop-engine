@@ -4,6 +4,7 @@ import {
   InMemoryFsStore,
   type NativeComputeMatch,
   type NativeXdgDirKind,
+  resolveDefaultAppId,
 } from './bridge-fs-compute';
 import { InMemorySqliteStore, resolveNativeImageAsset } from './bridge-sqlite';
 
@@ -246,7 +247,7 @@ export function ensureNgNativeBridge(): NgNativeBridge {
     setClipboard(text) {
       clipboardText = text;
     },
-    sendNotification(title, body, icon = 'ng-linux-counter') {
+    sendNotification(title, body, icon = resolveDefaultAppId()) {
       queue.push(`comment notify_${nextListenerId++} [${icon}] ${title}: ${body}`);
     },
     openFileDialog(_title = 'Open File', defaultPath = '/home/user/document.txt') {

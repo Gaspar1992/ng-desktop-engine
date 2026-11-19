@@ -15,7 +15,6 @@ include = [
   "/Cargo.toml",
   "/README.md",
   "/LICENSE",
-  "/examples/counter-app/public/favicon.ico",
 ]
 
 [profile.release]

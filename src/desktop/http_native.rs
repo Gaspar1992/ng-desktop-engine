@@ -626,16 +626,11 @@ mod tests {
     #[test]
     fn detects_call_kind_and_injects_xsrf_header_on_mutations() {
         assert_eq!(
-            NativeHttpCallKind::detect("GET", "https://pokeapi.co/api/v2/pokemon/25", None, None),
+            NativeHttpCallKind::detect("GET", "https://api.example.test/v2/items/25", None, None),
             NativeHttpCallKind::JsonApi
         );
         assert_eq!(
-            NativeHttpCallKind::detect(
-                "POST",
-                "https://beta.pokeapi.co/graphql/v1beta",
-                None,
-                None
-            ),
+            NativeHttpCallKind::detect("POST", "https://api.example.test/graphql", None, None),
             NativeHttpCallKind::GraphQl
         );
         assert_eq!(

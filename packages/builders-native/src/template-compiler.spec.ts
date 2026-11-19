@@ -75,7 +75,7 @@ describe('Native template compiler (Angular AST)', () => {
   });
 
   it('evaluates Angular built-in pipes and keeps reactive pipe placeholders', () => {
-    expect(applyPipeTransform('pikachu', 'titlecase')).toBe('Pikachu');
+    expect(applyPipeTransform('angular', 'titlecase')).toBe('Angular');
     expect(applyPipeTransform(42.5, 'currency', ['EUR'])).toBe('€42.50');
 
     const ast = parseTemplateHtml(
@@ -88,14 +88,14 @@ describe('Native template compiler (Angular AST)', () => {
           <ng-label id="lbl_pct">{{ ratio() | percent:'1.0-0' }}</ng-label>
         </ng-box>
       `,
-      { title: 'Charizard', weight: 90.5, price: 19.5, ratio: 0.75, count: 3 },
+      { title: 'AngularApp', weight: 90.5, price: 19.5, ratio: 0.75, count: 3 },
       { ratio: 0 },
       'pipes.html',
     );
 
     const labels = ast[0].children;
-    expect(labels[0].text).toBe('CHARIZARD');
-    expect(labels[1].text).toBe('char');
+    expect(labels[0].text).toBe('ANGULARAPP');
+    expect(labels[1].text).toBe('angu');
     expect(labels[2].text).toBe('90.5 kg');
     expect(labels[3].text).toBe('€19.50');
     expect(labels[4].text).toBe('75%');
@@ -128,11 +128,11 @@ describe('Native template compiler (Angular AST)', () => {
         </ng-box>
       `,
       {
-        headerTitle: 'pokedex',
+        headerTitle: 'dashboard',
         mode: 'grid',
         entries: [
-          { id: 1, name: 'bulbasaur' },
-          { id: 4, name: 'charmander' },
+          { id: 1, name: 'alpha' },
+          { id: 4, name: 'beta' },
         ],
         emptyList: [],
       },
@@ -142,12 +142,12 @@ describe('Native template compiler (Angular AST)', () => {
 
     const children = ast[0].children;
     const texts = children.map((n) => n.text);
-    expect(texts).toContain('POKEDEX');
+    expect(texts).toContain('DASHBOARD');
     expect(texts).toContain('@switch(mode())');
     expect(texts).toContain('Grid Mode');
     expect(texts).toContain('@for(entries(); track:item.id)');
-    expect(texts).toContain('0:Bulbasaur');
-    expect(texts).toContain('1:Charmander');
+    expect(texts).toContain('0:Alpha');
+    expect(texts).toContain('1:Beta');
     expect(texts).toContain('No matches');
     expect(texts).not.toContain('Never rendered');
   });
@@ -178,7 +178,7 @@ describe('Native template compiler (Angular AST)', () => {
     const ast = parseTemplateHtml(
       `
         <ng-box id="root">
-          @if (pokemonId() > 0) {
+          @if (itemId() > 0) {
             <ng-box id="detail_panel"><ng-label id="detail_lbl">Detail</ng-label></ng-box>
           } @else {
             <ng-box id="list_panel"><ng-label id="list_lbl">List</ng-label></ng-box>
@@ -187,12 +187,12 @@ describe('Native template compiler (Angular AST)', () => {
             @case (0) { <ng-label id="tab_home">Home</ng-label> }
             @case (1) { <ng-label id="tab_fav">Favorites</ng-label> }
           }
-          <ng-progress-bar id="bar_hp" [value]="pokemonId()" [visible]="!isHidden()" />
-          <app-counter-chip id="chip" [count]="pokemonId()" (select)="pickPikachu()" />
+          <ng-progress-bar id="bar_progress" [value]="itemId()" [visible]="!isHidden()" />
+          <app-counter-chip id="chip" [count]="itemId()" (select)="selectItem()" />
         </ng-box>
       `,
-      { pokemonId: '0', tab: '1', isHidden: '0' },
-      { pokemonId: 0, tab: 1, isHidden: 0 },
+      { itemId: '0', tab: '1', isHidden: '0' },
+      { itemId: 0, tab: 1, isHidden: 0 },
       'reactive.html',
       childRegistry,
     );
@@ -202,38 +202,31 @@ describe('Native template compiler (Angular AST)', () => {
     const listPanel = children.find((n) => n.id === 'list_panel');
     const tabHome = children.find((n) => n.id === 'tab_home');
     const tabFav = children.find((n) => n.id === 'tab_fav');
-    const barHp = children.find((n) => n.id === 'bar_hp');
+    const barProgress = children.find((n) => n.id === 'bar_progress');
     const chip = children.find((n) => n.id === 'chip');
 
     expect(detailPanel?.attributes['visible']).toBe('false');
-    expect(detailPanel?.visibilityBinding).toEqual({ signalName: 'pokemonId', op: '>', rhs: 0 });
+    expect(detailPanel?.visibilityBinding).toEqual({ signalName: 'itemId', op: '>', rhs: 0 });
     expect(listPanel?.attributes['visible']).toBe('true');
-    expect(listPanel?.visibilityBinding).toEqual({ signalName: 'pokemonId', op: '<=', rhs: 0 });
+    expect(listPanel?.visibilityBinding).toEqual({ signalName: 'itemId', op: '<=', rhs: 0 });
 
     expect(tabHome?.attributes['visible']).toBe('false');
     expect(tabHome?.visibilityBinding).toEqual({ signalName: 'tab', op: '==', rhs: 0 });
     expect(tabFav?.attributes['visible']).toBe('true');
     expect(tabFav?.visibilityBinding).toEqual({ signalName: 'tab', op: '==', rhs: 1 });
 
-    expect(barHp?.reactiveAttrs).toEqual([
-      { attrKey: 'value', signalName: 'pokemonId', template: '{}' },
+    expect(barProgress?.reactiveAttrs).toEqual([
+      { attrKey: 'value', signalName: 'itemId', template: '{}' },
     ]);
-    expect(barHp?.visibilityBinding).toEqual({ signalName: 'isHidden', op: '==', rhs: 0 });
-    expect(chip?.reactiveBinding).toEqual({ signalName: 'pokemonId', template: 'ID: {}' });
-    expect(chip?.events).toEqual({ click: 'pickPikachu' });
+    expect(barProgress?.visibilityBinding).toEqual({ signalName: 'isHidden', op: '==', rhs: 0 });
+    expect(chip?.reactiveBinding).toEqual({ signalName: 'itemId', template: 'ID: {}' });
+    expect(chip?.events).toEqual({ click: 'selectItem' });
 
-    const bundle = emitNgbBundle(
-      [],
-      { pokemonId: 0, tab: 1, isHidden: 0 },
-      {},
-      ast,
-      null,
-      't.html',
-    );
-    expect(bundle).toContain('bind_visible detail_panel pokemonId > 0');
-    expect(bundle).toContain('bind_visible list_panel pokemonId <= 0');
+    const bundle = emitNgbBundle([], { itemId: 0, tab: 1, isHidden: 0 }, {}, ast, null, 't.html');
+    expect(bundle).toContain('bind_visible detail_panel itemId > 0');
+    expect(bundle).toContain('bind_visible list_panel itemId <= 0');
     expect(bundle).toContain('bind_visible tab_home tab == 0');
-    expect(bundle).toContain('bind_attr bar_hp value pokemonId {}');
+    expect(bundle).toContain('bind_attr bar_progress value itemId {}');
   });
 
   it('extracts Angular 22 input(), model(), linkedSignal(), output(), and httpResource() metadata', () => {
@@ -242,23 +235,23 @@ describe('Native template compiler (Angular AST)', () => {
       import { httpResource } from '@angular/common/http';
       @Component({ selector: 'app-adv', templateUrl: './a.html', styleUrl: './a.css' })
       export class AdvCmp {
-        readonly title = input('Pokédex');
+        readonly title = input('Desktop App');
         readonly selectedId = model(25);
         readonly doubledId = linkedSignal(() => this.selectedId() * 2);
         readonly select = output<number>();
-        readonly pokeResource = httpResource(() => \`https://pokeapi.co/api/v2/pokemon/\${this.selectedId()}\`);
+        readonly itemResource = httpResource(() => \`https://api.example.test/v2/items/\${this.selectedId()}\`);
       }
     `);
 
-    expect(meta.inputs['title']).toEqual({ required: false, defaultValue: 'Pokédex' });
+    expect(meta.inputs['title']).toEqual({ required: false, defaultValue: 'Desktop App' });
     expect(meta.models['selectedId']).toEqual({ required: false, defaultValue: 25 });
     expect(meta.numericSignals['selectedId']).toBe(25);
     expect(meta.numericSignals['doubledId']).toBe(50);
     expect(meta.state['doubledId']).toBe('50');
     expect(meta.outputs['select']).toBe(true);
-    expect(meta.resources['pokeResource']).toEqual({
+    expect(meta.resources['itemResource']).toEqual({
       kind: 'httpResource',
-      url: 'https://pokeapi.co/api/v2/pokemon/25',
+      url: 'https://api.example.test/v2/items/25',
     });
   });
 });

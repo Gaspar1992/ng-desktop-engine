@@ -268,8 +268,8 @@ mod tests {
     fn formats_pipe_placeholders_for_reactive_signal_updates() {
         assert_eq!(format_bound_template("ID: {}", "25"), "ID: 25");
         assert_eq!(
-            format_bound_template("Name: {|uppercase}", "pikachu"),
-            "Name: PIKACHU"
+            format_bound_template("Name: {|uppercase}", "angular"),
+            "Name: ANGULAR"
         );
         assert_eq!(format_bound_template("Rate: {|percent}", "2"), "Rate: 200%");
     }

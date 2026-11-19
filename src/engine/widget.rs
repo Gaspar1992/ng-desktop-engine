@@ -771,12 +771,12 @@ mod tests {
         ));
 
         let mut search = WidgetKind::from_tag("ng-search-entry").unwrap();
-        search.set_attribute("placeholder", "Search Pokemon");
-        search.set_attribute("value", "pikachu");
+        search.set_attribute("placeholder", "Search items");
+        search.set_attribute("value", "widget");
         assert!(matches!(
             search,
             WidgetKind::SearchEntry { ref text, ref placeholder }
-            if text == "pikachu" && placeholder == "Search Pokemon"
+            if text == "widget" && placeholder == "Search items"
         ));
 
         let mut pass = WidgetKind::from_tag("ng-password-entry").unwrap();
@@ -791,11 +791,11 @@ mod tests {
         let mut tv = WidgetKind::from_tag("ng-text-view").unwrap();
         tv.set_attribute("editable", "false");
         tv.set_attribute("monospace", "true");
-        tv.set_text(p_id, "Trainer log").unwrap();
+        tv.set_text(p_id, "Activity log").unwrap();
         assert!(matches!(
             tv,
             WidgetKind::TextView { ref text, editable: false, monospace: true }
-            if text == "Trainer log"
+            if text == "Activity log"
         ));
     }
 }
