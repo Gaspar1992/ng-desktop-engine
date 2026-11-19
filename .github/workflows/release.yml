@@ -115,7 +115,11 @@ jobs:
           chmod +x dist/ng-linux-counter/ng-native-engine
           tar -czf "release-out/ng-desktop-engine-linux-x86_64.tar.gz" -C target/release ng-native-engine
 
-          # 3. Pack individual compiled APF Angular 22+ libraries (@ng-native/*) as .tgz tarballs
+          # 3. Stage & pack platform npm binary package (@ng-native/engine-linux-x64-gnu)
+          node scripts/build-engine-packages.mjs --target=linux-x64 --binary=target/release/ng-native-engine --version="${VER}"
+          (cd "dist/engine-packages/engine-linux-x64-gnu" && npm pack --pack-destination "../../../release-out")
+
+          # 4. Pack individual compiled APF Angular 22+ libraries (@ng-native/*) as .tgz tarballs
           for pkg in platform-native forms-native router-native http-native desktop-native builders-native; do
             (cd "dist/packages/${pkg}" && npm pack --pack-destination "../../../release-out")
           done
@@ -131,7 +135,13 @@ jobs:
           # 1. Standalone self-contained Windows executable: pokedex-demo-<ver>-windows-x64.exe
           Copy-Item "target/release/ng-native-engine.exe" "release-out/pokedex-demo-${VER}-windows-x64.exe" -Force
 
-          # 2. Engine + WinUI 3 MSIX package archive: ng-desktop-engine-windows-x86_64.zip
+          # 2. Stage & pack platform npm binary package (@ng-native/engine-win32-x64-msvc)
+          node scripts/build-engine-packages.mjs --target=win32-x64 --binary=target/release/ng-native-engine.exe --version="${VER}"
+          Push-Location "dist/engine-packages/engine-win32-x64-msvc"
+          npm pack --pack-destination "../../../release-out"
+          Pop-Location
+
+          # 3. Engine + WinUI 3 MSIX package archive: ng-desktop-engine-windows-x86_64.zip
           Copy-Item "target/release/ng-native-engine.exe" "dist/ng-linux-counter/packages/windows/ng-linux-counter.exe" -Force
           Copy-Item "dist/ng-linux-counter/main.ngb" "dist/ng-linux-counter/packages/windows/main.ngb" -Force
           Copy-Item "dist/ng-linux-counter/permissions.manifest.json" "dist/ng-linux-counter/packages/windows/permissions.manifest.json" -Force
@@ -160,7 +170,11 @@ jobs:
             -format UDZO \
             "release-out/pokedex-demo-${VER}-macos-arm64.dmg"
 
-          # 2. Standalone macOS Engine archive: ng-desktop-engine-macos-arm64.tar.gz
+          # 2. Stage & pack platform npm binary package (@ng-native/engine-darwin-arm64)
+          node scripts/build-engine-packages.mjs --target=darwin-arm64 --binary=target/release/ng-native-engine --version="${VER}"
+          (cd "dist/engine-packages/engine-darwin-arm64" && npm pack --pack-destination "../../../release-out")
+
+          # 3. Standalone macOS Engine archive: ng-desktop-engine-macos-arm64.tar.gz
           tar -czf "release-out/ng-desktop-engine-macos-arm64.tar.gz" -C target/release ng-native-engine
           ls -lh release-out/
 
@@ -230,6 +244,9 @@ jobs:
             artifacts/ng-native-http-${{ steps.meta.outputs.version }}.tgz
             artifacts/ng-native-desktop-${{ steps.meta.outputs.version }}.tgz
             artifacts/ng-native-builders-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-native-engine-linux-x64-gnu-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-native-engine-win32-x64-msvc-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-native-engine-darwin-arm64-${{ steps.meta.outputs.version }}.tgz
             artifacts/ng-desktop-engine-linux-x86_64.tar.gz
             artifacts/ng-desktop-engine-windows-x86_64.zip
             artifacts/ng-desktop-engine-macos-arm64.tar.gz
@@ -246,3 +263,70 @@ jobs:
             artifacts/pokedex-demo-${{ steps.meta.outputs.version }}-windows-x64.exe
             artifacts/pokedex-demo-${{ steps.meta.outputs.version }}-macos-arm64.dmg
             artifacts/SHA256SUMS-demo.txt
+
+  publish-npm:
+    name: Publish @ng-native/* & Prebuilt Engine Packages to npm
+    needs: publish-release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Download release tarballs
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish (or verify --dry-run when NPM_TOKEN is unset)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          shopt -s nullglob
+          ENGINE_TARBALLS=(artifacts/ng-native-engine-*.tgz)
+          LIB_TARBALLS=(
+            artifacts/ng-native-platform-*.tgz
+            artifacts/ng-native-forms-*.tgz
+            artifacts/ng-native-router-*.tgz
+            artifacts/ng-native-http-*.tgz
+            artifacts/ng-native-desktop-*.tgz
+            artifacts/ng-native-builders-*.tgz
+          )
+          if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
+            for tgz in "${ENGINE_TARBALLS[@]}" "${LIB_TARBALLS[@]}"; do
+              npm publish "$tgz" --provenance --access public
+            done
+          else
+            echo "NPM_TOKEN secret not configured; running non-destructive --dry-run validation."
+            for tgz in "${ENGINE_TARBALLS[@]}" "${LIB_TARBALLS[@]}"; do
+              npm publish "$tgz" --dry-run --access public
+            done
+          fi
+
+  publish-crates:
+    name: Publish ng-native-engine Crate to crates.io
+    needs: publish-release
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish (or verify cargo publish --dry-run when CARGO_REGISTRY_TOKEN is unset)
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ -n "${CARGO_REGISTRY_TOKEN:-}" ]; then
+            cargo publish --locked
+          else
+            echo "CARGO_REGISTRY_TOKEN secret not configured; verifying crate package cleanly."
+            cargo publish --dry-run --allow-dirty
+          fi

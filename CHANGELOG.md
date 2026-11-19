@@ -5,6 +5,11 @@ This project adheres to [Conventional Commits](https://www.conventionalcommits.o
 
 ## [Unreleased]
 
+### Features (Phase 12 — Prebuilt Engine Binaries, External `npm pack` E2E & npm/`crates.io` Publishing)
+
+- **prebuilt binaries (`@ng-native/builders`):** add `packages/builders-native/src/resolve-engine-binary.mjs` + `.d.mts` (`resolveEngineBinaryPath` & `ENGINE_BINARY_PACKAGES` mapping `linux-x64`, `linux-arm64`, `win32-x64`, `darwin-arm64`, `darwin-x64`) with env -> `optionalDependencies` -> local Cargo target -> `cargo run` resolution order; integrate into `dev-server.mjs` and `ng-desktop` CLI (`run` / `package`), add `builders.json`, and run `ngc.js`/`tsc` directly via `process.execPath` for seamless Windows/Linux/macOS APF builds.
+- **publishing & e2e verification:** add `scripts/build-engine-packages.mjs` (`build:engine-packages`) and `scripts/test-external-pack.mjs` (`test:pack`) verifying tarball contents and out-of-repo execution; add `crates.io` metadata (`Cargo.toml` `0.3.0`), full npm `repository`/`publishConfig`/`README.md` metadata in `scripts/build-packages.mjs`, and `publish-npm` + `publish-crates` jobs to `.github/workflows/release.yml` across **121 automated tests** (51 Vitest + 50 Rust unit + 20 Rust integration).
+
 ### Features (Phase 11 — Workspace-Agnostic Config, Least-Privilege Permissions, Ecosystem Bridges & APF Packaging)
 
 - **config & runtime:** eliminate hardcoded `"ng-linux-counter"`, `"angular.json"`, and `"0.2.0"` defaults across `src/config/mod.rs`, `src/main.rs`, `src/desktop/mod.rs`, `src/platforms/{gtk4_sys,linux_gtk,mod}.rs`, `src/runtime/{bootstrap_js,mod}.rs`, and `packages/builders-native/src/workspace-resolver.mjs`; add support for **Angular CLI (`angular.json`)**, **Nx (`project.json` / `nx.json`)**, `ng-desktop.runtime.json`, `--version`, `--permissions-report`, and `NG_DESKTOP_*` overrides.

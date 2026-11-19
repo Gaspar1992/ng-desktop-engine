@@ -1,32 +1,44 @@
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { watchBundle } from './build-bundle.mjs';
+import { resolveEngineBinaryPath } from './resolve-engine-binary.mjs';
+import { resolveWorkspaceProject } from './workspace-resolver.mjs';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const rootDir = existsSync(resolve(process.cwd(), 'angular.json'))
-  ? process.cwd()
-  : resolve(__dirname, '../../..');
+const workspace = resolveWorkspaceProject();
+const watcher = watchBundle({
+  cwd: workspace.workspaceRoot,
+  configPath: workspace.configFile,
+  projectName: workspace.projectName,
+});
 
-const watcher = watchBundle();
+const resolvedEngine = resolveEngineBinaryPath({
+  cwd: process.cwd(),
+  workspaceRoot: workspace.workspaceRoot,
+});
 
-console.log('[NgNative Dev Server] Launching native Rust engine with live Hot Reload...');
-const cargoProc = spawn('cargo', ['run'], {
-  cwd: rootDir,
+const engineArgs = [
+  ...resolvedEngine.args,
+  `--config=${workspace.configFile}`,
+  `--project=${workspace.projectName}`,
+];
+
+process.stdout.write(
+  `[NgDesktop Dev Server] Launching '${workspace.projectName}' via ${resolvedEngine.source} (${resolvedEngine.command})...\n`,
+);
+const engineProc = spawn(resolvedEngine.command, engineArgs, {
+  cwd: workspace.workspaceRoot,
   stdio: 'inherit',
   env: process.env,
 });
 
 function shutdown(code = 0) {
   watcher.close();
-  if (!cargoProc.killed) {
-    cargoProc.kill('SIGTERM');
+  if (!engineProc.killed) {
+    engineProc.kill('SIGTERM');
   }
   process.exit(code);
 }
 
-cargoProc.on('exit', (code) => {
+engineProc.on('exit', (code) => {
   watcher.close();
   process.exit(code ?? 0);
 });

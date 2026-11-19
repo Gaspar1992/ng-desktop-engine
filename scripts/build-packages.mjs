@@ -12,11 +12,15 @@ import {
 } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ENGINE_BINARY_PACKAGES } from '../packages/builders-native/src/resolve-engine-binary.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(__dirname, '..');
 const DIST_PACKAGES_DIR = resolve(ROOT_DIR, 'dist/packages');
 const TMP_TSC_DIR = resolve(ROOT_DIR, 'out-tsc/packages');
+const REPO_URL = 'https://github.com/Gaspar1992/ng-desktop-engine.git';
+const HOMEPAGE_URL = 'https://github.com/Gaspar1992/ng-desktop-engine';
+const BUGS_URL = 'https://github.com/Gaspar1992/ng-desktop-engine/issues';
 
 const PACKAGE_ORDER = [
   { dir: 'platform-native', compiler: 'ngc' },
@@ -74,6 +78,26 @@ function resolveTargetVersion(defaultVersion) {
   return envVer || defaultVersion;
 }
 
+function generatePackageReadme(npmName, description, pkgDir) {
+  return [
+    `# ${npmName}`,
+    '',
+    description,
+    '',
+    'Part of **[NgDesktop Engine](https://github.com/Gaspar1992/ng-desktop-engine)** — Native desktop rendering engine for Angular 22+ (`GTK4`, `WinUI 3`, `AppKit`).',
+    '',
+    '## Installation',
+    '',
+    '```bash',
+    `pnpm add ${npmName}`,
+    '```',
+    '',
+    `- Repository path: \`packages/${pkgDir}\``,
+    `- Documentation & Ecosystem Guide: ${HOMEPAGE_URL}/blob/main/docs/ECOSYSTEM_COMPATIBILITY.md`,
+    '',
+  ].join('\n');
+}
+
 function buildSinglePackage(pkgConfig, builtPackages) {
   const pkgSrcRoot = resolve(ROOT_DIR, 'packages', pkgConfig.dir);
   const pkgOutDir = resolve(DIST_PACKAGES_DIR, pkgConfig.dir);
@@ -104,9 +128,11 @@ function buildSinglePackage(pkgConfig, builtPackages) {
   const tsconfigPath = resolve(tscWorkDir, 'tsconfig.json');
   writeFileSync(tsconfigPath, `${JSON.stringify(tsconfig, null, 2)}\n`, 'utf8');
 
-  const binName = pkgConfig.compiler === 'ngc' ? 'ngc' : 'tsc';
-  const compilerBin = resolve(ROOT_DIR, 'node_modules/.bin', binName);
-  execFileSync(compilerBin, ['-p', tsconfigPath], {
+  const compilerEntry =
+    pkgConfig.compiler === 'ngc'
+      ? resolve(ROOT_DIR, 'node_modules/@angular/compiler-cli/bundles/src/bin/ngc.js')
+      : resolve(ROOT_DIR, 'node_modules/typescript/bin/tsc');
+  execFileSync(process.execPath, [compilerEntry, '-p', tsconfigPath], {
     cwd: ROOT_DIR,
     stdio: 'inherit',
   });
@@ -123,6 +149,10 @@ function buildSinglePackage(pkgConfig, builtPackages) {
       if (existsSync(from)) {
         cpSync(from, resolve(pkgOutDir, extraDir), { recursive: true });
       }
+    }
+    const buildersJson = resolve(pkgSrcRoot, 'builders.json');
+    if (existsSync(buildersJson)) {
+      copyFileSync(buildersJson, resolve(pkgOutDir, 'builders.json'));
     }
   }
 
@@ -142,26 +172,78 @@ function buildSinglePackage(pkgConfig, builtPackages) {
   if (pkgConfig.dir === 'builders-native') {
     exportsMap['./schema/*'] = { default: './schema/*' };
     exportsMap['./schematics'] = { default: './schematics/collection.json' };
+    exportsMap['./builders'] = { default: './builders.json' };
   }
+
+  const optionalEngineDeps = {};
+  if (pkgConfig.dir === 'builders-native') {
+    for (const meta of Object.values(ENGINE_BINARY_PACKAGES)) {
+      optionalEngineDeps[meta.pkgName] = resolvedVersion;
+    }
+  }
+
+  const description = rawPkg.description ?? `${rawPkg.name} for Angular Desktop Engine`;
+  const filesList =
+    pkgConfig.dir === 'builders-native'
+      ? ['fesm2022', 'bin', 'builders.json', 'schema', 'schematics', 'README.md', 'LICENSE']
+      : ['fesm2022', 'README.md', 'LICENSE'];
 
   const apfPkg = {
     name: rawPkg.name,
     version: resolvedVersion,
-    description: rawPkg.description ?? `${rawPkg.name} for Angular Desktop Engine`,
+    description,
     license: 'MIT',
+    keywords: ['angular', 'angular22', 'desktop', 'native', 'gtk4', 'winui3', 'appkit', 'rust'],
+    homepage: HOMEPAGE_URL,
+    bugs: { url: BUGS_URL },
+    repository: {
+      type: 'git',
+      url: REPO_URL,
+      directory: `packages/${pkgConfig.dir}`,
+    },
+    publishConfig: {
+      access: 'public',
+      provenance: true,
+    },
     type: 'module',
     sideEffects: false,
+    files: filesList,
     main: './fesm2022/index.js',
     module: './fesm2022/index.js',
     types: './fesm2022/index.d.ts',
     exports: exportsMap,
+    ...(pkgConfig.dir === 'builders-native' ? { builders: './builders.json' } : {}),
     ...(rawPkg.bin ? { bin: rawPkg.bin } : {}),
     ...(rawPkg.schematics ? { schematics: rawPkg.schematics } : {}),
     ...(rawPkg.peerDependencies ? { peerDependencies: rawPkg.peerDependencies } : {}),
-    ...(rawPkg.dependencies ? { dependencies: rawPkg.dependencies } : {}),
+    ...(pkgConfig.dir === 'builders-native'
+      ? {
+          dependencies: {
+            '@angular/compiler': '>=22.0.0',
+            'oxc-parser': '>=0.159.0',
+            postcss: '>=8.5.0',
+            ...rawPkg.dependencies,
+          },
+          optionalDependencies: optionalEngineDeps,
+        }
+      : rawPkg.dependencies
+        ? { dependencies: rawPkg.dependencies }
+        : {}),
   };
 
   writeFileSync(resolve(pkgOutDir, 'package.json'), `${JSON.stringify(apfPkg, null, 2)}\n`, 'utf8');
+
+  const pkgReadmeSrc = resolve(pkgSrcRoot, 'README.md');
+  const readmeOut = resolve(pkgOutDir, 'README.md');
+  if (existsSync(pkgReadmeSrc)) {
+    copyFileSync(pkgReadmeSrc, readmeOut);
+  } else {
+    writeFileSync(
+      readmeOut,
+      generatePackageReadme(rawPkg.name, description, pkgConfig.dir),
+      'utf8',
+    );
+  }
 
   const licensePath = resolve(ROOT_DIR, 'LICENSE');
   if (existsSync(licensePath)) {

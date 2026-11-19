@@ -27,6 +27,14 @@ export {
   type WorkspaceKind,
 } from './workspace-resolver.mjs';
 export {
+  ENGINE_BINARY_PACKAGES,
+  resolveEngineBinaryPath,
+  type EngineBinaryPackageMeta,
+  type EngineBinaryResolution,
+  type EngineBinarySource,
+  type ResolveEngineBinaryOptions,
+} from './resolve-engine-binary.mjs';
+export {
   createNativeTargetConfig,
   executeNativeBuilder,
   resolveNativeBuilderConfig,

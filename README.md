@@ -142,9 +142,11 @@ ng-native-engine/
 │   ├── Dockerfile.macos-cross    # macOS (aarch64-apple-darwin & x86_64-apple-darwin) cross-target container
 │   └── docker-compose.kvm-os.yml # KVM-accelerated Windows 11 & macOS desktop VM containers (dockurr/windows & dockurr/macos)
 ├── scripts/
+│   ├── build-engine-packages.mjs # Stages @ng-native/engine-* platform binary packages
 │   ├── build-packages.mjs        # Angular Package Format (APF) partial-Ivy compiler (dist/packages/*)
 │   ├── generate-release-notes.mjs # Engine vs Pokédex Demo release changelog builder
-│   └── test-containers.sh        # Multi-OS container test runner (ubuntu | fedora | windows | macos | all)
+│   ├── test-containers.sh        # Multi-OS container test runner (ubuntu | fedora | windows | macos | all)
+│   └── test-external-pack.mjs    # Verifies npm pack tarballs from an isolated external workspace
 ├── examples/
 │   └── counter-app/              # Pure Angular 22 Pokédex showcase application
 │       ├── public/               # Application favicon assets
@@ -230,21 +232,23 @@ NG_NATIVE_BATCH=1 cargo run
 
 ## 🛠️ Quality & Verification Commands
 
-| Command                                     | Description                                                             |
-| :------------------------------------------ | :---------------------------------------------------------------------- |
-| `pnpm run dev`                              | Watch Angular files & hot-reload native GTK4 window via Unix socket     |
-| `pnpm run build:packages`                   | Compile all 6 `@ng-native/*` packages in Angular Package Format (APF)   |
-| `pnpm run check`                            | Run full verification gate (OxFmt + OxLint + ESLint + Clippy + Test)    |
-| `pnpm run package:linux`                    | Build bundle and stage Linux `.deb`, AppImage, and Flatpak packages     |
-| `pnpm run format:all`                       | Format both TypeScript/Angular (`oxfmt`) and Rust (`cargo fmt`)         |
-| `pnpm run format`                           | Format TypeScript, HTML, CSS, JSON, and Markdown via `oxfmt`            |
-| `pnpm run format:check`                     | Verify formatting with `oxfmt`                                          |
-| `pnpm run lint`                             | Lint TypeScript & Angular templates via `oxlint` + `angular-eslint`     |
-| `pnpm run test`                             | Run all 48 Vitest specs for packages and showcase app                   |
-| `pnpm run test:containers`                  | Run Xvfb + GTK4 + FFI test suite in Ubuntu 24.04 & Fedora 41 containers |
-| `cargo fmt --all -- --check`                | Verify Rust formatting                                                  |
-| `cargo clippy --all-targets -- -D warnings` | Run strict Rust Clippy lints (pedantic + nursery, zero warnings)        |
-| `cargo test`                                | Execute all 50 unit tests + 20 E2E integration tests in Rust            |
+| Command                                             | Description                                                             |
+| :-------------------------------------------------- | :---------------------------------------------------------------------- |
+| `pnpm run dev`                                      | Watch Angular files & hot-reload native GTK4 window via Unix socket     |
+| `pnpm run build:packages`                           | Compile all 6 `@ng-native/*` packages in Angular Package Format (APF)   |
+| `pnpm run build:engine-packages -- --all-manifests` | Stage `@ng-native/engine-*` optional binary packages                    |
+| `pnpm run test:pack`                                | Pack `.tgz` archives and validate external out-of-monorepo consumption  |
+| `pnpm run check`                                    | Run full verification gate (OxFmt + OxLint + ESLint + Clippy + Test)    |
+| `pnpm run package:linux`                            | Build bundle and stage Linux `.deb`, AppImage, and Flatpak packages     |
+| `pnpm run format:all`                               | Format both TypeScript/Angular (`oxfmt`) and Rust (`cargo fmt`)         |
+| `pnpm run format`                                   | Format TypeScript, HTML, CSS, JSON, and Markdown via `oxfmt`            |
+| `pnpm run format:check`                             | Verify formatting with `oxfmt`                                          |
+| `pnpm run lint`                                     | Lint TypeScript & Angular templates via `oxlint` + `angular-eslint`     |
+| `pnpm run test`                                     | Run all 51 Vitest specs for packages and showcase app                   |
+| `pnpm run test:containers`                          | Run Xvfb + GTK4 + FFI test suite in Ubuntu 24.04 & Fedora 41 containers |
+| `cargo fmt --all -- --check`                        | Verify Rust formatting                                                  |
+| `cargo clippy --all-targets -- -D warnings`         | Run strict Rust Clippy lints (pedantic + nursery, zero warnings)        |
+| `cargo test`                                        | Execute all 50 unit tests + 20 E2E integration tests in Rust            |
 
 ---
 

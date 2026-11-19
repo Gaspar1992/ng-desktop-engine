@@ -1,6 +1,6 @@
 {
   "name": "@ng-native/http",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Native Angular HttpBackend bridging HttpClient, interceptors, and httpResource() to the Rust host",
   "type": "module",
   "main": "./src/index.ts",

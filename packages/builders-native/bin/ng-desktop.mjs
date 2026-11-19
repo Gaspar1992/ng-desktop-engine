@@ -9,12 +9,17 @@ const SRC_ROOT = existsSync(resolve(__dirname, '../fesm2022/build-bundle.mjs'))
   ? resolve(__dirname, '../fesm2022')
   : resolve(__dirname, '../src');
 
-const [{ compileBundle, watchBundle }, { analyzeProjectPermissions }, { resolveWorkspaceProject }] =
-  await Promise.all([
-    import(resolve(SRC_ROOT, 'build-bundle.mjs')),
-    import(resolve(SRC_ROOT, 'permission-analyzer.mjs')),
-    import(resolve(SRC_ROOT, 'workspace-resolver.mjs')),
-  ]);
+const [
+  { compileBundle, watchBundle },
+  { analyzeProjectPermissions },
+  { resolveEngineBinaryPath },
+  { resolveWorkspaceProject },
+] = await Promise.all([
+  import(resolve(SRC_ROOT, 'build-bundle.mjs')),
+  import(resolve(SRC_ROOT, 'permission-analyzer.mjs')),
+  import(resolve(SRC_ROOT, 'resolve-engine-binary.mjs')),
+  import(resolve(SRC_ROOT, 'workspace-resolver.mjs')),
+]);
 
 function getFlag(args, name) {
   const prefix = `${name}=`;
@@ -36,6 +41,7 @@ function printHelp() {
       '',
       'Usage:',
       '  ng-desktop build [--project=<name>] [--config=<path>] [--version=<ver>] [--watch]',
+      '  ng-desktop run [--project=<name>] [--config=<path>] [--version=<ver>] [--batch]',
       '  ng-desktop permissions [--project=<name>] [--config=<path>] [--strict]',
       '  ng-desktop package [--project=<name>] [--config=<path>] [--version=<ver>] [--all]',
       '  ng-desktop init [--project=<name>] [--target=<linux-gtk4|windows-winui|macos-appkit>]',
@@ -86,6 +92,23 @@ function handleInit(args) {
   throw new Error('No angular.json or project.json found in current working directory.');
 }
 
+function launchHostEngine(ws, engineArgs, { preferReleaseCargo = false, envExtra = {} } = {}) {
+  const resolvedEngine = resolveEngineBinaryPath({
+    cwd: process.cwd(),
+    workspaceRoot: ws.workspaceRoot,
+  });
+  const baseArgs =
+    resolvedEngine.mode === 'cargo' && preferReleaseCargo
+      ? ['run', '--release', '--']
+      : resolvedEngine.args;
+  const run = spawnSync(resolvedEngine.command, [...baseArgs, ...engineArgs], {
+    stdio: 'inherit',
+    cwd: ws.workspaceRoot,
+    env: { ...process.env, ...envExtra },
+  });
+  process.exitCode = run.status ?? 1;
+}
+
 function main() {
   const args = process.argv.slice(2);
   const cmd = args[0];
@@ -110,6 +133,20 @@ function main() {
     return;
   }
 
+  if (cmd === 'run') {
+    const ws = resolveWorkspaceProject({ configPath, projectName });
+    launchHostEngine(
+      ws,
+      [
+        `--config=${ws.configFile}`,
+        `--project=${ws.projectName}`,
+        `--version=${version || ws.version}`,
+      ],
+      { envExtra: args.includes('--batch') ? { NG_NATIVE_BATCH: '1' } : {} },
+    );
+    return;
+  }
+
   if (cmd === 'permissions') {
     const ws = resolveWorkspaceProject({ configPath, projectName });
     const srcRoot = resolve(ws.workspaceRoot, ws.sourceRoot);
@@ -123,17 +160,16 @@ function main() {
   if (cmd === 'package') {
     const ws = resolveWorkspaceProject({ configPath, projectName });
     const pkgFlag = args.includes('--all') ? '--package-all' : '--package';
-    const cargoArgs = [
-      'run',
-      '--release',
-      '--',
-      pkgFlag,
-      `--config=${ws.configFile}`,
-      `--project=${ws.projectName}`,
-      `--version=${version || ws.version}`,
-    ];
-    const run = spawnSync('cargo', cargoArgs, { stdio: 'inherit', cwd: ws.workspaceRoot });
-    process.exitCode = run.status ?? 1;
+    launchHostEngine(
+      ws,
+      [
+        pkgFlag,
+        `--config=${ws.configFile}`,
+        `--project=${ws.projectName}`,
+        `--version=${version || ws.version}`,
+      ],
+      { preferReleaseCargo: true },
+    );
     return;
   }
 

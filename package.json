@@ -1,6 +1,6 @@
 {
   "name": "ng-linux-counter",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "ng": "ng",
@@ -9,11 +9,13 @@
     "build": "ng build && node packages/builders-native/src/build-bundle.mjs",
     "build:native": "node packages/builders-native/src/build-bundle.mjs",
     "build:packages": "node scripts/build-packages.mjs",
+    "build:engine-packages": "node scripts/build-engine-packages.mjs",
     "package:linux": "pnpm run build && cargo run -- --package",
     "package:all": "pnpm run build && cargo run -- --package-all",
     "watch": "ng build --watch --configuration development",
     "watch:native": "node packages/builders-native/src/build-bundle.mjs --watch",
     "test": "ng test",
+    "test:pack": "node scripts/test-external-pack.mjs",
     "test:rust": "cargo test",
     "test:containers": "bash scripts/test-containers.sh",
     "lint": "oxlint . && eslint .",

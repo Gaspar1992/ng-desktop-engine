@@ -215,12 +215,15 @@ When `@angular/platform-browser` is removed, Angular's Ivy runtime still require
 
 ---
 
-### Phase 12: Automated npm / `crates.io` Publishing & Prebuilt Native Binary Distribution (Planned 📦)
+### Phase 12: Automated npm / `crates.io` Publishing & Prebuilt Native Binary Distribution (Completed ✅)
 
-1. **Prebuilt Cross-Platform Rust Engine Binaries:**
-   - [ ] Distribute precompiled OS/CPU engine binaries (`@ng-native/engine-linux-x64-gnu`, `@ng-native/engine-linux-arm64-gnu`, `@ng-native/engine-win32-x64-msvc`, `@ng-native/engine-darwin-arm64`, `@ng-native/engine-darwin-x64`) via `optionalDependencies` in `@ng-native/builders` with automatic binary resolution (`resolveEngineBinaryPath`).
-2. **Automated npm & `crates.io` Publishing (`.github/workflows/release.yml`):**
-   - [ ] Publish compiled APF `@ng-native/*` tarballs to npm with OIDC provenance and `ng-native-engine` to `crates.io` on release tags.
+- [x] **Prebuilt Cross-Platform Rust Engine Binaries & Resolver (`packages/builders-native/src/resolve-engine-binary.mjs` + `scripts/build-engine-packages.mjs`):**
+  - [x] Staged platform binary npm packages (`@ng-native/engine-linux-x64-gnu`, `@ng-native/engine-linux-arm64-gnu`, `@ng-native/engine-win32-x64-msvc`, `@ng-native/engine-darwin-arm64`, `@ng-native/engine-darwin-x64`) pinned in `optionalDependencies` of `@ng-native/builders`.
+  - [x] Implemented `resolveEngineBinaryPath()` (`NG_DESKTOP_ENGINE_BIN` -> installed `@ng-native/engine-*` package -> local Cargo target -> `cargo run --` fallback) integrated across `dev-server.mjs`, `ng-desktop run`, `ng-desktop package`, and `builders.json` (`--noEmit` APF cross-OS `process.execPath` build fix).
+- [x] **External `npm pack` Verification & Automated Publishing (`scripts/test-external-pack.mjs`, `Cargo.toml`, `.github/workflows/release.yml`):**
+  - [x] Enriched `Cargo.toml` metadata for `crates.io` (`description`, `license`, `repository`, `documentation`, `keywords`, `categories`, scoped `include`) and APF npm manifests (`repository`, `publishConfig`, `README.md`, `LICENSE`).
+  - [x] Added `pnpm run test:pack` verifying tarball contents and out-of-monorepo import execution of packed `@ng-native/builders` across **121 passing tests** (51 Vitest + 50 Rust unit + 20 Rust integration).
+  - [x] Added `publish-npm` (OIDC `--provenance` or safe `--dry-run`) and `publish-crates` (`cargo publish --locked` or safe `--dry-run`) jobs to `.github/workflows/release.yml`.
 
 ---
 
