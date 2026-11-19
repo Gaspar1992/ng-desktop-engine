@@ -10,7 +10,13 @@ documentation = "https://docs.rs/ng-native-engine"
 readme = "README.md"
 keywords = ["angular", "gtk4", "gui", "desktop", "native"]
 categories = ["gui", "web-programming", "rendering::engine"]
-include = ["/src/**/*", "/Cargo.toml", "/README.md", "/LICENSE"]
+include = [
+  "/src/**/*",
+  "/Cargo.toml",
+  "/README.md",
+  "/LICENSE",
+  "/examples/counter-app/public/favicon.ico",
+]
 
 [profile.release]
 opt-level = 3

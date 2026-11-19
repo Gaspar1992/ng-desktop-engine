@@ -284,7 +284,7 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Publish (or verify --dry-run when NPM_TOKEN is unset)
+      - name: Publish (or verify tarball integrity offline when NPM_TOKEN is unset)
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -298,14 +298,22 @@ jobs:
             artifacts/ng-native-desktop-*.tgz
             artifacts/ng-native-builders-*.tgz
           )
+          test "${#ENGINE_TARBALLS[@]}" -gt 0
+          test "${#LIB_TARBALLS[@]}" -eq 6
           if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
             for tgz in "${ENGINE_TARBALLS[@]}" "${LIB_TARBALLS[@]}"; do
-              npm publish "$tgz" --provenance --access public
+              npm publish "./${tgz}" --provenance --access public
             done
           else
-            echo "NPM_TOKEN secret not configured; running non-destructive --dry-run validation."
+            echo "NPM_TOKEN secret not configured; verifying tarball manifests and contents offline."
             for tgz in "${ENGINE_TARBALLS[@]}" "${LIB_TARBALLS[@]}"; do
-              npm publish "$tgz" --dry-run --access public
+              tar -tzf "./${tgz}" >/dev/null
+              tar -xOf "./${tgz}" package/package.json | node -e "
+                const fs = require('fs');
+                const pkg = JSON.parse(fs.readFileSync(0, 'utf8'));
+                if (!pkg.name || !pkg.version) throw new Error('Invalid tarball package.json');
+                process.stdout.write('[Verified Tarball] ' + pkg.name + '@' + pkg.version + '\n');
+              "
             done
           fi
 
