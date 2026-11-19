@@ -194,3 +194,26 @@ Designed as a self-contained blueprint for the next implementation iteration:
 4. **Pokédex Nivel 3 Integration & Verification:**
    - [ ] Wire `NativeComputeService`, `NativeFileSystemService`, and `NativeDropTargetDirective` into `examples/counter-app/src/app/pokedex.service.ts` for XDG trainer notes export/import, live external file reload, and fuzzy search over cached entries.
    - [ ] Preserve the 274-command Frame 0 invariant in `tests/test_pipeline_and_hmr.rs`, add Rust + Vitest coverage for all 3 modules, and verify `pnpm run build:native && pnpm run format:all && pnpm run check` plus GitHub Actions CI pass with 0 warnings.
+
+---
+
+### Phase 11: Library Packaging, `ng add` Schematics, & npm / `crates.io` Publishing (Planned 📦)
+
+1. **Angular Package Format (APF) Build Pipeline (`pnpm run build:packages`):**
+   - [ ] Configure `pnpm-workspace.yaml` (`packages: ['packages/*']`) and `tsconfig.lib.json` (`"compilationMode": "partial"` via `@angular/compiler-cli` `ngc`) to emit ESM `dist/index.js` + `dist/index.d.ts` and `"exports"` maps for `@ng-native/{platform,forms,router,http,desktop,builders}`.
+2. **Prebuilt Cross-Platform Rust Engine Binaries & `ng add @ng-native/builders`:**
+   - [ ] Distribute precompiled OS/CPU engine binaries (`@ng-native/engine-linux-x64-gnu`, `@ng-native/engine-linux-arm64-gnu`, `@ng-native/engine-win32-x64-msvc`, `@ng-native/engine-darwin-arm64`, `@ng-native/engine-darwin-x64`) via `optionalDependencies` in `@ng-native/builders` with automatic binary resolution (`resolveEngineBinaryPath`).
+   - [ ] Implement `ng-add` schematic (`packages/builders-native/schematics/ng-add`) and `ng-native` CLI binary (`packages/builders-native/bin/ng-native.mjs`) so `ng add @ng-native/builders` configures any Angular 22 project in one command.
+3. **Automated Multi-OS Release Workflow (`.github/workflows/release.yml`):**
+   - [ ] Build Linux, Windows, and macOS binaries on tag push (`v*.*.*`), publish `@ng-native/*` to npm with OIDC provenance, and publish `ng-native-engine` to `crates.io`.
+
+---
+
+### Phase 12: Official Documentation Website on GitHub Pages (Planned 🌐)
+
+1. **Angular 22 Interactive Docs Portal (`docs-site/` -> `dist/ng-native-docs`):**
+   - [ ] Create the `ng-native-docs` Angular 22 application (`--base-href /ng-native-engine/`) featuring an interactive 27-primitive explorer, live `.ngb` template compiler playground, architecture guides, and Pokédex tutorial.
+2. **Automated TypeScript & Rust API Reference (`scripts/build-api-docs.mjs`):**
+   - [ ] Bundle `@ng-native/*` TypeScript API reference (`/api-ts/`), `cargo doc --no-deps` Rust engine documentation (`/api-rust/`), `.nojekyll`, and `404.html` SPA routing fallback into `dist/ng-native-docs/browser`.
+3. **GitHub Pages Continuous Deployment (`.github/workflows/docs-pages.yml`):**
+   - [ ] Automatically build and deploy `dist/ng-native-docs/browser` to `https://gaspar1992.github.io/ng-native-engine/` via `actions/upload-pages-artifact@v3` and `actions/deploy-pages@v4` on every push to `main`.
