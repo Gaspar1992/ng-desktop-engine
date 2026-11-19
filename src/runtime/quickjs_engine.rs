@@ -3,15 +3,22 @@ use crate::engine::{EngineError, EventPayload};
 
 /// Lightweight, zero-JIT embedded `QuickJS` adapter for portable/static builds.
 /// Translates `__NG_NATIVE__.*` calls into frame-batched scene commands with zero external C dependencies.
-#[derive(Default)]
 pub struct QuickJsEngine {
     pending_commands: Vec<String>,
+    app_id: String,
+}
+
+impl Default for QuickJsEngine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl QuickJsEngine {
     pub fn new() -> Self {
         Self {
             pending_commands: Vec::new(),
+            app_id: String::from("ng-desktop-app"),
         }
     }
 
@@ -38,7 +45,23 @@ impl QuickJsEngine {
         args
     }
 
-    fn translate_bridge_call(&mut self, method: &str, args: &[String]) -> Result<(), EngineError> {
+    fn translate_bridge_call(
+        &mut self,
+        method: &str,
+        args: &[String],
+    ) -> Result<Option<String>, EngineError> {
+        if method == "fsResolvePath"
+            && let [kind, rel_path] = args
+        {
+            let base = match kind.as_str() {
+                "data" => format!("/home/user/.local/share/{}", self.app_id),
+                "cache" => format!("/home/user/.cache/{}", self.app_id),
+                _ => format!("/home/user/.config/{}", self.app_id),
+            };
+            let clean_rel = rel_path.trim().trim_start_matches(['/', '\\']);
+            return Ok(Some(format!("{base}/{clean_rel}")));
+        }
+
         let cmd = match (method, args) {
             ("registerStyle", [cls, bg, fg, pad, space]) => {
                 format!("style {cls} {bg} {fg} {pad} {space}")
@@ -89,13 +112,12 @@ impl QuickJsEngine {
                 | "getSystemErrors"
                 | "computeFuzzyFilter"
                 | "computeHash"
-                | "fsResolvePath"
                 | "fsReadText"
                 | "fsWriteText"
                 | "fsWatchFile"
                 | "fsPollChangedFiles",
                 _,
-            ) => return Ok(()),
+            ) => return Ok(None),
             _ => {
                 return Err(EngineError::ScriptSyntaxError(format!(
                     "Unsupported QuickJS bridge call: {method}"
@@ -103,7 +125,25 @@ impl QuickJsEngine {
             }
         };
         self.pending_commands.push(cmd);
-        Ok(())
+        Ok(None)
+    }
+
+    fn apply_app_id_assignment(&mut self, line: &str) -> Option<String> {
+        let stripped = line.strip_prefix("globalThis.").unwrap_or(line);
+        let rhs = stripped
+            .strip_prefix("__NG_NATIVE_APP_ID__")?
+            .trim()
+            .strip_prefix('=')?
+            .trim();
+        let unquoted = rhs
+            .strip_prefix('\'')
+            .and_then(|s| s.strip_suffix('\''))
+            .or_else(|| rhs.strip_prefix('"').and_then(|s| s.strip_suffix('"')))
+            .unwrap_or(rhs)
+            .replace("\\'", "'")
+            .replace("\\\\", "\\");
+        self.app_id.clone_from(&unquoted);
+        Some(unquoted)
     }
 
     fn brace_delta(line: &str) -> i32 {
@@ -207,12 +247,17 @@ impl JsEngineBackend for QuickJsEngine {
                 continue;
             }
             let normalized = line.strip_prefix("globalThis.").unwrap_or(line);
-            if let Some(rest) = normalized.strip_prefix("__NG_NATIVE__.") {
+            if let Some(assigned) = self.apply_app_id_assignment(normalized) {
+                last_result = assigned;
+            } else if normalized == "__NG_NATIVE_APP_ID__" {
+                last_result.clone_from(&self.app_id);
+            } else if let Some(rest) = normalized.strip_prefix("__NG_NATIVE__.") {
                 if let (Some(open), Some(close)) = (rest.find('('), rest.rfind(')')) {
                     let method = rest[..open].trim();
                     let args = Self::parse_call_args(&rest[open + 1..close]);
-                    self.translate_bridge_call(method, &args)?;
-                    if let Some(first) = args.first() {
+                    if let Some(custom_res) = self.translate_bridge_call(method, &args)? {
+                        last_result = custom_res;
+                    } else if let Some(first) = args.first() {
                         last_result.clone_from(first);
                     }
                 } else {

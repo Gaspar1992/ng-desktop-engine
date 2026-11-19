@@ -217,5 +217,15 @@ mod tests {
         assert_eq!(rt.desktop().app_id(), "invoice-studio");
         assert!(rt.desktop().check_sqlite_allowed());
         assert!(!rt.desktop().check_network_allowed());
+
+        cfg.js_engine = String::from("quickjs");
+        let mut quickjs_rt = JsRuntime::from_config(&cfg).unwrap();
+        let quickjs_path = quickjs_rt
+            .eval_js(
+                &mut engine,
+                "__NG_NATIVE__.fsResolvePath('config', 'prefs.json')",
+            )
+            .unwrap();
+        assert_eq!(quickjs_path, "/home/user/.config/invoice-studio/prefs.json");
     }
 }
