@@ -55,11 +55,10 @@ function stageEnginePackage(targetKey, meta, version, binarySourcePath) {
     bugs: { url: 'https://github.com/Gaspar1992/ng-desktop-engine/issues' },
     repository: {
       type: 'git',
-      url: 'https://github.com/Gaspar1992/ng-desktop-engine.git',
+      url: 'git+https://github.com/Gaspar1992/ng-desktop-engine.git',
     },
     publishConfig: {
       access: 'public',
-      provenance: true,
     },
   };
   writeFileSync(resolve(outDir, 'package.json'), `${JSON.stringify(pkgJson, null, 2)}\n`, 'utf8');

@@ -160,6 +160,7 @@ function main() {
   const execute = args.includes('--execute');
   const includeEngineManifests = args.includes('--include-engine-manifests');
   const tarballDir = getFlagValue(args, '--tarball-dir');
+  const otp = getFlagValue(args, '--otp');
 
   const targets = tarballDir
     ? collectFromTarballDir(tarballDir)
@@ -188,7 +189,10 @@ function main() {
       continue;
     }
 
-    const publishArgs = ['publish', target.spec, '--access', 'public'];
+    const publishArgs = ['publish', target.spec, '--access', 'public', '--provenance=false'];
+    if (otp) {
+      publishArgs.push(`--otp=${otp}`);
+    }
     if (!execute) {
       publishArgs.push('--dry-run');
     }
