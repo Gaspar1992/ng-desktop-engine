@@ -1,25 +1,10 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "../../node_modules/@angular-devkit/architect/src/builders-schema.json",
   "builders": {
     "application": {
-      "implementation": "./src/build-bundle.mjs",
+      "implementation": "./fesm2022/index.js",
       "schema": "./schema/native-builder-schema.json",
-      "description": "Compiles an Angular 22 application into a native desktop bundle (.ngb) for Linux, Windows, or macOS."
-    },
-    "build": {
-      "implementation": "./src/build-bundle.mjs",
-      "schema": "./schema/native-builder-schema.json",
-      "description": "Alias for @ng-native/builders:application."
-    },
-    "engine": {
-      "implementation": "./src/build-bundle.mjs",
-      "schema": "./schema/native-builder-schema.json",
-      "description": "Alias for @ng-native/builders:application."
-    },
-    "dev-server": {
-      "implementation": "./src/dev-server.mjs",
-      "schema": "./schema/native-builder-schema.json",
-      "description": "Starts the Angular Native watcher and launches the desktop window with HMR."
+      "description": "Compile Angular templates/signals to native OS .ngb bundle with static least-privilege permissions."
     }
   }
 }

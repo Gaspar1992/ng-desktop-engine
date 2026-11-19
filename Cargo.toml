@@ -1,8 +1,16 @@
 [package]
 name = "ng-native-engine"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.87"
+description = "High-performance Native Desktop Rendering Engine for Angular 22+ (GTK4/Libadwaita, WinUI 3, AppKit)"
+license = "MIT"
+repository = "https://github.com/Gaspar1992/ng-desktop-engine"
+documentation = "https://docs.rs/ng-native-engine"
+readme = "README.md"
+keywords = ["angular", "gtk4", "gui", "desktop", "native"]
+categories = ["gui", "web-programming", "rendering::engine"]
+include = ["/src/**/*", "/Cargo.toml", "/README.md", "/LICENSE"]
 
 [profile.release]
 opt-level = 3

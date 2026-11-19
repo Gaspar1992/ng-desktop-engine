@@ -125,7 +125,13 @@ Following the official Angular monorepo publishing model, each package is versio
 | **\`@ng-native/router\`** | \`ng-native-router-${version}.tgz\` | DOM-free \`NativePlatformLocation\` navigation stack, \`NativeTitleStrategy\` (\`TitleStrategy\` updating OS window titlebars automatically on route navigation), and \`NativeStackRouteReuseStrategy\` (\`RouteReuseStrategy\` keeping master-detail views alive in \`<ng-stack>\`). |
 | **\`@ng-native/http\`** | \`ng-native-http-${version}.tgz\` | OS-native \`NativeHttpBackend\` (\`HttpBackend\`) driving \`libsoup-3.0\` (Linux HTTP/2), \`URLSession\` (macOS), and \`WinHTTP\` (Windows), plus \`provideHttpClient\` features (\`withFetch\`, \`withInterceptors\`, \`withXsrfConfiguration\`, \`withHttpCaching\`, \`withParallelBatching\`) and reactive \`createNativeHttpResource()\`. |
 | **\`@ng-native/desktop\`** | \`ng-native-desktop-${version}.tgz\` | \`NativeDesktopService\` (dark/light theme Signal, clipboard, notifications, file dialogs), \`NativeSqliteService\` (\`libsqlite3\` FFI with reactive \`liveQuery<T>()\` Signals), \`NativeNetworkService\` (\`GNetworkMonitor\` online/metered Signals), \`NativeComputeService\` (multithreaded Rust fuzzy search & 64-bit FNV-1a hashing), \`NativeFileSystemService\` (XDG dirs + atomic JSON I/O + \`inotify\` reactive file watcher), and \`NativeDropTargetDirective\` (\`[ngNativeDropTarget]\`). |
-| **\`@ng-native/builders\`** | \`ng-native-builders-${version}.tgz\` | Angular 22+ CLI Architect builder, \`oxc-parser\` TypeScript 6.0 AST metadata extractor, \`@angular/compiler\` template compiler (\`@if\`/\`@else\`, \`@for\`/\`@empty\`, \`@switch\`, \`@let\`, \`@defer\`/\`@error\`, Pipes, \`bind_visible\`, \`bind_attr\`), \`postcss\` style compiler, and Unix Domain Socket HMR IPC client. |
+| **\`@ng-native/builders\`** | \`ng-native-builders-${version}.tgz\` | Angular 22+ CLI & Nx builder, \`oxc-parser\` AST metadata & permission analyzer (\`permissions.manifest.json\`), \`@angular/compiler\` template compiler, \`ng-desktop\` CLI, \`ng add\` schematics, prebuilt \`@ng-native/engine-*\` resolution, and Unix Socket HMR IPC. |
+
+### Prebuilt Host Engine Binary Packages (\`optionalDependencies\`)
+
+- \`ng-native-engine-linux-x64-gnu-${version}.tgz\`
+- \`ng-native-engine-win32-x64-msvc-${version}.tgz\`
+- \`ng-native-engine-darwin-arm64-${version}.tgz\`
 
 ---
 
@@ -191,7 +197,9 @@ function buildDemoReleaseNotes(version) {
 | :--- | :--- | :--- |
 | **🐧 Linux (Ubuntu / Debian x86_64)** | **\`pokedex-demo_${version}_amd64.deb\`** | \`sudo dpkg -i pokedex-demo_${version}_amd64.deb && ng-linux-counter\` (or launch **Pokédex Nacional** from your GNOME / KDE / Cosmic application menu) |
 | **🪟 Windows 11 / 10 (x64)** | **\`pokedex-demo-${version}-windows-x64.exe\`** | Self-contained single-file \`.exe\` (with embedded \`.ngb\` bundle and icon). Download and run \`pokedex-demo-${version}-windows-x64.exe\` directly. |
-| **🍎 macOS (Apple Silicon arm64)** | **\`pokedex-demo-${version}-macos-arm64.dmg\`** | Double-click \`pokedex-demo-${version}-macos-arm64.dmg\`, drag **\`ng-linux-counter.app\`** to Applications (or run \`Contents/MacOS/ng-native-engine\`). |
+| **🍎 macOS (Apple Silicon arm64)** | **\`pokedex-demo-${version}-macos-arm64.dmg\`** | Double-click \`pokedex-demo-${version}-macos-arm64.dmg\`, drag **\`ng-linux-counter.app\`** to Applications (or run \`Contents/MacOS/ng-linux-counter\`). |
+
+> **Security & Least Privilege:** All installers bundle their statically analyzed \`permissions.manifest.json\` and \`ng-desktop.runtime.json\`, omitting unrestricted Windows \`runFullTrust\` / host filesystem permissions unless explicitly requested.
 
 ---
 
