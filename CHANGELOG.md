@@ -5,6 +5,10 @@ This project adheres to [Conventional Commits](https://www.conventionalcommits.o
 
 ## [Unreleased]
 
+### Security & CI (Tokenless OIDC Trusted Publishing + SLSA Attestations)
+
+- **release & publishing:** migrate `publish-npm` and `publish-crates` in `.github/workflows/release.yml` from long-lived `NPM_TOKEN` / `CARGO_REGISTRY_TOKEN` secrets to pure **OIDC Trusted Publishing** (`npm >= 11.5.1` without `registry-url`/`NODE_AUTH_TOKEN`, `rust-lang/crates-io-auth-action@v1`) scoped to protected `v*` / `main` GitHub Environments (`npm-publish`, `crates-publish`) and gated on `vars.NPM_TRUSTED_PUBLISHING` / `vars.CRATES_TRUSTED_PUBLISHING`; add Sigstore SLSA build provenance attestations (`actions/attest@v4`) for release binaries/tarballs and `scripts/bootstrap-npm-packages.mjs` (`pnpm run publish:bootstrap`) for one-time initial package creation on npmjs.org.
+
 ### Refactoring (npm Package Scope -> `@ng-desktop/*`)
 
 - **packages & release:** rename the npm package scope across all 6 Angular libraries (`@ng-desktop/platform`, `@ng-desktop/forms`, `@ng-desktop/router`, `@ng-desktop/http`, `@ng-desktop/desktop`, `@ng-desktop/builders`) and all 5 prebuilt native engine packages (`@ng-desktop/engine-*`), updating builder/schematic identifiers (`@ng-desktop/builders:application`), AST permission analyzer (while preserving `@ng-native/http` as a backward-compatible import alias), `test:pack` assertions, release notes, and GitHub Release / npm publishing globs.

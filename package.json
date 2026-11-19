@@ -10,6 +10,7 @@
     "build:native": "node packages/builders-native/src/build-bundle.mjs",
     "build:packages": "node scripts/build-packages.mjs",
     "build:engine-packages": "node scripts/build-engine-packages.mjs",
+    "publish:bootstrap": "node scripts/bootstrap-npm-packages.mjs",
     "package:linux": "pnpm run build && cargo run -- --package",
     "package:all": "pnpm run build && cargo run -- --package-all",
     "watch": "ng build --watch --configuration development",
