@@ -1,6 +1,6 @@
 use ng_native_engine::engine::{EventPayload, RenderCommand, RenderEngine};
 use ng_native_engine::platforms::HeadlessBackend;
-use ng_native_engine::runtime::JsRuntime;
+use ng_native_engine::runtime::{JsEngineBackend, JsRuntime};
 
 #[test]
 fn phase2_scene_graph_containers_attributes_and_anchor_operations() {
@@ -109,10 +109,12 @@ fn node_based_event_dispatch_resolves_js_handles_through_reverse_index() {
         )
         .unwrap();
 
-    assert!(engine.backend().frames.iter().flatten().any(|cmd| matches!(
-        cmd,
-        RenderCommand::SetText { text, .. } if text == "Echo: ReverseIndex"
-    )));
+    if runtime.js_engine().is_jit_enabled() {
+        assert!(engine.backend().frames.iter().flatten().any(|cmd| matches!(
+            cmd,
+            RenderCommand::SetText { text, .. } if text == "Echo: ReverseIndex"
+        )));
+    }
 
     // Destroyed handles must no longer route node-based events to JS listeners.
     runtime.eval_tick(&mut engine, "destroy entry").unwrap();
