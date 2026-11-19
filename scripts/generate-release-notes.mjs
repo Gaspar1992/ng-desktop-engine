@@ -84,7 +84,7 @@ function buildEngineReleaseNotes(version, commits) {
   return `# 🚀 NgDesktop Engine & Angular 22+ Packages — \`v${version}\`
 
 > **Release Scope:** Core Rust Native Rendering Engine (\`ng-desktop-engine\`) + Modular Angular 22+ Packages (\`@ng-native/*\`).
-> Looking for the ready-to-run **Pokédex Nacional** desktop installers (\`.deb\`, \`.exe\`, \`.dmg\`)? See the companion showcase release **[Pokédex Demo \`pokedex-demo-v${version}\`](../tag/pokedex-demo-v${version})** (also attached below for convenience).
+> Looking for the ready-to-run **Pokédex Nacional** desktop installers (\`.deb\`, \`.exe\`, \`.dmg\`)? See the companion showcase release **[Pokédex Demo \`pokedex-demo-v${version}\`](https://github.com/Gaspar1992/ng-desktop-engine/releases/tag/pokedex-demo-v${version})**.
 
 ---
 
@@ -181,7 +181,7 @@ function buildDemoReleaseNotes(version) {
   return `# 🎮 Pokédex Nacional — Native Desktop Showcase Demo (\`pokedex-demo-v${version}\`)
 
 > **Built with Angular 22.2.6 + \`ng-desktop-engine\` \`v${version}\` (100% Native OS Widgets — Zero WebView / Zero Electron).**
-> For the underlying Rust engine binaries and individual \`@ng-native/*\` Angular library tarballs, see the **[NgDesktop Engine \`v${version}\` Release](../tag/v${version})**.
+> For the underlying Rust engine binaries and individual \`@ng-native/*\` Angular library tarballs, see the **[NgDesktop Engine \`v${version}\` Release](https://github.com/Gaspar1992/ng-desktop-engine/releases/tag/v${version})**.
 
 ---
 
