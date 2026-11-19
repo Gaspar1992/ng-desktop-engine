@@ -1,19 +1,9 @@
 #![allow(unsafe_code)]
 
+#[cfg(target_os = "linux")]
+use crate::ffi_dl::DynLib;
 use std::collections::HashMap;
-#[cfg(target_os = "linux")]
-use std::ffi::c_int;
 use std::ffi::{CStr, CString, c_char, c_uint, c_void};
-
-#[cfg(target_os = "linux")]
-#[link(name = "dl")]
-unsafe extern "C" {
-    fn dlopen(filename: *const c_char, flags: c_int) -> *mut c_void;
-    fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
-}
-
-#[cfg(target_os = "linux")]
-const RTLD_LAZY: c_int = 1;
 
 type HeadersForeachFn = unsafe extern "C" fn(*const c_char, *const c_char, *mut c_void);
 
@@ -149,18 +139,12 @@ impl LibsoupSys {
 
     #[cfg(target_os = "linux")]
     unsafe fn open_lib(name: &CStr) -> Option<*mut c_void> {
-        let handle = unsafe { dlopen(name.as_ptr(), RTLD_LAZY) };
-        if handle.is_null() { None } else { Some(handle) }
+        unsafe { DynLib::open(name).map(DynLib::as_ptr) }
     }
 
     #[cfg(target_os = "linux")]
     unsafe fn load_fn<F: Copy>(handle: *mut c_void, sym: &CStr) -> Option<F> {
-        let ptr = unsafe { dlsym(handle, sym.as_ptr()) };
-        if ptr.is_null() {
-            None
-        } else {
-            Some(unsafe { std::mem::transmute_copy::<*mut c_void, F>(&ptr) })
-        }
+        unsafe { DynLib::from_ptr(handle).sym(sym) }
     }
 
     /// Updates timeout in seconds on the underlying `SoupSession`.

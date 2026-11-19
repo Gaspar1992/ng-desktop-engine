@@ -57,20 +57,15 @@ impl XdgDirKind {
 
 #[cfg(target_os = "linux")]
 mod inotify_ffi {
+    use crate::ffi_dl::DynLib;
     use std::ffi::{CString, c_char, c_int, c_void};
     use std::path::Path;
 
-    const RTLD_LAZY: c_int = 1;
     const IN_NONBLOCK: c_int = 0o4000;
     const IN_CLOEXEC: c_int = 0o200_0000;
     const IN_MODIFY: u32 = 0x0000_0002;
     const IN_ATTRIB: u32 = 0x0000_0004;
     const IN_CLOSE_WRITE: u32 = 0x0000_0008;
-
-    unsafe extern "C" {
-        fn dlopen(filename: *const c_char, flags: c_int) -> *mut c_void;
-        fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
-    }
 
     type InotifyInit1Fn = unsafe extern "C" fn(c_int) -> c_int;
     type InotifyAddWatchFn = unsafe extern "C" fn(c_int, *const c_char, u32) -> c_int;
@@ -87,34 +82,20 @@ mod inotify_ffi {
     impl InotifyHandle {
         pub(super) fn try_new() -> Option<Self> {
             unsafe {
-                let handle = dlopen(c"libc.so.6".as_ptr(), RTLD_LAZY);
-                if handle.is_null() {
-                    return None;
-                }
-                let init_sym = dlsym(handle, c"inotify_init1".as_ptr());
-                let add_sym = dlsym(handle, c"inotify_add_watch".as_ptr());
-                let read_sym = dlsym(handle, c"read".as_ptr());
-                let close_sym = dlsym(handle, c"close".as_ptr());
-                if init_sym.is_null()
-                    || add_sym.is_null()
-                    || read_sym.is_null()
-                    || close_sym.is_null()
-                {
-                    return None;
-                }
-                let init_fn: InotifyInit1Fn =
-                    std::mem::transmute::<*mut c_void, InotifyInit1Fn>(init_sym);
+                let lib = DynLib::open(c"libc.so.6")?;
+                let init_fn: InotifyInit1Fn = lib.sym(c"inotify_init1")?;
+                let inotify_add_watch: InotifyAddWatchFn = lib.sym(c"inotify_add_watch")?;
+                let read_fn: ReadFn = lib.sym(c"read")?;
+                let close_fn: CloseFn = lib.sym(c"close")?;
                 let fd = init_fn(IN_NONBLOCK | IN_CLOEXEC);
                 if fd < 0 {
                     return None;
                 }
                 Some(Self {
                     fd,
-                    inotify_add_watch: std::mem::transmute::<*mut c_void, InotifyAddWatchFn>(
-                        add_sym,
-                    ),
-                    read_fn: std::mem::transmute::<*mut c_void, ReadFn>(read_sym),
-                    close_fn: std::mem::transmute::<*mut c_void, CloseFn>(close_sym),
+                    inotify_add_watch,
+                    read_fn,
+                    close_fn,
                 })
             }
         }

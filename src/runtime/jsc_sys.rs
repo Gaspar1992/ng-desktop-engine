@@ -1,20 +1,13 @@
 #![allow(unsafe_code)]
 
 use crate::desktop::NativeHttpEngine;
-use std::ffi::{CStr, CString, c_char, c_void};
 #[cfg(target_os = "linux")]
-use std::ffi::{c_int, c_uint};
+use crate::ffi_dl::DynLib;
+#[cfg(target_os = "linux")]
+use std::ffi::c_uint;
+use std::ffi::{CStr, CString, c_char, c_void};
 use std::sync::{Arc, Mutex};
 
-#[cfg(target_os = "linux")]
-#[link(name = "dl")]
-unsafe extern "C" {
-    fn dlopen(filename: *const c_char, flags: c_int) -> *mut c_void;
-    fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
-}
-
-#[cfg(target_os = "linux")]
-const RTLD_LAZY: c_int = 1;
 const G_TYPE_STRING: usize = 16 << 2;
 
 pub type HttpEngineSlot = Arc<Mutex<Arc<Mutex<NativeHttpEngine>>>>;
@@ -211,18 +204,12 @@ impl JscSys {
 
     #[cfg(target_os = "linux")]
     unsafe fn open_lib(name: &CStr) -> Option<*mut c_void> {
-        let handle = unsafe { dlopen(name.as_ptr(), RTLD_LAZY) };
-        if handle.is_null() { None } else { Some(handle) }
+        unsafe { DynLib::open(name).map(DynLib::as_ptr) }
     }
 
     #[cfg(target_os = "linux")]
     unsafe fn load_fn<F: Copy>(handle: *mut c_void, sym: &CStr) -> Option<F> {
-        let ptr = unsafe { dlsym(handle, sym.as_ptr()) };
-        if ptr.is_null() {
-            None
-        } else {
-            Some(unsafe { std::mem::transmute_copy::<*mut c_void, F>(&ptr) })
-        }
+        unsafe { DynLib::from_ptr(handle).sym(sym) }
     }
 
     pub fn eval(&self, script: &str) -> Result<String, String> {

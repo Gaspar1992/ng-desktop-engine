@@ -1,19 +1,12 @@
 #![allow(unsafe_code)]
 
 use super::http_codec::escape_json;
+#[cfg(target_os = "linux")]
+use crate::ffi_dl::DynLib;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::ptr;
 
-#[cfg(target_os = "linux")]
-#[link(name = "dl")]
-unsafe extern "C" {
-    fn dlopen(filename: *const c_char, flags: c_int) -> *mut c_void;
-    fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
-}
-
-#[cfg(target_os = "linux")]
-const RTLD_LAZY: c_int = 1;
 const SQLITE_OK: c_int = 0;
 const SQLITE_ROW: c_int = 100;
 const SQLITE_DONE: c_int = 101;
@@ -53,10 +46,7 @@ impl SqliteFfi {
     #[cfg(target_os = "linux")]
     fn try_open(path: &str) -> Option<Self> {
         unsafe {
-            let lib = dlopen(c"libsqlite3.so.0".as_ptr(), RTLD_LAZY);
-            if lib.is_null() {
-                return None;
-            }
+            let lib = DynLib::open(c"libsqlite3.so.0")?.as_ptr();
             let sqlite3_open: SqliteOpenFn = load_sym(lib, c"sqlite3_open")?;
             let sqlite3_close: SqliteCloseFn = load_sym(lib, c"sqlite3_close")?;
             let sqlite3_prepare_v2: SqlitePrepareFn = load_sym(lib, c"sqlite3_prepare_v2")?;
@@ -212,12 +202,7 @@ impl Drop for SqliteFfi {
 
 #[cfg(target_os = "linux")]
 unsafe fn load_sym<F: Copy>(handle: *mut c_void, sym: &CStr) -> Option<F> {
-    let ptr = unsafe { dlsym(handle, sym.as_ptr()) };
-    if ptr.is_null() {
-        None
-    } else {
-        Some(unsafe { std::mem::transmute_copy::<*mut c_void, F>(&ptr) })
-    }
+    unsafe { DynLib::from_ptr(handle).sym(sym) }
 }
 
 /// Cross-platform OS dynamic library target for `NativeSqliteDatabase`.

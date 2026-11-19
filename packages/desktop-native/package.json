@@ -1,12 +1,12 @@
 {
   "name": "@ng-native/desktop",
-  "version": "0.1.0",
-  "description": "Linux GTK4 / Desktop OS system services (System Theme Signal, Clipboard, Notifications, File Dialogs)",
+  "version": "0.2.0",
+  "description": "Linux GTK4 / Desktop OS system services (Theme, Clipboard, Notifications, Dialogs, SQLite, Network, Compute, FileSystem, DropTarget)",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "peerDependencies": {
-    "@angular/core": "^22.0.0",
-    "@ng-native/platform": "0.1.0"
+    "@angular/core": ">=22.0.0",
+    "@ng-native/platform": ">=0.2.0"
   }
 }
