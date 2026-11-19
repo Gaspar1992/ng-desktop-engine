@@ -1,8 +1,8 @@
-# 🚀 NgNative Engine (`ng-native-engine`)
+# 🚀 NgDesktop Engine (`ng-desktop-engine`)
 
-A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22**, written in **Rust**.
+A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22+**, written in **Rust**.
 
-`ng-native-engine` replaces `@angular/platform-browser` and the browser DOM/WebView completely. Instead of bundling Chromium (Electron) or relying on an embedded HTML WebView (Tauri), Angular components drive **100% native OS widgets** — starting with **Linux (GTK4 / Libadwaita)** and architected via the **Bridge**, **State**, and **Abstract Factory** patterns to target **Windows (WinUI 3)** and **macOS (AppKit / Cocoa)**.
+`ng-desktop-engine` replaces `@angular/platform-browser` and the browser DOM/WebView completely. Instead of bundling Chromium (Electron) or relying on an embedded HTML WebView (Tauri), Angular components drive **100% native OS widgets** — starting with **Linux (GTK4 / Libadwaita)** and architected via the **Bridge**, **State**, and **Abstract Factory** patterns to target **Windows (WinUI 3)** and **macOS (AppKit / Cocoa)**.
 
 ---
 

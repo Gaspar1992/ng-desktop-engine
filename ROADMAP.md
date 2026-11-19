@@ -1,6 +1,6 @@
-# 🗺️ NgNative Engine — Architectural Roadmap to 100% Angular Compatibility
+# 🗺️ NgDesktop Engine (`ng-desktop-engine`) — Architectural Roadmap to 100% Angular Compatibility
 
-This document defines the deep technical analysis and phased engineering roadmap required to run **100% of the Angular 21+ ecosystem** (`@angular/core`, `@angular/common`, `@angular/forms`, `@angular/router`, `@angular/common/http`, `@angular/animations`, and `@angular/cdk`) natively on **Linux (GTK4 / Libadwaita)**, and progressively on **Windows (WinUI 3)** and **macOS (AppKit)**.
+This document defines the deep technical analysis and phased engineering roadmap required to run **100% of the Angular 22+ ecosystem** (`@angular/core`, `@angular/common`, `@angular/forms`, `@angular/router`, `@angular/common/http`, `@angular/animations`, and `@angular/cdk`) natively on **Linux (GTK4 / Libadwaita)**, and progressively on **Windows (WinUI 3)** and **macOS (AppKit)**.
 
 ---
 
