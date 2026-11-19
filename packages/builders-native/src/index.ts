@@ -8,8 +8,24 @@ export {
   compileBundle,
   emitNgbBundle,
   watchBundle,
+  type CompileBundleOptions,
   type CompileBundleResult,
 } from './build-bundle.mjs';
+export {
+  analyzeProjectPermissions,
+  analyzeSourcePermissions,
+  type NativeCapabilitiesObject,
+  type PermissionAnalysisManifest,
+  type PermissionEvidence,
+  type PermissionPolicyMode,
+  type PermissionsPolicyConfig,
+} from './permission-analyzer.mjs';
+export {
+  resolveWorkspaceProject,
+  type ResolvedWorkspaceProject,
+  type ResolveWorkspaceOptions,
+  type WorkspaceKind,
+} from './workspace-resolver.mjs';
 export {
   createNativeTargetConfig,
   executeNativeBuilder,
@@ -22,6 +38,8 @@ export {
   type NativeJsEngineKind,
   type NativeOsKind,
   type NativePackageFormat,
+  type NativePermissionsMode,
+  type NativePermissionsOptions,
   type NativePlatformTarget,
   type ResolvedNativeBuilderConfig,
 } from './builder';

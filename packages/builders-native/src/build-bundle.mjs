@@ -12,19 +12,25 @@ import { fileURLToPath } from 'node:url';
 import { extractComponentMetadata } from './ast-metadata-extractor.mjs';
 import { pushHmrReload } from './hmr-client.mjs';
 import { buildMultiResolutionIcons } from './icon-compiler.mjs';
+import { analyzeProjectPermissions } from './permission-analyzer.mjs';
 import { emitStyleInstruction, parseStylesCss } from './style-compiler.mjs';
 import { parseTemplateHtml } from './template-compiler.mjs';
+import { resolveWorkspaceProject } from './workspace-resolver.mjs';
 
 export { extractComponentMetadata, parseStylesCss, parseTemplateHtml, pushHmrReload };
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-
-function resolveWorkspaceRoot() {
-  const cwd = process.cwd();
-  if (existsSync(resolve(cwd, 'angular.json'))) {
-    return cwd;
+function extractCliFlagValue(argv, flag) {
+  const prefix = `${flag}=`;
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg.startsWith(prefix)) {
+      return arg.slice(prefix.length).trim() || undefined;
+    }
+    if (arg === flag && i + 1 < argv.length && !argv[i + 1].startsWith('--')) {
+      return argv[i + 1].trim() || undefined;
+    }
   }
-  return resolve(__dirname, '../../..');
+  return undefined;
 }
 
 function mapNativeEventName(evtName) {
@@ -142,26 +148,37 @@ export function emitNgbBundle(
   return lines.join('\n') + '\n';
 }
 
-export function compileBundle({ rebuildIcons = true } = {}) {
-  const rootDir = resolveWorkspaceRoot();
-  const angularConfig = JSON.parse(readFileSync(resolve(rootDir, 'angular.json'), 'utf8'));
-  const projectName = angularConfig.defaultProject || Object.keys(angularConfig.projects)[0];
-  const projectCfg = angularConfig.projects[projectName];
-  const buildOptions = projectCfg.architect.build?.options || {};
-  const nativeOptions = projectCfg.architect.native?.options || {};
-  const resolvedOutputPath =
-    nativeOptions.outputPath || buildOptions.outputPath || `dist/${projectName}`;
+export function compileBundle({
+  rebuildIcons = true,
+  cwd,
+  configPath,
+  projectName: requestedProject,
+  version: versionOverride,
+} = {}) {
+  const workspace = resolveWorkspaceProject({
+    cwd,
+    configPath,
+    projectName: requestedProject,
+  });
+  const rootDir = workspace.workspaceRoot;
+  const projectName = workspace.projectName;
+  const nativeOptions = workspace.nativeOptions ?? {};
+  const resolvedOutputPath = workspace.outputPath;
+  const resolvedVersion = versionOverride || workspace.version;
 
-  const appDir = resolve(rootDir, projectCfg.sourceRoot, 'app');
+  const sourceRootAbs = resolve(rootDir, workspace.sourceRoot);
+  const appDir = resolve(sourceRootAbs, 'app');
   const tsSource = readFileSync(resolve(appDir, 'app.ts'), 'utf8');
   const { state, numericSignals, methods, component } = extractComponentMetadata(tsSource);
   const htmlSource = readFileSync(resolve(appDir, component.templateUrl), 'utf8');
   const cssSource = readFileSync(resolve(appDir, component.styleUrl), 'utf8');
-  const indexHtml = readFileSync(resolve(rootDir, projectCfg.sourceRoot, 'index.html'), 'utf8');
+  const indexHtmlPath = resolve(sourceRootAbs, 'index.html');
+  const indexHtml = existsSync(indexHtmlPath) ? readFileSync(indexHtmlPath, 'utf8') : '';
 
   const iconHrefMatch = indexHtml.match(/<link[^>]*rel="icon"[^>]*href="([^"]+)"/);
   const iconFileName = iconHrefMatch ? iconHrefMatch[1] : 'favicon.ico';
-  const iconRelPath = `${projectCfg.root}/public/${iconFileName}`;
+  const publicPrefix = workspace.projectRoot === '.' ? 'public' : `${workspace.projectRoot}/public`;
+  const iconRelPath = `${publicPrefix}/${iconFileName}`;
   const iconAbsPath = resolve(rootDir, iconRelPath);
 
   const componentRegistry = {};
@@ -214,16 +231,36 @@ export function compileBundle({ rebuildIcons = true } = {}) {
     methods,
     templateAst,
     iconMeta,
-    `${projectCfg.sourceRoot}/app/app.{ts,html,css}`,
+    `${workspace.sourceRoot}/app/app.{ts,html,css}`,
   );
 
   const bundleFile = resolve(outDir, 'main.ngb');
   writeFileSync(bundleFile, bundle, 'utf8');
+
+  const permissions = analyzeProjectPermissions(sourceRootAbs, nativeOptions.permissions);
+  const permissionsFile = resolve(outDir, 'permissions.manifest.json');
+  writeFileSync(permissionsFile, JSON.stringify(permissions, null, 2) + '\n', 'utf8');
+
+  const runtimeConfig = {
+    schemaVersion: 1,
+    workspaceKind: workspace.workspaceKind,
+    projectName,
+    version: resolvedVersion,
+    targetPlatform: nativeOptions.targetPlatform || 'linux-gtk4',
+    outputPath: resolvedOutputPath,
+    iconSearchDir: `${resolvedOutputPath}/icons`,
+    permissions,
+  };
+  const runtimeConfigFile = resolve(outDir, 'ng-desktop.runtime.json');
+  writeFileSync(runtimeConfigFile, JSON.stringify(runtimeConfig, null, 2) + '\n', 'utf8');
+
   const standaloneFallback = resolve(rootDir, 'src/standalone_pokedex.ngb');
-  if (existsSync(standaloneFallback)) {
+  if (projectName === 'ng-linux-counter' && existsSync(standaloneFallback)) {
     writeFileSync(standaloneFallback, bundle, 'utf8');
   }
-  console.log(`[Angular Native Compiler] Compiled ${projectName} -> ${bundleFile}`);
+  console.log(
+    `[Angular Native Compiler] Compiled ${projectName} v${resolvedVersion} (${workspace.workspaceKind}) -> ${bundleFile}`,
+  );
 
   const socketPath = resolve(outDir, 'hmr.sock');
   if (existsSync(socketPath)) {
@@ -236,14 +273,18 @@ export function compileBundle({ rebuildIcons = true } = {}) {
 
   return {
     projectName,
-    sourceRoot: resolve(rootDir, projectCfg.sourceRoot),
+    version: resolvedVersion,
+    sourceRoot: sourceRootAbs,
     bundleFile,
+    permissionsFile,
+    runtimeConfigFile,
+    permissions,
     socketPath,
   };
 }
 
-export function watchBundle() {
-  const { sourceRoot } = compileBundle({ rebuildIcons: true });
+export function watchBundle(options = {}) {
+  const { sourceRoot } = compileBundle({ ...options, rebuildIcons: true });
   console.log(`[Angular Native Watcher] Watching '${sourceRoot}' for changes...`);
 
   let debounceTimer = null;
@@ -252,7 +293,7 @@ export function watchBundle() {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       try {
-        compileBundle({ rebuildIcons: filename.endsWith('index.html') });
+        compileBundle({ ...options, rebuildIcons: filename.endsWith('index.html') });
       } catch (err) {
         console.error('[Angular Native Watcher] Compilation error:', err);
       }
@@ -261,9 +302,14 @@ export function watchBundle() {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const cliOptions = {
+    configPath: extractCliFlagValue(process.argv, '--config'),
+    projectName: extractCliFlagValue(process.argv, '--project'),
+    version: extractCliFlagValue(process.argv, '--version'),
+  };
   if (process.argv.includes('--watch')) {
-    watchBundle();
+    watchBundle(cliOptions);
   } else {
-    compileBundle({ rebuildIcons: true });
+    compileBundle({ ...cliOptions, rebuildIcons: true });
   }
 }

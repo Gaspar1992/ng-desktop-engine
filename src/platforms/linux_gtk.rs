@@ -94,6 +94,8 @@ pub(super) struct NativeGtkWidget {
 /// Concrete Linux GTK4 + Libadwaita platform adapter backed by `libgtk-4.so.1`.
 pub struct GtkLinuxBackend {
     pub flushed_frames: u64,
+    app_id: String,
+    icon_search_dir: String,
     pub(super) gtk: Option<Gtk4Sys>,
     pub(super) widgets: HashMap<NodeId, NativeGtkWidget>,
     pub(super) styles: HashMap<StyleId, StyleRule>,
@@ -109,9 +111,17 @@ impl Default for GtkLinuxBackend {
 
 impl GtkLinuxBackend {
     pub fn new() -> Self {
+        Self::with_app_config("ng-desktop-app", "icons")
+    }
+
+    /// Initializes the GTK4 backend binding `g_set_prgname` and custom icon theme search paths
+    /// from the resolved application configuration rather than hardcoded literals.
+    pub fn with_app_config(app_id: &str, icon_search_dir: &str) -> Self {
         Self {
             flushed_frames: 0,
-            gtk: Gtk4Sys::try_load(),
+            app_id: String::from(app_id),
+            icon_search_dir: String::from(icon_search_dir),
+            gtk: Gtk4Sys::try_load_with_app_id(app_id),
             widgets: HashMap::new(),
             styles: HashMap::new(),
             header_titles: HashMap::new(),
@@ -122,12 +132,24 @@ impl GtkLinuxBackend {
     pub fn new_headless() -> Self {
         Self {
             flushed_frames: 0,
+            app_id: String::from("ng-desktop-app"),
+            icon_search_dir: String::from("icons"),
             gtk: None,
             widgets: HashMap::new(),
             styles: HashMap::new(),
             header_titles: HashMap::new(),
             pulse_tick: std::cell::Cell::new(0),
         }
+    }
+
+    #[must_use]
+    pub fn app_id(&self) -> &str {
+        &self.app_id
+    }
+
+    #[must_use]
+    pub fn icon_search_dir(&self) -> &str {
+        &self.icon_search_dir
     }
 
     pub fn is_native_display_active(&self) -> bool {
@@ -276,7 +298,7 @@ impl GtkLinuxBackend {
                 if widget.kind == GtkWidgetType::Window
                     && let Some(handle) = widget.handle
                 {
-                    gtk.configure_window_icon(handle, &icon.app_id, "dist/ng-linux-counter/icons");
+                    gtk.configure_window_icon(handle, &icon.app_id, &self.icon_search_dir);
                 }
             }
             RenderCommand::ApplyStyleClass { node, style_id } => {

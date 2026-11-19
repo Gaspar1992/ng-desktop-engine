@@ -7,6 +7,7 @@ pub mod quickjs_engine;
 mod reactivity;
 mod scene_exec;
 
+use crate::config::AngularNativeConfig;
 use crate::desktop::{DesktopServices, DesktopTheme};
 use crate::engine::{EngineError, NodeId, RenderEngine};
 use crate::platforms::PlatformBackend;
@@ -48,9 +49,17 @@ impl JsRuntime {
         Self::with_engine(AnyJsEngine::default())
     }
 
-    pub fn with_engine(mut js_engine: AnyJsEngine) -> Self {
-        let desktop = DesktopServices::new();
+    pub fn with_engine(js_engine: AnyJsEngine) -> Self {
+        Self::with_engine_and_desktop(js_engine, DesktopServices::new())
+    }
+
+    /// Creates a `JsRuntime` binding a specific `AnyJsEngine` and configured `DesktopServices`.
+    pub fn with_engine_and_desktop(mut js_engine: AnyJsEngine, desktop: DesktopServices) -> Self {
         js_engine.attach_http_engine(desktop.shared_http_engine());
+        let escaped_app_id = desktop.app_id().replace('\\', "\\\\").replace('\'', "\\'");
+        let _ = js_engine.eval_script(&format!(
+            "globalThis.__NG_NATIVE_APP_ID__ = '{escaped_app_id}';"
+        ));
         Self {
             js_engine,
             desktop,
@@ -68,6 +77,14 @@ impl JsRuntime {
     pub fn from_engine_config(engine_kind: &str) -> Result<Self, EngineError> {
         let js_engine = AnyJsEngine::from_config(engine_kind)?;
         Ok(Self::with_engine(js_engine))
+    }
+
+    /// Builds a `JsRuntime` directly from workspace/runtime configuration, wiring the app id,
+    /// JS engine choice (`jsc` / `quickjs`), and build-time capability manifest into `DesktopServices`.
+    pub fn from_config(cfg: &AngularNativeConfig) -> Result<Self, EngineError> {
+        let js_engine = AnyJsEngine::from_config(&cfg.js_engine)?;
+        let desktop = DesktopServices::with_app_config(&cfg.project_name, cfg.permissions.clone());
+        Ok(Self::with_engine_and_desktop(js_engine, desktop))
     }
 
     pub const fn js_engine(&self) -> &AnyJsEngine {
@@ -168,5 +185,37 @@ impl JsRuntime {
             .get(name)
             .copied()
             .ok_or_else(|| EngineError::ScriptSyntaxError(format!("Unknown JS handle: {name}")))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::AppPermissions;
+    use crate::platforms::HeadlessBackend;
+
+    #[test]
+    fn configures_runtime_app_id_and_permissions_from_workspace_config() {
+        let mut cfg = AngularNativeConfig::default_standalone("invoice-studio");
+        cfg.permissions = AppPermissions {
+            sqlite: true,
+            ..AppPermissions::minimal()
+        };
+
+        let mut rt = JsRuntime::from_config(&cfg).unwrap();
+        let mut engine = RenderEngine::new(HeadlessBackend::new());
+        let resolved_path = rt
+            .eval_js(
+                &mut engine,
+                "__NG_NATIVE__.fsResolvePath('config', 'prefs.json')",
+            )
+            .unwrap();
+        assert_eq!(
+            resolved_path,
+            "/home/user/.config/invoice-studio/prefs.json"
+        );
+        assert_eq!(rt.desktop().app_id(), "invoice-studio");
+        assert!(rt.desktop().check_sqlite_allowed());
+        assert!(!rt.desktop().check_network_allowed());
     }
 }

@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "NgDesktopNgAddSchema",
+  "title": "ng add @ng-native/builders",
+  "type": "object",
+  "properties": {
+    "project": {
+      "type": "string",
+      "description": "Target Angular or Nx project name to configure."
+    },
+    "targetPlatform": {
+      "type": "string",
+      "enum": ["linux-gtk4", "windows-winui", "macos-appkit"],
+      "default": "linux-gtk4",
+      "description": "Primary desktop platform target."
+    },
+    "permissionsMode": {
+      "type": "string",
+      "enum": ["auto", "strict"],
+      "default": "auto",
+      "description": "Build-time OS permission inference policy."
+    }
+  }
+}

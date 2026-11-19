@@ -7,6 +7,10 @@ pub const NG_NATIVE_BOOTSTRAP_JS: &str = r#"
 globalThis.__NG_NATIVE__ = (() => {
   let queue = [];
   let logs = [];
+  const resolveAppId = () => {
+    const raw = globalThis.__NG_NATIVE_APP_ID__;
+    return typeof raw === 'string' && raw.trim() ? raw.trim() : 'ng-desktop-app';
+  };
   let timers = new Map();
   let nextTimerId = 1;
   let listeners = new Map();
@@ -149,7 +153,7 @@ globalThis.__NG_NATIVE__ = (() => {
       clipboardText = String(text ?? '');
       queue.push(`clipboard ${clipboardText}`);
     },
-    sendNotification(title, body, icon = 'ng-linux-counter') {
+    sendNotification(title, body, icon = resolveAppId()) {
       queue.push(`comment notify_${nextListenerId++} [${icon}] ${title}: ${body}`);
     },
     openFileDialog(_title = 'Open File', defaultPath = '/home/user/document.txt') {
@@ -366,12 +370,13 @@ globalThis.__NG_NATIVE__ = (() => {
       if (!clean || clean.split(/[/\\]/).includes('..')) {
         throw new Error('Invalid XDG path: ' + relPath);
       }
+      const appId = resolveAppId();
       const base =
         kind === 'data'
-          ? '/home/user/.local/share/ng-linux-counter'
+          ? `/home/user/.local/share/${appId}`
           : kind === 'cache'
-            ? '/home/user/.cache/ng-linux-counter'
-            : '/home/user/.config/ng-linux-counter';
+            ? `/home/user/.cache/${appId}`
+            : `/home/user/.config/${appId}`;
       return base + '/' + clean;
     },
     fsReadText(path) {

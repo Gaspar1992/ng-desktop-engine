@@ -1,11 +1,24 @@
 import { FSWatcher } from 'node:fs';
+import { PermissionAnalysisManifest } from './permission-analyzer.mjs';
 import { StyleRuleIr } from './style-compiler.mjs';
 import { TemplateAstNode } from './template-compiler.mjs';
 
+export interface CompileBundleOptions {
+  rebuildIcons?: boolean;
+  cwd?: string;
+  configPath?: string;
+  projectName?: string;
+  version?: string;
+}
+
 export interface CompileBundleResult {
   projectName: string;
+  version: string;
   sourceRoot: string;
   bundleFile: string;
+  permissionsFile: string;
+  runtimeConfigFile: string;
+  permissions: PermissionAnalysisManifest;
   socketPath: string;
 }
 
@@ -18,6 +31,6 @@ export function emitNgbBundle(
   sourceLabel: string,
 ): string;
 
-export function compileBundle(options?: { rebuildIcons?: boolean }): CompileBundleResult;
+export function compileBundle(options?: CompileBundleOptions): CompileBundleResult;
 
-export function watchBundle(): FSWatcher;
+export function watchBundle(options?: CompileBundleOptions): FSWatcher;

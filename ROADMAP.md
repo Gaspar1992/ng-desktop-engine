@@ -198,19 +198,33 @@ When `@angular/platform-browser` is removed, Angular's Ivy runtime still require
 
 ---
 
-### Phase 11: Library Packaging, `ng add` Schematics, & npm / `crates.io` Publishing (Planned 📦)
+### Phase 11: Zero Hardcoded Literals, Nx + Least-Privilege Permissions, APF Libraries & Ecosystem Compatibility (Completed ✅)
 
-1. **Angular Package Format (APF) Build Pipeline (`pnpm run build:packages`):**
-   - [ ] Configure `pnpm-workspace.yaml` (`packages: ['packages/*']`) and `tsconfig.lib.json` (`"compilationMode": "partial"` via `@angular/compiler-cli` `ngc`) to emit ESM `dist/index.js` + `dist/index.d.ts` and `"exports"` maps for `@ng-native/{platform,forms,router,http,desktop,builders}`.
-2. **Prebuilt Cross-Platform Rust Engine Binaries & `ng add @ng-native/builders`:**
-   - [ ] Distribute precompiled OS/CPU engine binaries (`@ng-native/engine-linux-x64-gnu`, `@ng-native/engine-linux-arm64-gnu`, `@ng-native/engine-win32-x64-msvc`, `@ng-native/engine-darwin-arm64`, `@ng-native/engine-darwin-x64`) via `optionalDependencies` in `@ng-native/builders` with automatic binary resolution (`resolveEngineBinaryPath`).
-   - [ ] Implement `ng-add` schematic (`packages/builders-native/schematics/ng-add`) and `ng-native` CLI binary (`packages/builders-native/bin/ng-native.mjs`) so `ng add @ng-native/builders` configures any Angular 22 project in one command.
-3. **Automated Multi-OS Release Workflow (`.github/workflows/release.yml`):**
-   - [ ] Build Linux, Windows, and macOS binaries on tag push (`v*.*.*`), publish `@ng-native/*` to npm with OIDC provenance, and publish `ng-native-engine` to `crates.io`.
+- [x] **Workspace-Agnostic Configuration & Zero Hardcoded Literals (`src/config/mod.rs` + `packages/builders-native/src/workspace-resolver.mjs`):**
+  - [x] Removed hardcoded `"ng-linux-counter"`, `"angular.json"`, and `"0.2.0"` defaults across `src/main.rs`, `src/desktop/mod.rs`, `src/platforms/gtk4_sys.rs`, `src/platforms/linux_gtk.rs`, `src/runtime/bootstrap_js.rs`, and `packages/builders-native/src/build-bundle.mjs`.
+  - [x] Added transparent config resolution supporting **Angular CLI (`angular.json`)**, **Nx (`nx.json` / `project.json`)**, runtime manifests (`ng-desktop.runtime.json`), CLI flags (`--config`, `--project`, `--version`, `--output-path`, `--target-platform`), and `NG_DESKTOP_*` env vars.
+- [x] **Static Build-Time Permission Analysis & Least-Privilege Sandboxing (`src/config/permissions.rs` + `packages/builders-native/src/permission-analyzer.mjs`):**
+  - [x] Added AST static analyzer powered by `oxc-parser` to infer OS capabilities (`network`, `sqlite`, `filesystem:xdg`, `filesystem:dialogs`, `filesystem:drop`, `clipboard`, `notifications`, `compute-threads`) with `mode: 'auto' | 'strict'` and `allow`/`deny` overrides in `angular.json` / `project.json`.
+  - [x] Removed unconditional Windows `<rescap:Capability Name="runFullTrust" />` and unrestricted host capabilities unless explicitly opted into (`fullSystemAccess: true`), emitting minimal Windows `AppxManifest.xml`, macOS `Entitlements.plist` (`com.apple.security.app-sandbox`), Linux `AppArmor` profiles, and Flatpak manifests alongside runtime enforcement in `DesktopServices`.
+- [x] **Ecosystem Compatibility Bridges (`@ng-native/platform` + `docs/ECOSYSTEM_COMPATIBILITY.md`):**
+  - [x] Extended `NativeElementNode` with WAI-ARIA/DOM attributes, focus tracking, `classList`, `contains()`, event listeners, and `getBoundingClientRect()` for `@angular/aria` and `@angular/cdk/a11y`.
+  - [x] Added `NativeStorage` (`Storage` over SQLite), `NativeAriaAnnouncer` (`LiveAnnouncer`), `NativeDevToolsHook` (`__REDUX_DEVTOOLS_EXTENSION__`), `createNativeDocument()`, and `provideNativeEcosystemCompat()` for `@ngrx/signals`, `@ngrx/store`, `@ngrx/store-devtools`, and headless CDK/Aria libraries, plus documented `@angular/material` rendering gaps.
+- [x] **Angular Package Format (`APF`) Build Pipeline, `ng-desktop` CLI & `ng add` Schematic (`pnpm run build:packages`):**
+  - [x] Added `tsconfig.lib.json` (`compilationMode: "partial"`) and `scripts/build-packages.mjs` compiling all 6 `@ng-native/*` packages into `dist/packages/*` ESM + `.d.ts` APF bundles packed in `.github/workflows/release.yml`.
+  - [x] Added `ng-desktop` CLI (`packages/builders-native/bin/ng-desktop.mjs`) and `ng add @ng-native/builders` schematic (`packages/builders-native/schematics/ng-add`) supporting both Angular CLI and Nx.
 
 ---
 
-### Phase 12: Official Documentation Website on GitHub Pages (Planned 🌐)
+### Phase 12: Automated npm / `crates.io` Publishing & Prebuilt Native Binary Distribution (Planned 📦)
+
+1. **Prebuilt Cross-Platform Rust Engine Binaries:**
+   - [ ] Distribute precompiled OS/CPU engine binaries (`@ng-native/engine-linux-x64-gnu`, `@ng-native/engine-linux-arm64-gnu`, `@ng-native/engine-win32-x64-msvc`, `@ng-native/engine-darwin-arm64`, `@ng-native/engine-darwin-x64`) via `optionalDependencies` in `@ng-native/builders` with automatic binary resolution (`resolveEngineBinaryPath`).
+2. **Automated npm & `crates.io` Publishing (`.github/workflows/release.yml`):**
+   - [ ] Publish compiled APF `@ng-native/*` tarballs to npm with OIDC provenance and `ng-native-engine` to `crates.io` on release tags.
+
+---
+
+### Phase 13: Official Documentation Website on GitHub Pages (Planned 🌐)
 
 1. **Angular 22 Interactive Docs Portal (`docs-site/` -> `dist/ng-native-docs`):**
    - [ ] Create the `ng-native-docs` Angular 22 application (`--base-href /ng-native-engine/`) featuring an interactive 27-primitive explorer, live `.ngb` template compiler playground, architecture guides, and Pokédex tutorial.

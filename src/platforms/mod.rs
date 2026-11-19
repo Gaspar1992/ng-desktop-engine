@@ -9,6 +9,7 @@ pub mod macos_appkit;
 pub mod scene_state;
 pub mod windows_winui;
 
+use crate::config::AngularNativeConfig;
 use crate::engine::{NativeEvent, NodeId, RenderCommand};
 pub use headless::HeadlessBackend;
 pub use linux_gtk::GtkLinuxBackend;
@@ -68,6 +69,19 @@ impl AnyPlatformBackend {
     pub fn from_target(target_platform: &str) -> Result<Self, String> {
         match target_platform {
             "linux-gtk4" => Ok(Self::LinuxGtk(Box::default())),
+            "windows-winui" => Ok(Self::WindowsWinUi(WinUiBackend::new())),
+            "macos-appkit" => Ok(Self::MacOsAppKit(MacOsAppKitBackend::new())),
+            other => Err(format!("Unsupported targetPlatform '{other}'")),
+        }
+    }
+
+    /// Factory Method resolving the concrete OS adapter parameterized by workspace config.
+    pub fn from_config(cfg: &AngularNativeConfig) -> Result<Self, String> {
+        match cfg.target_platform.as_str() {
+            "linux-gtk4" => Ok(Self::LinuxGtk(Box::new(GtkLinuxBackend::with_app_config(
+                &cfg.project_name,
+                &cfg.icon_search_dir,
+            )))),
             "windows-winui" => Ok(Self::WindowsWinUi(WinUiBackend::new())),
             "macos-appkit" => Ok(Self::MacOsAppKit(MacOsAppKitBackend::new())),
             other => Err(format!("Unsupported targetPlatform '{other}'")),

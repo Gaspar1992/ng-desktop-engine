@@ -94,10 +94,33 @@ fn cross_platform_factory_supports_linux_windows_and_macos() {
 }
 
 #[test]
+fn phase11_packager_least_privilege_capabilities() {
+    let mut cfg = AngularNativeConfig::default_standalone("phase11-sandbox-app");
+    cfg.output_path = String::from("target/test-phase11-packager");
+    cfg.icon_search_dir = String::from("target/test-phase11-packager/icons");
+    cfg.permissions = ng_native_engine::config::AppPermissions {
+        network: true,
+        filesystem_dialogs: true,
+        ..ng_native_engine::config::AppPermissions::minimal()
+    };
+
+    let win_artifacts = stage_windows_distribution(&cfg, "0.3.0").unwrap();
+    let mac_artifacts = stage_macos_distribution(&cfg, "0.3.0").unwrap();
+
+    let appx = fs::read_to_string(&win_artifacts[0]).unwrap();
+    assert!(!appx.contains("runFullTrust"));
+    assert!(appx.contains("internetClient"));
+    let mac_entitlements = fs::read_to_string(&mac_artifacts[1]).unwrap();
+    assert!(mac_entitlements.contains("com.apple.security.app-sandbox"));
+    assert!(mac_entitlements.contains("com.apple.security.network.client"));
+    let _ = fs::remove_dir_all(&cfg.output_path);
+}
+
+#[test]
 fn phase6_linux_distribution_packager_and_winui_appkit_stateful_backends() {
     let cfg = AngularNativeConfig::from_file("angular.json").unwrap();
-    let artifacts = stage_linux_distribution(&cfg, "0.2.0").unwrap();
-    assert_eq!(artifacts.len(), 4);
+    let artifacts = stage_linux_distribution(&cfg, "0.3.0").unwrap();
+    assert_eq!(artifacts.len(), 7);
     for path in &artifacts {
         assert!(
             fs::metadata(path).is_ok(),
@@ -105,12 +128,12 @@ fn phase6_linux_distribution_packager_and_winui_appkit_stateful_backends() {
         );
     }
 
-    let win_artifacts = stage_windows_distribution(&cfg, "0.2.0").unwrap();
-    assert_eq!(win_artifacts.len(), 2);
-    let mac_artifacts = stage_macos_distribution(&cfg, "0.2.0").unwrap();
-    assert_eq!(mac_artifacts.len(), 2);
-    let all_artifacts = stage_all_distributions(&cfg, "0.2.0").unwrap();
-    assert_eq!(all_artifacts.len(), 8);
+    let win_artifacts = stage_windows_distribution(&cfg, "0.3.0").unwrap();
+    assert_eq!(win_artifacts.len(), 4);
+    let mac_artifacts = stage_macos_distribution(&cfg, "0.3.0").unwrap();
+    assert_eq!(mac_artifacts.len(), 5);
+    let all_artifacts = stage_all_distributions(&cfg, "0.3.0").unwrap();
+    assert_eq!(all_artifacts.len(), 16);
     for path in &all_artifacts {
         assert!(
             fs::metadata(path).is_ok(),

@@ -39,6 +39,33 @@
       "type": "string",
       "description": "Optional main entrypoint override (inherited from architect.build.options.browser)."
     },
+    "version": {
+      "type": "string",
+      "description": "Application release version propagated to runtime config and OS installers."
+    },
+    "permissions": {
+      "type": "object",
+      "description": "Build-time static capability analysis policy and manual allow/deny overrides.",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["auto", "strict"],
+          "default": "auto",
+          "description": "'auto' infers capabilities from AST usage + overrides; 'strict' grants only 'allow'."
+        },
+        "allow": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Capabilities explicitly granted (e.g. 'network', 'sqlite', 'filesystem:dialogs')."
+        },
+        "deny": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Capabilities explicitly revoked even if detected in source files."
+        }
+      },
+      "additionalProperties": false
+    },
     "packageFormats": {
       "type": "array",
       "items": {

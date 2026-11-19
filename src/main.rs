@@ -52,7 +52,7 @@ fn handle_hmr_messages(
 
 const STANDALONE_POKEDEX_NGB: &str = include_str!("standalone_pokedex.ngb");
 
-fn ensure_bundle_compiled(bundle_path: &str) -> String {
+fn ensure_bundle_compiled(cfg: &AngularNativeConfig, bundle_path: &str) -> String {
     if let Ok(script) = fs::read_to_string(bundle_path) {
         return script;
     }
@@ -64,23 +64,28 @@ fn ensure_bundle_compiled(bundle_path: &str) -> String {
         for candidate in [
             exe_dir.join("main.ngb"),
             exe_dir.join("../Resources/main.ngb"),
-            exe_dir.join("../share/ng-linux-counter/main.ngb"),
+            exe_dir.join(format!("../share/{}/main.ngb", cfg.project_name)),
         ] {
             if let Ok(script) = fs::read_to_string(&candidate) {
                 return script;
             }
         }
     }
-    if let Ok(script) = fs::read_to_string("/usr/share/ng-linux-counter/main.ngb") {
+    if let Ok(script) = fs::read_to_string(format!("/usr/share/{}/main.ngb", cfg.project_name)) {
         return script;
     }
 
     if Path::new("packages/builders-native/src/build-bundle.mjs").exists() {
         println!(
-            "[NgDesktop CLI] Bundle not found at '{bundle_path}'. Auto-compiling via build-bundle.mjs..."
+            "[NgDesktop CLI] Bundle not found at '{bundle_path}'. Auto-compiling '{}' via build-bundle.mjs...",
+            cfg.project_name
         );
         let _ = Command::new("node")
-            .arg("packages/builders-native/src/build-bundle.mjs")
+            .args([
+                "packages/builders-native/src/build-bundle.mjs",
+                "--project",
+                &cfg.project_name,
+            ])
             .status();
         if let Ok(script) = fs::read_to_string(bundle_path) {
             return script;
@@ -156,43 +161,71 @@ fn run_interactive_loop(
     engine.print_tree(ctx.win_id, 0).unwrap();
 }
 
-fn main() {
-    // 1. Read `angular.json` to configure the project & target platform (or use standalone config for .deb/.exe/.dmg)
-    let cfg = AngularNativeConfig::from_file("angular.json")
-        .unwrap_or_else(|_| AngularNativeConfig::default_standalone("ng-linux-counter"));
-    let bundle_path = format!("{}/main.ngb", cfg.output_path);
-    let bootstrap_script = ensure_bundle_compiled(&bundle_path);
-    let last_mtime = bundle_modified_time(&bundle_path);
-
-    println!(
-        "Loaded angular.json -> project='{}', platform='{}', bundle='{}'\n",
-        cfg.project_name, cfg.target_platform, bundle_path
-    );
-
-    if env::args().any(|a| a == "--package-all") {
-        let artifacts = stage_all_distributions(&cfg, "0.2.0").unwrap();
+fn handle_cli_actions(args: &[String], cfg: &AngularNativeConfig) -> bool {
+    if args.iter().any(|a| a == "--version") {
         println!(
-            "[NgNative Packager] Staged multi-OS distribution artifacts (Linux + Windows + macOS):"
+            "{} {} ({})",
+            cfg.project_name, cfg.version, cfg.target_platform
+        );
+        return true;
+    }
+
+    if args.iter().any(|a| a == "--permissions-report") {
+        println!("{}", cfg.permissions.to_json());
+        return true;
+    }
+
+    if args.iter().any(|a| a == "--package-all") {
+        let artifacts = stage_all_distributions(cfg, &cfg.version).unwrap();
+        println!(
+            "[NgDesktop Packager] Staged multi-OS distribution artifacts for '{}' v{} (Linux + Windows + macOS):",
+            cfg.project_name, cfg.version
         );
         for path in artifacts {
             println!("  -> {path}");
         }
-        return;
+        return true;
     }
 
-    if env::args().any(|a| a == "--package") {
-        let artifacts = stage_linux_distribution(&cfg, "0.2.0").unwrap();
-        println!("[NgNative Packager] Staged Linux distribution artifacts:");
+    if args.iter().any(|a| a == "--package") {
+        let artifacts = stage_linux_distribution(cfg, &cfg.version).unwrap();
+        println!(
+            "[NgDesktop Packager] Staged Linux distribution artifacts for '{}' v{}:",
+            cfg.project_name, cfg.version
+        );
         for path in artifacts {
             println!("  -> {path}");
         }
+        return true;
+    }
+
+    false
+}
+
+fn main() {
+    let args: Vec<String> = env::args().collect();
+    let cfg = AngularNativeConfig::from_cli_and_env(&args);
+    if handle_cli_actions(&args, &cfg) {
         return;
     }
 
-    // 2. Resolve the OS Backend & Pluggable JS Engine (`jsc` or `quickjs`) via Factory Method
-    let backend = AnyPlatformBackend::from_target(&cfg.target_platform).unwrap();
+    let bundle_path = format!("{}/main.ngb", cfg.output_path);
+    let bootstrap_script = ensure_bundle_compiled(&cfg, &bundle_path);
+    let last_mtime = bundle_modified_time(&bundle_path);
+
+    println!(
+        "Loaded config -> project='{}' v'{}', platform='{}', bundle='{}', permissions={:?}\n",
+        cfg.project_name,
+        cfg.version,
+        cfg.target_platform,
+        bundle_path,
+        cfg.permissions.summary_labels()
+    );
+
+    // Resolve the OS Backend & Pluggable JS Engine (`jsc` or `quickjs`) via Factory Method
+    let backend = AnyPlatformBackend::from_config(&cfg).unwrap();
     let mut engine = RenderEngine::new(backend);
-    let mut js_runtime = JsRuntime::from_engine_config(&cfg.js_engine).unwrap();
+    let mut js_runtime = JsRuntime::from_config(&cfg).unwrap();
     println!(
         "Initialized JS Engine -> '{}' (JIT={})\n",
         js_runtime.js_engine().engine_name(),

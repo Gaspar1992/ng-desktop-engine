@@ -10,8 +10,32 @@ export {
   type NativeXdgDirKind,
   type NgNativeBridge,
 } from './bridge';
+export {
+  createNativeDocument,
+  NATIVE_BRIDGE,
+  NATIVE_DEVTOOLS_HOOK,
+  NATIVE_DOCUMENT,
+  NATIVE_STORAGE,
+  NativeAriaAnnouncer,
+  NativeDevToolsHook,
+  NativeStorage,
+  provideNativeEcosystemCompat,
+  type AriaPoliteness,
+  type NativeAriaAnnouncement,
+  type NativeDevToolsConnection,
+  type NativeDevToolsRecord,
+  type NativeDocumentFacade,
+  type NativeEcosystemCompatOptions,
+} from './ecosystem-compat';
 export { nativeImageLoader, provideNativeImageLoader } from './image-loader';
-export { NativeElementNode } from './native-element';
+export {
+  getNativeActiveElement,
+  NativeElementNode,
+  setNativeActiveElement,
+  type NativeDomRect,
+  type NativeElementEvent,
+  type NativeEventListener,
+} from './native-element';
 export { NativeRenderer2, NativeRendererFactory2 } from './native-renderer';
 export { NATIVE_WINDOW_NODE_ID, NativeTitleService, provideNativeTitle } from './native-title';
 export {

@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release tag version to build and publish (e.g. v0.2.0)'
+        description: 'Release tag version to build and publish (e.g. v0.3.0)'
         required: true
-        default: 'v0.2.0'
+        default: 'v0.3.0'
 
 permissions:
   contents: write
@@ -41,10 +41,27 @@ jobs:
           node-version: '24'
           cache: 'pnpm'
 
-      - name: Install dependencies & build Angular + Native .ngb bundle
+      - name: Resolve release version dynamically
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            RAW_TAG="${{ inputs.tag_name }}"
+          else
+            RAW_TAG="${GITHUB_REF_NAME:-}"
+          fi
+          VER="${RAW_TAG#pokedex-demo-}"
+          VER="${VER#v}"
+          if [ -z "${VER}" ]; then
+            VER="$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('package.json','utf8')).version)")"
+          fi
+          echo "APP_VERSION=${VER}" >> "$GITHUB_ENV"
+          echo "NG_DESKTOP_APP_VERSION=${VER}" >> "$GITHUB_ENV"
+
+      - name: Install dependencies & build Angular + Native .ngb + APF packages
         run: |
           pnpm install --frozen-lockfile
           pnpm run build
+          pnpm run build:packages
 
       - name: Install Linux native libraries (Ubuntu)
         if: matrix.platform == 'linux'
@@ -61,18 +78,18 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build release engine binary & stage distribution packages
+      - name: Build release engine binary & stage least-privilege distribution packages
         run: |
           cargo build --release
-          cargo run --release -- --package-all
+          cargo run --release -- --package-all --version="${NG_DESKTOP_APP_VERSION}"
 
-      - name: Package Linux (.deb installer + Engine tarball + Angular .tgz packages)
+      - name: Package Linux (.deb installer + Engine tarball + APF Angular .tgz packages)
         if: matrix.platform == 'linux'
         run: |
-          VER="0.2.0"
+          VER="${APP_VERSION}"
           mkdir -p release-out
 
-          # 1. Build real installable Debian package: pokedex-demo_0.2.0_amd64.deb
+          # 1. Build real installable Debian package: pokedex-demo_<ver>_amd64.deb
           DEB_ROOT="dist/ng-linux-counter/packages/deb"
           mkdir -p "${DEB_ROOT}/usr/bin"
           mkdir -p "${DEB_ROOT}/usr/share/ng-linux-counter"
@@ -80,11 +97,17 @@ jobs:
           cp target/release/ng-native-engine "${DEB_ROOT}/usr/bin/ng-linux-counter"
           chmod 0755 "${DEB_ROOT}/usr/bin/ng-linux-counter"
           cp dist/ng-linux-counter/main.ngb "${DEB_ROOT}/usr/share/ng-linux-counter/main.ngb"
+          cp dist/ng-linux-counter/permissions.manifest.json "${DEB_ROOT}/usr/share/ng-linux-counter/permissions.manifest.json"
+          cp dist/ng-linux-counter/ng-desktop.runtime.json "${DEB_ROOT}/usr/share/ng-linux-counter/ng-desktop.runtime.json"
           if [ -d "dist/ng-linux-counter/icons/hicolor" ]; then
             cp -r dist/ng-linux-counter/icons/hicolor "${DEB_ROOT}/usr/share/icons/"
           fi
           chmod 0755 "${DEB_ROOT}/DEBIAN"
           chmod 0644 "${DEB_ROOT}/DEBIAN/control"
+          chmod 0644 "${DEB_ROOT}/etc/apparmor.d/ng-linux-counter"
+          test -f "${DEB_ROOT}/usr/share/ng-linux-counter/permissions.manifest.json"
+          test -f "${DEB_ROOT}/usr/share/ng-linux-counter/ng-desktop.runtime.json"
+          test -f "${DEB_ROOT}/etc/apparmor.d/ng-linux-counter"
           dpkg-deb --build --root-owner-group "${DEB_ROOT}" "release-out/pokedex-demo_${VER}_amd64.deb"
 
           # 2. Build standalone Linux Engine archive: ng-desktop-engine-linux-x86_64.tar.gz
@@ -92,9 +115,9 @@ jobs:
           chmod +x dist/ng-linux-counter/ng-native-engine
           tar -czf "release-out/ng-desktop-engine-linux-x86_64.tar.gz" -C target/release ng-native-engine
 
-          # 3. Pack individual Angular 22+ libraries (@ng-native/*) as .tgz tarballs
+          # 3. Pack individual compiled APF Angular 22+ libraries (@ng-native/*) as .tgz tarballs
           for pkg in platform-native forms-native router-native http-native desktop-native builders-native; do
-            (cd "packages/${pkg}" && npm pack --pack-destination "../../release-out")
+            (cd "dist/packages/${pkg}" && npm pack --pack-destination "../../../release-out")
           done
           ls -lh release-out/
 
@@ -102,29 +125,33 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          $VER = "0.2.0"
+          $VER = $env:APP_VERSION
           New-Item -ItemType Directory -Force -Path "release-out" | Out-Null
 
-          # 1. Standalone self-contained Windows executable: pokedex-demo-0.2.0-windows-x64.exe
+          # 1. Standalone self-contained Windows executable: pokedex-demo-<ver>-windows-x64.exe
           Copy-Item "target/release/ng-native-engine.exe" "release-out/pokedex-demo-${VER}-windows-x64.exe" -Force
 
           # 2. Engine + WinUI 3 MSIX package archive: ng-desktop-engine-windows-x86_64.zip
-          Copy-Item "target/release/ng-native-engine.exe" "dist/ng-linux-counter/packages/windows/ng-native-engine.exe" -Force
+          Copy-Item "target/release/ng-native-engine.exe" "dist/ng-linux-counter/packages/windows/ng-linux-counter.exe" -Force
           Copy-Item "dist/ng-linux-counter/main.ngb" "dist/ng-linux-counter/packages/windows/main.ngb" -Force
+          Copy-Item "dist/ng-linux-counter/permissions.manifest.json" "dist/ng-linux-counter/packages/windows/permissions.manifest.json" -Force
+          Copy-Item "dist/ng-linux-counter/ng-desktop.runtime.json" "dist/ng-linux-counter/packages/windows/ng-desktop.runtime.json" -Force
           Compress-Archive -Path "dist/ng-linux-counter/packages/windows/*" -DestinationPath "release-out/ng-desktop-engine-windows-x86_64.zip" -Force
           Get-ChildItem release-out
 
       - name: Package macOS (.dmg Disk Image + Engine tarball)
         if: matrix.platform == 'macos'
         run: |
-          VER="0.2.0"
+          VER="${APP_VERSION}"
           mkdir -p release-out
 
-          # 1. Populate macOS .app bundle and build real .dmg disk image: pokedex-demo-0.2.0-macos-arm64.dmg
+          # 1. Populate macOS .app bundle and build real .dmg disk image: pokedex-demo-<ver>-macos-arm64.dmg
           APP_DIR="dist/ng-linux-counter/packages/macos/ng-linux-counter.app"
-          cp target/release/ng-native-engine "${APP_DIR}/Contents/MacOS/ng-native-engine"
+          cp target/release/ng-native-engine "${APP_DIR}/Contents/MacOS/ng-linux-counter"
           cp dist/ng-linux-counter/main.ngb "${APP_DIR}/Contents/Resources/main.ngb"
-          chmod +x "${APP_DIR}/Contents/MacOS/ng-native-engine"
+          cp dist/ng-linux-counter/permissions.manifest.json "${APP_DIR}/Contents/Resources/permissions.manifest.json"
+          cp dist/ng-linux-counter/ng-desktop.runtime.json "${APP_DIR}/Contents/Resources/ng-desktop.runtime.json"
+          chmod +x "${APP_DIR}/Contents/MacOS/ng-linux-counter"
           chmod +x "${APP_DIR}/Contents/MacOS/run-appkit.sh"
           hdiutil create \
             -volname "Pokedex Nacional" \

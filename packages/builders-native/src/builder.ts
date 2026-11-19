@@ -5,6 +5,13 @@ export type NativePlatformTarget = 'linux-gtk4' | 'windows-winui' | 'macos-appki
 export type NativeJsEngineKind = 'jsc' | 'quickjs';
 export type NativePackageFormat = 'deb' | 'appimage' | 'flatpak' | 'msi' | 'dmg';
 export type LinuxPackageFormat = 'deb' | 'appimage' | 'flatpak';
+export type NativePermissionsMode = 'auto' | 'strict';
+
+export interface NativePermissionsOptions {
+  mode?: NativePermissionsMode;
+  allow?: string[];
+  deny?: string[];
+}
 
 export interface NativeBuilderOptions {
   os?: NativeOsKind;
@@ -13,6 +20,8 @@ export interface NativeBuilderOptions {
   targetPlatform?: NativePlatformTarget;
   jsEngine?: NativeJsEngineKind;
   outputPath?: string;
+  version?: string;
+  permissions?: NativePermissionsOptions;
   packageFormats?: NativePackageFormat[];
 }
 
@@ -37,6 +46,8 @@ export interface NativeBuilderResult {
   targetPlatform: NativePlatformTarget;
   jsEngine: NativeJsEngineKind;
   bundlePath: string;
+  permissionsManifestPath: string;
+  runtimeConfigPath: string;
   packageArtifacts: string[];
 }
 
@@ -176,6 +187,8 @@ export function executeNativeBuilder(
     targetPlatform: resolved.targetPlatform,
     jsEngine: resolved.jsEngine,
     bundlePath: `${resolved.outputPath}/main.ngb`,
+    permissionsManifestPath: `${resolved.outputPath}/permissions.manifest.json`,
+    runtimeConfigPath: `${resolved.outputPath}/ng-desktop.runtime.json`,
     packageArtifacts,
   };
 }

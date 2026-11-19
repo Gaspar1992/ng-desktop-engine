@@ -1,0 +1,10 @@
+{
+  "$schema": "../../../node_modules/@angular-devkit/schematics/collection-schema.json",
+  "schematics": {
+    "ng-add": {
+      "description": "Configure Angular Desktop Engine (@ng-native/*) with workspace-agnostic native build and least-privilege permission analysis.",
+      "factory": "./ng-add/index.mjs",
+      "schema": "./ng-add/schema.json"
+    }
+  }
+}

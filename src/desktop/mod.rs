@@ -1,3 +1,4 @@
+use crate::config::AppPermissions;
 use std::env;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -71,6 +72,8 @@ pub struct FileDialogRequest {
 
 /// Cross-platform Desktop OS & Native HTTP service hub for Phase 5 (`@ng-native/desktop` & `@ng-native/http`).
 pub struct DesktopServices {
+    app_id: String,
+    permissions: AppPermissions,
     theme: DesktopTheme,
     clipboard: String,
     notifications: Vec<DesktopNotification>,
@@ -90,11 +93,33 @@ impl Default for DesktopServices {
 
 impl DesktopServices {
     pub fn new() -> Self {
-        Self::with_http_engine(Arc::new(Mutex::new(NativeHttpEngine::new())))
+        Self::with_app_config("ng-desktop-app", AppPermissions::allow_all_sandboxed())
+    }
+
+    /// Creates a `DesktopServices` instance with an explicit application identifier and capability manifest.
+    pub fn with_app_config(app_id: &str, permissions: AppPermissions) -> Self {
+        Self::with_app_config_and_http(
+            app_id,
+            permissions,
+            Arc::new(Mutex::new(NativeHttpEngine::new())),
+        )
     }
 
     /// Creates a `DesktopServices` instance sharing an existing warm `NativeHttpEngine` pool.
     pub fn with_http_engine(http_engine: Arc<Mutex<NativeHttpEngine>>) -> Self {
+        Self::with_app_config_and_http(
+            "ng-desktop-app",
+            AppPermissions::allow_all_sandboxed(),
+            http_engine,
+        )
+    }
+
+    /// Creates a `DesktopServices` instance parameterized by app id, sandbox permissions, and HTTP pool.
+    pub fn with_app_config_and_http(
+        app_id: &str,
+        permissions: AppPermissions,
+        http_engine: Arc<Mutex<NativeHttpEngine>>,
+    ) -> Self {
         let detected_theme = env::var("GTK_THEME").map_or(DesktopTheme::Dark, |val| {
             if val.to_ascii_lowercase().contains("light") {
                 DesktopTheme::Light
@@ -103,6 +128,8 @@ impl DesktopServices {
             }
         });
         Self {
+            app_id: String::from(app_id),
+            permissions,
             theme: detected_theme,
             clipboard: String::new(),
             notifications: Vec::new(),
@@ -111,8 +138,53 @@ impl DesktopServices {
             sqlite: NativeSqliteDatabase::new_in_memory(),
             system_env: NativeSystemEnv::detect(),
             compute: NativeComputePool::new(),
-            fs_manager: NativeFsManager::new("ng-linux-counter"),
+            fs_manager: NativeFsManager::new(app_id),
         }
+    }
+
+    #[must_use]
+    pub fn app_id(&self) -> &str {
+        &self.app_id
+    }
+
+    #[must_use]
+    pub const fn permissions(&self) -> &AppPermissions {
+        &self.permissions
+    }
+
+    #[must_use]
+    pub const fn check_network_allowed(&self) -> bool {
+        self.permissions.network || self.permissions.full_system_access
+    }
+
+    #[must_use]
+    pub const fn check_sqlite_allowed(&self) -> bool {
+        self.permissions.sqlite || self.permissions.full_system_access
+    }
+
+    #[must_use]
+    pub const fn check_filesystem_xdg_allowed(&self) -> bool {
+        self.permissions.filesystem_xdg || self.permissions.full_system_access
+    }
+
+    #[must_use]
+    pub const fn check_filesystem_dialogs_allowed(&self) -> bool {
+        self.permissions.filesystem_dialogs || self.permissions.full_system_access
+    }
+
+    #[must_use]
+    pub const fn check_clipboard_allowed(&self) -> bool {
+        self.permissions.clipboard || self.permissions.full_system_access
+    }
+
+    #[must_use]
+    pub const fn check_notifications_allowed(&self) -> bool {
+        self.permissions.notifications || self.permissions.full_system_access
+    }
+
+    #[must_use]
+    pub const fn check_compute_allowed(&self) -> bool {
+        self.permissions.compute_threads || self.permissions.full_system_access
     }
 
     pub const fn compute(&self) -> &NativeComputePool {
@@ -160,15 +232,19 @@ impl DesktopServices {
     }
 
     pub fn set_clipboard(&mut self, text: &str) {
-        text.clone_into(&mut self.clipboard);
+        if self.check_clipboard_allowed() {
+            text.clone_into(&mut self.clipboard);
+        }
     }
 
     pub fn send_notification(&mut self, title: &str, body: &str, icon: Option<&str>) {
-        self.notifications.push(DesktopNotification {
-            title: String::from(title),
-            body: String::from(body),
-            icon: icon.map(String::from),
-        });
+        if self.check_notifications_allowed() {
+            self.notifications.push(DesktopNotification {
+                title: String::from(title),
+                body: String::from(body),
+                icon: icon.map(String::from),
+            });
+        }
     }
 
     pub fn notifications(&self) -> &[DesktopNotification] {
@@ -176,6 +252,9 @@ impl DesktopServices {
     }
 
     pub fn open_file_dialog(&mut self, title: &str, default_path: &str) -> String {
+        if !self.check_filesystem_dialogs_allowed() {
+            return String::new();
+        }
         let resolved = if default_path.trim().is_empty() {
             String::from("/home/user/document.txt")
         } else {
@@ -190,6 +269,9 @@ impl DesktopServices {
     }
 
     pub fn save_file_dialog(&mut self, title: &str, suggested_name: &str) -> String {
+        if !self.check_filesystem_dialogs_allowed() {
+            return String::new();
+        }
         let resolved = if suggested_name.trim().is_empty() {
             String::from("/home/user/untitled.txt")
         } else {
@@ -226,6 +308,9 @@ impl DesktopServices {
     }
 
     pub fn execute_http(&mut self, request: &NativeHttpRequest) -> NativeHttpResponse {
+        if !self.check_network_allowed() {
+            return Self::permission_denied_http_response(request);
+        }
         self.http_engine.lock().map_or_else(
             |_| NativeHttpResponse {
                 status: 500,
@@ -244,9 +329,29 @@ impl DesktopServices {
         &mut self,
         requests: &[NativeHttpRequest],
     ) -> Vec<NativeHttpResponse> {
+        if !self.check_network_allowed() {
+            return requests
+                .iter()
+                .map(Self::permission_denied_http_response)
+                .collect();
+        }
         self.http_engine
             .lock()
             .map_or_else(|_| Vec::new(), |mut engine| engine.execute_batch(requests))
+    }
+
+    fn permission_denied_http_response(request: &NativeHttpRequest) -> NativeHttpResponse {
+        NativeHttpResponse {
+            status: 403,
+            status_text: String::from("Forbidden"),
+            body: String::from(
+                "Permission 'network' denied by application permissions.manifest.json.",
+            ),
+            headers: std::collections::HashMap::new(),
+            transport: String::from("permission-denied"),
+            call_kind: request.call_kind,
+            cached: false,
+        }
     }
 
     pub fn download_files_parallel(&self, pairs: &[(String, PathBuf)]) -> Vec<bool> {
@@ -299,5 +404,35 @@ mod tests {
         assert_eq!(res.status, 200);
         assert_eq!(res.body, r#"{"ok":true}"#);
         assert_eq!(desktop.http_history().len(), 1);
+    }
+
+    #[test]
+    fn enforces_runtime_capability_manifest_and_blocks_denied_network_requests() {
+        let mut desktop = DesktopServices::with_app_config("strict-app", AppPermissions::minimal());
+        assert_eq!(desktop.app_id(), "strict-app");
+        assert!(!desktop.check_network_allowed());
+        assert!(!desktop.check_sqlite_allowed());
+        assert!(!desktop.check_clipboard_allowed());
+        assert!(!desktop.check_notifications_allowed());
+        assert!(!desktop.check_filesystem_dialogs_allowed());
+        assert!(!desktop.check_filesystem_xdg_allowed());
+        assert!(!desktop.check_compute_allowed());
+
+        desktop.set_clipboard("should-not-write");
+        assert_eq!(desktop.clipboard(), "");
+        desktop.send_notification("Blocked", "Body", None);
+        assert_eq!(desktop.notifications().len(), 0);
+        assert_eq!(desktop.open_file_dialog("Open", "/tmp/a"), "");
+
+        let req = NativeHttpRequest::new("GET", "https://pokeapi.co/api/v2/pokemon/pikachu");
+        let blocked = desktop.execute_http(&req);
+        assert_eq!(blocked.status, 403);
+        assert_eq!(blocked.status_text, "Forbidden");
+        assert_eq!(blocked.transport, "permission-denied");
+        assert_eq!(desktop.http_history().len(), 0);
+
+        let batch = desktop.execute_http_batch(&[req]);
+        assert_eq!(batch.len(), 1);
+        assert_eq!(batch[0].status, 403);
     }
 }

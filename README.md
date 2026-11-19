@@ -76,7 +76,8 @@ ng-native-engine/
 │   ├── lib.rs                    # Library entry point & module declarations
 │   ├── main.rs                   # Native engine runner, GTK4 event loop & HMR IPC handler
 │   ├── config/
-│   │   └── mod.rs                # Angular CLI (angular.json) native target parser
+│   │   ├── mod.rs                # Angular CLI (angular.json), Nx (project.json), & runtime config resolver
+│   │   └── permissions.rs        # Build-time AppPermissions manifest parser & least-privilege serializer
 │   ├── desktop/
 │   │   ├── mod.rs                # Desktop OS hub (Theme, Clipboard, Notifications, Dialogs, HTTP, SQLite, Env, Compute, FS)
 │   │   ├── compute_pool.rs       # Multithreaded Rust compute pool (fuzzy filtering & 64-bit FNV-1a hashing)
@@ -126,12 +127,14 @@ ng-native-engine/
 │       ├── scene_exec.rs         # Structural scene instruction executor & handle table (SRP)
 │       └── parser.rs             # Bytecode (.ngb) instruction IR & syntax parser
 ├── packages/
-│   ├── platform-native/          # @ng-native/platform (Renderer2, IMAGE_LOADER, Title, ViewportScroller, Locale, KeyEvents, ErrorHandler)
+│   ├── platform-native/          # @ng-native/platform (Renderer2, NativeStorage, NativeAriaAnnouncer, DevToolsHook, Title, Locale)
 │   ├── forms-native/             # @ng-native/forms ControlValueAccessor directives
 │   ├── router-native/            # @ng-native/router (NativePlatformLocation, NativeTitleStrategy, NativeStackRouteReuseStrategy)
 │   ├── http-native/              # @ng-native/http (NativeHttpBackend, provideHttpClient features, createNativeHttpResource)
 │   ├── desktop-native/           # @ng-native/desktop (Desktop, SQLite, Network, Compute, FileSystem, DropTarget)
-│   └── builders-native/          # @ng-native/builders (Angular 22 Architect builder, schema, AST compilers, HMR & dev server)
+│   └── builders-native/          # @ng-native/builders (Angular/Nx resolver, AST permissions, CLI, schematics & HMR)
+├── docs/
+│   └── ECOSYSTEM_COMPATIBILITY.md # Integration guide for NgRx, Angular Aria, CDK, Angular Material & Nx
 ├── docker/
 │   ├── Dockerfile.ubuntu-gtk4    # Ubuntu 24.04 container image (GTK4 + Libadwaita + JSC + libsoup3 + SQLite3 + Xvfb)
 │   ├── Dockerfile.fedora-gtk4    # Fedora 41 container image (GTK4 + Libadwaita + WebKitGTK 6.0 + libsoup3 + SQLite3 + Xvfb)
@@ -139,6 +142,8 @@ ng-native-engine/
 │   ├── Dockerfile.macos-cross    # macOS (aarch64-apple-darwin & x86_64-apple-darwin) cross-target container
 │   └── docker-compose.kvm-os.yml # KVM-accelerated Windows 11 & macOS desktop VM containers (dockurr/windows & dockurr/macos)
 ├── scripts/
+│   ├── build-packages.mjs        # Angular Package Format (APF) partial-Ivy compiler (dist/packages/*)
+│   ├── generate-release-notes.mjs # Engine vs Pokédex Demo release changelog builder
 │   └── test-containers.sh        # Multi-OS container test runner (ubuntu | fedora | windows | macos | all)
 ├── examples/
 │   └── counter-app/              # Pure Angular 22 Pokédex showcase application
@@ -228,22 +233,24 @@ NG_NATIVE_BATCH=1 cargo run
 | Command                                     | Description                                                             |
 | :------------------------------------------ | :---------------------------------------------------------------------- |
 | `pnpm run dev`                              | Watch Angular files & hot-reload native GTK4 window via Unix socket     |
+| `pnpm run build:packages`                   | Compile all 6 `@ng-native/*` packages in Angular Package Format (APF)   |
 | `pnpm run check`                            | Run full verification gate (OxFmt + OxLint + ESLint + Clippy + Test)    |
 | `pnpm run package:linux`                    | Build bundle and stage Linux `.deb`, AppImage, and Flatpak packages     |
 | `pnpm run format:all`                       | Format both TypeScript/Angular (`oxfmt`) and Rust (`cargo fmt`)         |
 | `pnpm run format`                           | Format TypeScript, HTML, CSS, JSON, and Markdown via `oxfmt`            |
 | `pnpm run format:check`                     | Verify formatting with `oxfmt`                                          |
 | `pnpm run lint`                             | Lint TypeScript & Angular templates via `oxlint` + `angular-eslint`     |
-| `pnpm run test`                             | Run all 43 Vitest specs for packages and showcase app                   |
+| `pnpm run test`                             | Run all 48 Vitest specs for packages and showcase app                   |
 | `pnpm run test:containers`                  | Run Xvfb + GTK4 + FFI test suite in Ubuntu 24.04 & Fedora 41 containers |
 | `cargo fmt --all -- --check`                | Verify Rust formatting                                                  |
 | `cargo clippy --all-targets -- -D warnings` | Run strict Rust Clippy lints (pedantic + nursery, zero warnings)        |
-| `cargo test`                                | Execute all 40 unit tests + 19 E2E integration tests in Rust            |
+| `cargo test`                                | Execute all 50 unit tests + 20 E2E integration tests in Rust            |
 
 ---
 
-## 🗺️ Roadmap & Changelog
+## 🗺️ Roadmap, Ecosystem Compatibility & Changelog
 
+- See [**ECOSYSTEM_COMPATIBILITY.md**](./docs/ECOSYSTEM_COMPATIBILITY.md) for integration with **NgRx**, **Angular Aria**, **Angular CDK**, **Angular Material** gap analysis, and **Nx**.
 - See [**ROADMAP.md**](./ROADMAP.md) for the complete technical analysis and phased milestones to reach **100% Angular ecosystem compatibility** on Linux, Windows, and macOS.
 - See [**CHANGELOG.md**](./CHANGELOG.md) for release notes and detailed version history.
 

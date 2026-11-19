@@ -170,8 +170,13 @@ pub struct Gtk4Sys {
 
 impl Gtk4Sys {
     #[cfg(target_os = "linux")]
-    #[allow(clippy::too_many_lines)]
     pub fn try_load() -> Option<Self> {
+        Self::try_load_with_app_id("ng-desktop-app")
+    }
+
+    #[cfg(target_os = "linux")]
+    #[allow(clippy::too_many_lines)]
+    pub fn try_load_with_app_id(app_id: &str) -> Option<Self> {
         unsafe {
             let gtk_lib = Self::open_lib(c"libgtk-4.so.1")?;
             let gobject_lib = Self::open_lib(c"libgobject-2.0.so.0")?;
@@ -180,7 +185,9 @@ impl Gtk4Sys {
 
             let g_set_prgname: unsafe extern "C" fn(*const c_char) =
                 Self::load_fn(glib_lib, c"g_set_prgname")?;
-            g_set_prgname(c"ng-linux-counter".as_ptr());
+            let prg_cstr = std::ffi::CString::new(app_id)
+                .unwrap_or_else(|_| std::ffi::CString::from(c"ng-desktop-app"));
+            g_set_prgname(prg_cstr.as_ptr());
 
             let gtk_init_check: unsafe extern "C" fn() -> c_int =
                 Self::load_fn(gtk_lib, c"gtk_init_check")?;
@@ -455,7 +462,14 @@ impl Gtk4Sys {
     }
 
     #[cfg(not(target_os = "linux"))]
-    pub fn try_load() -> Option<Self> {
+    #[must_use]
+    pub const fn try_load() -> Option<Self> {
+        None
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[must_use]
+    pub const fn try_load_with_app_id(_app_id: &str) -> Option<Self> {
         None
     }
 

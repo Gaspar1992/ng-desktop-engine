@@ -5,6 +5,13 @@ This project adheres to [Conventional Commits](https://www.conventionalcommits.o
 
 ## [Unreleased]
 
+### Features (Phase 11 — Workspace-Agnostic Config, Least-Privilege Permissions, Ecosystem Bridges & APF Packaging)
+
+- **config & runtime:** eliminate hardcoded `"ng-linux-counter"`, `"angular.json"`, and `"0.2.0"` defaults across `src/config/mod.rs`, `src/main.rs`, `src/desktop/mod.rs`, `src/platforms/{gtk4_sys,linux_gtk,mod}.rs`, `src/runtime/{bootstrap_js,mod}.rs`, and `packages/builders-native/src/workspace-resolver.mjs`; add support for **Angular CLI (`angular.json`)**, **Nx (`project.json` / `nx.json`)**, `ng-desktop.runtime.json`, `--version`, `--permissions-report`, and `NG_DESKTOP_*` overrides.
+- **security & permissions:** add build-time AST capability analysis (`packages/builders-native/src/permission-analyzer.mjs` via `oxc-parser`) + `src/config/permissions.rs` (`AppPermissions`) with `mode: 'auto' | 'strict'` and `allow`/`deny` overrides; enforce network, dialog, clipboard, and notification capabilities in `DesktopServices`; remove default Windows `runFullTrust` and unrestricted host capabilities in `src/packager/mod.rs`, emitting least-privilege `AppxManifest.xml`, macOS `Entitlements.plist` (`app-sandbox`), Linux `AppArmor` profiles, and Flatpak manifests.
+- **ecosystem:** extend `NativeElementNode` with WAI-ARIA/DOM attributes, focus tracking, `classList`, `contains()`, and event listeners; add `NativeStorage`, `NativeAriaAnnouncer`, `NativeDevToolsHook`, `createNativeDocument()`, and `provideNativeEcosystemCompat()` in `@ng-native/platform`; publish compatibility & Material gap guide in `docs/ECOSYSTEM_COMPATIBILITY.md`.
+- **packaging & cli:** add Angular Package Format (APF) partial-Ivy compiler pipeline (`tsconfig.lib.json`, `scripts/build-packages.mjs`, `pnpm run build:packages`), `ng-desktop` CLI (`packages/builders-native/bin/ng-desktop.mjs`), and `ng add @ng-native/builders` schematic (`packages/builders-native/schematics/ng-add`); update `.github/workflows/release.yml` to pack compiled APF bundles and least-privilege installers across **118 automated tests** (50 Rust unit + 20 Rust integration + 48 Vitest).
+
 ### Features & Governance (Security Policy, Third-Party Collaboration, & Automated Auditing)
 
 - **governance & security:** add `SECURITY.md` (supported versions, 48h/7d SLAs, private vulnerability reporting, & Rust FFI/Arena threat model), `CONTRIBUTING.md` (SOLID, safe Rust, cross-OS parity & `>=22.0.0` Angular guidelines), `CODE_OF_CONDUCT.md` (Contributor Covenant v2.1), `SUPPORT.md`, and `LICENSE` (MIT).
