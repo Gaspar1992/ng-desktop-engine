@@ -255,12 +255,12 @@ fn nivel3_compute_pool_xdg_fs_watcher_and_native_drop_target() {
     let mut engine = RenderEngine::new(HeadlessBackend::default());
     let mut runtime = JsRuntime::new();
     let js_bundle = r#"
-        const win = __NG_NATIVE__.createElement("win", "ng-window");
-        const dropZone = __NG_NATIVE__.createElement("dropZone", "ng-box");
-        const lbl = __NG_NATIVE__.createElement("lbl", "ng-label");
-        __NG_NATIVE__.setAttribute(dropZone, "drop-target", "true");
-        __NG_NATIVE__.appendChild(dropZone, lbl);
-        __NG_NATIVE__.appendChild(win, dropZone);
+        __NG_NATIVE__.createElement("win", "ng-window");
+        __NG_NATIVE__.createElement("dropZone", "ng-box");
+        __NG_NATIVE__.createElement("lbl", "ng-label");
+        __NG_NATIVE__.setAttribute("dropZone", "drop-target", "true");
+        __NG_NATIVE__.appendChild("dropZone", "lbl");
+        __NG_NATIVE__.appendChild("win", "dropZone");
 
         const cfgPath = __NG_NATIVE__.fsResolvePath("data", "favorites.json");
         __NG_NATIVE__.fsWatchFile(cfgPath);
@@ -268,10 +268,10 @@ fn nivel3_compute_pool_xdg_fs_watcher_and_native_drop_target() {
         const changed = __NG_NATIVE__.fsPollChangedFiles();
         const scored = __NG_NATIVE__.computeFuzzyFilter(["bulbasaur", "pikachu"], "pika", 1);
         const topName = scored.length > 0 ? scored[0].value : "none";
-        __NG_NATIVE__.setText(lbl, `Top:${topName}|Changed:${changed.length}`);
+        __NG_NATIVE__.setText("lbl", `Top:${topName}|Changed:${changed.length}`);
 
-        __NG_NATIVE__.listen(dropZone, "file-drop", function(evt) {
-            __NG_NATIVE__.setText(lbl, `Dropped:${evt.value}`);
+        __NG_NATIVE__.listen("dropZone", "file-drop", function(evt) {
+            __NG_NATIVE__.setText("lbl", `Dropped:${evt.value}`);
         });
     "#;
     runtime.eval_js(&mut engine, js_bundle).unwrap();
