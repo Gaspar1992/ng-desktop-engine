@@ -3,16 +3,16 @@ import {
   executeNativeBuilder,
   parseTemplateHtml,
   resolveNativeBuilderConfig,
-} from '@ng-native/builders';
+} from '@ng-desktop/builders';
 
-describe('Phase 6 — @ng-native/builders & Distribution Orchestration', () => {
+describe('Phase 6 — @ng-desktop/builders & Distribution Orchestration', () => {
   it('generates minimal angular.json architect.native config with OS/CPU defaults', () => {
     const cfg = createNativeTargetConfig({
       os: 'linux',
       arch: 'x86_64',
     });
 
-    expect(cfg.builder).toBe('@ng-native/builders:application');
+    expect(cfg.builder).toBe('@ng-desktop/builders:application');
     expect(cfg.options.os).toBe('linux');
     expect(cfg.options.arch).toBe('x86_64');
 

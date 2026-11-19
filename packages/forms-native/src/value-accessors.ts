@@ -1,6 +1,6 @@
 import { Directive, ElementRef, forwardRef, inject, OnDestroy, Renderer2 } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
-import { NativeElementNode } from '@ng-native/platform';
+import { NativeElementNode } from '@ng-desktop/platform';
 
 interface NativeWidgetEvent {
   type?: string;

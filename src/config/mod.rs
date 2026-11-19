@@ -424,7 +424,7 @@ mod tests {
             "sourceRoot": "apps/nx-invoice-app/src",
             "targets": {
                 "native": {
-                    "executor": "@ng-native/builders:native",
+                    "executor": "@ng-desktop/builders:native",
                     "options": {
                         "version": "1.4.2",
                         "targetPlatform": "macos-appkit",

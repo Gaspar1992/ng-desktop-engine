@@ -51,7 +51,7 @@
           "defaultConfiguration": "production"
         },
         "native": {
-          "builder": "@ng-native/builders:application",
+          "builder": "@ng-desktop/builders:application",
           "options": {
             "os": "linux",
             "arch": "x86_64"

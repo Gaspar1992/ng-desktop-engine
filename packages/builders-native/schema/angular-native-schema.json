@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "ng-native://config/angular-native-schema.json",
-  "title": "Angular + NgNative Extended Workspace Configuration",
+  "$id": "ng-desktop://config/angular-native-schema.json",
+  "title": "Angular + NgDesktop Extended Workspace Configuration",
   "description": "Extends the official Angular CLI workspace schema with minimal native desktop OS, CPU architecture, and packaging configuration.",
   "allOf": [
     {
@@ -24,10 +24,10 @@
                       "builder": {
                         "type": "string",
                         "enum": [
-                          "@ng-native/builders:application",
-                          "@ng-native/builders:build",
-                          "@ng-native/builders:engine",
-                          "@ng-native/builders:dev-server"
+                          "@ng-desktop/builders:application",
+                          "@ng-desktop/builders:build",
+                          "@ng-desktop/builders:engine",
+                          "@ng-desktop/builders:dev-server"
                         ]
                       },
                       "options": {

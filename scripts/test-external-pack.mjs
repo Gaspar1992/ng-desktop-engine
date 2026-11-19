@@ -58,9 +58,17 @@ async function main() {
         `Missing APF output directory '${pkgPath}'. Run 'pnpm run build:packages' first.`,
       );
       const pkgJson = JSON.parse(readFileSync(resolve(pkgPath, 'package.json'), 'utf8'));
+      assertCondition(
+        pkgJson.name.startsWith('@ng-desktop/'),
+        `${pkgDir} unexpected package name '${pkgJson.name}'`,
+      );
       const out = runNpmPack(pkgPath, tarballsDir);
       const tgzName = out.split('\n').pop()?.trim();
       assertCondition(Boolean(tgzName), `npm pack returned empty filename for ${pkgDir}`);
+      assertCondition(
+        tgzName.startsWith('ng-desktop-'),
+        `${pkgDir} expected tarball 'ng-desktop-*.tgz', got '${tgzName}'`,
+      );
       const tgzAbs = join(tarballsDir, tgzName);
       packedFiles.set(pkgDir, { tgzAbs, pkgJson });
 
@@ -99,7 +107,7 @@ async function main() {
     const analysis = buildersMod.analyzeSourcePermissions([
       {
         file: 'app/home.ts',
-        content: `import { NativeSqliteService } from '@ng-native/desktop'; setClipboard('hi');`,
+        content: `import { NativeSqliteService } from '@ng-desktop/desktop'; setClipboard('hi');`,
       },
     ]);
     assertCondition(
@@ -122,7 +130,7 @@ async function main() {
         name: 'demo-app',
         projectType: 'application',
         sourceRoot: 'apps/demo-app/src',
-        targets: { native: { executor: '@ng-native/builders:application', options: {} } },
+        targets: { native: { executor: '@ng-desktop/builders:application', options: {} } },
       }),
       'utf8',
     );

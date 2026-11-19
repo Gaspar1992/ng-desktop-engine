@@ -25,7 +25,7 @@ Instead, report security findings confidentially through **GitHub Private Vulner
 
 Please include as much of the following information as possible:
 
-1. Affected component (`ng-desktop-engine` Rust core, `@ng-native/platform`, `@ng-native/forms`, `@ng-native/router`, `@ng-native/http`, `@ng-native/desktop`, `@ng-native/builders`, or packaged installers `.deb` / `.exe` / `.dmg`).
+1. Affected component (`ng-desktop-engine` Rust core, `@ng-desktop/platform`, `@ng-desktop/forms`, `@ng-desktop/router`, `@ng-desktop/http`, `@ng-desktop/desktop`, `@ng-desktop/builders`, or packaged installers `.deb` / `.exe` / `.dmg`).
 2. Operating system, architecture, display server (Wayland / X11 / WinUI 3 / AppKit), and Rust / Node / Angular versions.
 3. Minimal reproduction steps, `.ngb` payload, or proof-of-concept exploit.
 4. Potential impact (e.g., memory corruption across FFI, path traversal, arbitrary command execution, TLS/XSRF bypass).

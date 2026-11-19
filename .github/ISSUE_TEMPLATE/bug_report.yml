@@ -1,5 +1,5 @@
 name: 🐛 Bug Report
-description: Report a bug, crash, FFI issue, or template compilation failure in ng-desktop-engine or @ng-native/*.
+description: Report a bug, crash, FFI issue, or template compilation failure in ng-desktop-engine or @ng-desktop/*.
 title: '[Bug]: '
 labels: ['bug', 'triage']
 body:
@@ -14,12 +14,12 @@ body:
       description: Which part of the monorepo is affected?
       options:
         - ng-desktop-engine (Rust Core / Engine / Runtime)
-        - '@ng-native/platform (NativeRenderer2, Title, ViewportScroller, ImageLoader)'
-        - '@ng-native/forms (ControlValueAccessor directives)'
-        - '@ng-native/router (NativePlatformLocation, TitleStrategy, ReuseStrategy)'
-        - '@ng-native/http (NativeHttpBackend, libsoup-3.0, httpResource)'
-        - '@ng-native/desktop (SQLite, Network, Compute, FileSystem, DropTarget)'
-        - '@ng-native/builders (AST Compilers, Architect Builder, HMR Client)'
+        - '@ng-desktop/platform (NativeRenderer2, Title, ViewportScroller, ImageLoader)'
+        - '@ng-desktop/forms (ControlValueAccessor directives)'
+        - '@ng-desktop/router (NativePlatformLocation, TitleStrategy, ReuseStrategy)'
+        - '@ng-desktop/http (NativeHttpBackend, libsoup-3.0, httpResource)'
+        - '@ng-desktop/desktop (SQLite, Network, Compute, FileSystem, DropTarget)'
+        - '@ng-desktop/builders (AST Compilers, Architect Builder, HMR Client)'
         - Pokédex Demo (examples/counter-app / .deb / .exe / .dmg)
     validations:
       required: true

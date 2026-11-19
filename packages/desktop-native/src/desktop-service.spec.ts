@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { ensureNgNativeBridge } from '@ng-native/platform';
+import { ensureNgNativeBridge } from '@ng-desktop/platform';
 import { NativeComputeService } from './compute-service';
 import { NativeDesktopService, provideNativeDesktop } from './desktop-service';
 import { NativeDropTargetDirective } from './drop-target.directive';
@@ -7,7 +7,7 @@ import { NativeFileSystemService } from './fs-service';
 import { NativeNetworkService } from './network-service';
 import { NativeSqliteService } from './sqlite-service';
 
-describe('@ng-native/desktop Nivel 1-3 services', () => {
+describe('@ng-desktop/desktop Nivel 1-3 services', () => {
   beforeEach(() => {
     ensureNgNativeBridge().__drainQueue();
     TestBed.configureTestingModule({

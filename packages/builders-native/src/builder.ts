@@ -129,14 +129,14 @@ export function resolveNativeBuilderConfig(
 
 /**
  * Generates an `angular.json` `architect.native` target configuration block
- * for `@ng-native/builders:application`.
+ * for `@ng-desktop/builders:application`.
  */
 export function createNativeTargetConfig(options: NativeBuilderOptions): {
-  builder: '@ng-native/builders:application';
+  builder: '@ng-desktop/builders:application';
   options: NativeBuilderOptions;
 } {
   return {
-    builder: '@ng-native/builders:application',
+    builder: '@ng-desktop/builders:application',
     options: {
       os: options.os ?? 'linux',
       arch: options.arch ?? 'x86_64',

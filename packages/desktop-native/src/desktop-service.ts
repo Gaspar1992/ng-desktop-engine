@@ -5,7 +5,7 @@ import {
   signal,
   WritableSignal,
 } from '@angular/core';
-import { ensureNgNativeBridge } from '@ng-native/platform';
+import { ensureNgNativeBridge } from '@ng-desktop/platform';
 import { NativeComputeService } from './compute-service';
 import { NativeFileSystemService } from './fs-service';
 import { NativeNetworkService } from './network-service';

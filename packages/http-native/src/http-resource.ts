@@ -1,5 +1,5 @@
 import { computed, Signal, signal, WritableSignal } from '@angular/core';
-import { ensureNgNativeBridge, NativeHttpRequestOptions } from '@ng-native/platform';
+import { ensureNgNativeBridge, NativeHttpRequestOptions } from '@ng-desktop/platform';
 
 export type NativeResourceStatus = 'idle' | 'loading' | 'resolved' | 'error';
 

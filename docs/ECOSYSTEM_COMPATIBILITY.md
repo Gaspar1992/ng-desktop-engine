@@ -8,25 +8,25 @@ Understanding which libraries run out of the box, which need lightweight host br
 
 ## 1. Compatibility Matrix
 
-| Ecosystem Library                                  | Status                                   | Integration Surface                                                  | Notes                                                                                                                                                                                                                               |
-| -------------------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`@ngrx/signals`** (`signalStore`, `rxMethod`)    | **Compatible**                           | Built-in Angular Signals + `provideZonelessChangeDetection()`        | Zero DOM dependency; works natively out of the box.                                                                                                                                                                                 |
-| **`@ngrx/store` & `@ngrx/effects`**                | **Compatible**                           | Core RxJS + Angular DI                                               | Use `NativeStorage` (`NATIVE_STORAGE`) for persistence meta-reducers instead of browser `window.localStorage`.                                                                                                                      |
-| **`@ngrx/store-devtools`**                         | **Compatible (via Bridge)**              | `NativeDevToolsHook` / `provideNativeEcosystemCompat()`              | Exposes `globalThis.__REDUX_DEVTOOLS_EXTENSION__` safely in JavaScriptCore / QuickJS.                                                                                                                                               |
-| **`@angular/aria`** (headless ARIA widgets)        | **Compatible**                           | `NativeElementNode` WAI-ARIA + focus APIs                            | Headless state/keyboard patterns map onto `<ng-*>` native primitives (`role`, `tabIndex`, `focus()`, `aria-*`, keyboard events).                                                                                                    |
-| **`@angular/cdk`** (`a11y`, `collections`, `bidi`) | **Partial / Compatible (Headless)**      | `NativeAriaAnnouncer`, `createNativeDocument()`, `NATIVE_DOCUMENT`   | FocusKeyManager, ListKeyManager, SelectionModel, and LiveAnnouncer patterns work with `NativeElementNode`. Browser-only CSS positioning (`Overlay` DOM portals / `CdkDragDrop` HTML events) require native window/drop equivalents. |
-| **`@angular/material`**                            | **Not Directly Compatible (Design Gap)** | See analysis below                                                   | Relies on HTML `<div>`/`<span>`, CSS Flexbox/Grid, MDC CSS tokens, inline SVG ripples, and browser DOM geometry.                                                                                                                    |
-| **Nx (`nx.json` / `project.json`)**                | **Supported**                            | `@ng-native/builders` (`resolveWorkspaceProject`) & `ng-desktop` CLI | Supported alongside Angular CLI (`angular.json`).                                                                                                                                                                                   |
+| Ecosystem Library                                  | Status                                   | Integration Surface                                                   | Notes                                                                                                                                                                                                                               |
+| -------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`@ngrx/signals`** (`signalStore`, `rxMethod`)    | **Compatible**                           | Built-in Angular Signals + `provideZonelessChangeDetection()`         | Zero DOM dependency; works natively out of the box.                                                                                                                                                                                 |
+| **`@ngrx/store` & `@ngrx/effects`**                | **Compatible**                           | Core RxJS + Angular DI                                                | Use `NativeStorage` (`NATIVE_STORAGE`) for persistence meta-reducers instead of browser `window.localStorage`.                                                                                                                      |
+| **`@ngrx/store-devtools`**                         | **Compatible (via Bridge)**              | `NativeDevToolsHook` / `provideNativeEcosystemCompat()`               | Exposes `globalThis.__REDUX_DEVTOOLS_EXTENSION__` safely in JavaScriptCore / QuickJS.                                                                                                                                               |
+| **`@angular/aria`** (headless ARIA widgets)        | **Compatible**                           | `NativeElementNode` WAI-ARIA + focus APIs                             | Headless state/keyboard patterns map onto `<ng-*>` native primitives (`role`, `tabIndex`, `focus()`, `aria-*`, keyboard events).                                                                                                    |
+| **`@angular/cdk`** (`a11y`, `collections`, `bidi`) | **Partial / Compatible (Headless)**      | `NativeAriaAnnouncer`, `createNativeDocument()`, `NATIVE_DOCUMENT`    | FocusKeyManager, ListKeyManager, SelectionModel, and LiveAnnouncer patterns work with `NativeElementNode`. Browser-only CSS positioning (`Overlay` DOM portals / `CdkDragDrop` HTML events) require native window/drop equivalents. |
+| **`@angular/material`**                            | **Not Directly Compatible (Design Gap)** | See analysis below                                                    | Relies on HTML `<div>`/`<span>`, CSS Flexbox/Grid, MDC CSS tokens, inline SVG ripples, and browser DOM geometry.                                                                                                                    |
+| **Nx (`nx.json` / `project.json`)**                | **Supported**                            | `@ng-desktop/builders` (`resolveWorkspaceProject`) & `ng-desktop` CLI | Supported alongside Angular CLI (`angular.json`).                                                                                                                                                                                   |
 
 ---
 
 ## 2. Enabling Ecosystem Compatibility Providers
 
-Import `provideNativeEcosystemCompat()` from `@ng-native/platform` alongside `provideNativePlatform()` in your root `ApplicationConfig`:
+Import `provideNativeEcosystemCompat()` from `@ng-desktop/platform` alongside `provideNativePlatform()` in your root `ApplicationConfig`:
 
 ```ts
 import { ApplicationConfig } from '@angular/core';
-import { provideNativeEcosystemCompat, provideNativePlatform } from '@ng-native/platform';
+import { provideNativeEcosystemCompat, provideNativePlatform } from '@ng-desktop/platform';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -36,7 +36,7 @@ export const appConfig: ApplicationConfig = {
 };
 ```
 
-### Exposed Tokens & Services (`@ng-native/platform`)
+### Exposed Tokens & Services (`@ng-desktop/platform`)
 
 - **`NativeStorage` / `NATIVE_STORAGE`**: Implements Web `Storage` (`getItem`, `setItem`, `removeItem`, `clear`, `key`, `length`) backed by native SQLite (`ng_native_storage`) + in-memory cache.
 - **`NativeAriaAnnouncer`**: Mirrors `@angular/cdk/a11y` `LiveAnnouncer` (`announce(message, politeness)`), queuing accessibility status events into the native bridge.
@@ -78,7 +78,7 @@ Example Nx `apps/desktop-crm/project.json` target:
   "sourceRoot": "apps/desktop-crm/src",
   "targets": {
     "native": {
-      "executor": "@ng-native/builders:application",
+      "executor": "@ng-desktop/builders:application",
       "options": {
         "targetPlatform": "linux-gtk4",
         "outputPath": "dist/apps/desktop-crm",

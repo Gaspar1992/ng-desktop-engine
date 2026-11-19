@@ -6,9 +6,9 @@ import {
   type NativeLiveQueryRef,
   NativeNetworkService,
   NativeSqliteService,
-} from '@ng-native/desktop';
-import { createNativeHttpResource } from '@ng-native/http';
-import { ensureNgNativeBridge, NativeTitleService } from '@ng-native/platform';
+} from '@ng-desktop/desktop';
+import { createNativeHttpResource } from '@ng-desktop/http';
+import { ensureNgNativeBridge, NativeTitleService } from '@ng-desktop/platform';
 import { Observable } from 'rxjs';
 
 export interface PokemonSummary {

@@ -11,7 +11,7 @@ import {
   NativeElementNode,
   NativeStorage,
   provideNativeEcosystemCompat,
-} from '@ng-native/platform';
+} from '@ng-desktop/platform';
 
 describe('Phase 11 — Ecosystem Compatibility (NgRx / Angular Aria / CDK / Storage)', () => {
   it('supports WAI-ARIA traversal, focus tracking, classList, contains, and events on NativeElementNode', () => {

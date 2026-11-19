@@ -5,6 +5,10 @@ This project adheres to [Conventional Commits](https://www.conventionalcommits.o
 
 ## [Unreleased]
 
+### Refactoring (npm Package Scope -> `@ng-desktop/*`)
+
+- **packages & release:** rename the npm package scope across all 6 Angular libraries (`@ng-desktop/platform`, `@ng-desktop/forms`, `@ng-desktop/router`, `@ng-desktop/http`, `@ng-desktop/desktop`, `@ng-desktop/builders`) and all 5 prebuilt native engine packages (`@ng-desktop/engine-*`), updating builder/schematic identifiers (`@ng-desktop/builders:application`), AST permission analyzer (while preserving `@ng-native/http` as a backward-compatible import alias), `test:pack` assertions, release notes, and GitHub Release / npm publishing globs.
+
 ### Features (Phase 12 — Prebuilt Engine Binaries, External `npm pack` E2E & npm/`crates.io` Publishing)
 
 - **prebuilt binaries (`@ng-native/builders`):** add `packages/builders-native/src/resolve-engine-binary.mjs` + `.d.mts` (`resolveEngineBinaryPath` & `ENGINE_BINARY_PACKAGES` mapping `linux-x64`, `linux-arm64`, `win32-x64`, `darwin-arm64`, `darwin-x64`) with env -> `optionalDependencies` -> local Cargo target -> `cargo run` resolution order; integrate into `dev-server.mjs` and `ng-desktop` CLI (`run` / `package`), add `builders.json`, and run `ngc.js`/`tsc` directly via `process.execPath` for seamless Windows/Linux/macOS APF builds.

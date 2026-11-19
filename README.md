@@ -64,7 +64,7 @@ A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22
 | `<ng-select>` (`ng-dropdown`, `gtk-drop-down`)         | Form Select          | `GtkDropDown`             | `Microsoft.UI.Xaml.Controls.ComboBox`        | `NSPopUpButton`       | `options` (CSV), `selected` / `value`, `(valueChange)` + `NativeNumberValueAccessor`                                              |
 | `<ng-anchor>` (`#comment`)                             | Virtual Control Flow | `GtkAnchorComment`        | `Microsoft.UI.Xaml.AnchorComment`            | `NSAnchorComment`     | `@if`, `@for`, `@switch` anchor                                                                                                   |
 
-> **Common Widget Attributes:** `visible`, `hexpand`, `vexpand`, `halign`, `valign`, `margin`, `margin-top`, `margin-bottom`, `margin-start`, `margin-end` (plus `sensitive` emitted by `@ng-native/forms` `setDisabledState`).
+> **Common Widget Attributes:** `visible`, `hexpand`, `vexpand`, `halign`, `valign`, `margin`, `margin-top`, `margin-bottom`, `margin-start`, `margin-end` (plus `sensitive` emitted by `@ng-desktop/forms` `setDisabledState`).
 
 ---
 
@@ -127,12 +127,12 @@ ng-native-engine/
 │       ├── scene_exec.rs         # Structural scene instruction executor & handle table (SRP)
 │       └── parser.rs             # Bytecode (.ngb) instruction IR & syntax parser
 ├── packages/
-│   ├── platform-native/          # @ng-native/platform (Renderer2, NativeStorage, NativeAriaAnnouncer, DevToolsHook, Title, Locale)
-│   ├── forms-native/             # @ng-native/forms ControlValueAccessor directives
-│   ├── router-native/            # @ng-native/router (NativePlatformLocation, NativeTitleStrategy, NativeStackRouteReuseStrategy)
-│   ├── http-native/              # @ng-native/http (NativeHttpBackend, provideHttpClient features, createNativeHttpResource)
-│   ├── desktop-native/           # @ng-native/desktop (Desktop, SQLite, Network, Compute, FileSystem, DropTarget)
-│   └── builders-native/          # @ng-native/builders (Angular/Nx resolver, AST permissions, CLI, schematics & HMR)
+│   ├── platform-native/          # @ng-desktop/platform (Renderer2, NativeStorage, NativeAriaAnnouncer, DevToolsHook, Title, Locale)
+│   ├── forms-native/             # @ng-desktop/forms ControlValueAccessor directives
+│   ├── router-native/            # @ng-desktop/router (NativePlatformLocation, NativeTitleStrategy, NativeStackRouteReuseStrategy)
+│   ├── http-native/              # @ng-desktop/http (NativeHttpBackend, provideHttpClient features, createNativeHttpResource)
+│   ├── desktop-native/           # @ng-desktop/desktop (Desktop, SQLite, Network, Compute, FileSystem, DropTarget)
+│   └── builders-native/          # @ng-desktop/builders (Angular/Nx resolver, AST permissions, CLI, schematics & HMR)
 ├── docs/
 │   └── ECOSYSTEM_COMPATIBILITY.md # Integration guide for NgRx, Angular Aria, CDK, Angular Material & Nx
 ├── docker/
@@ -142,7 +142,7 @@ ng-native-engine/
 │   ├── Dockerfile.macos-cross    # macOS (aarch64-apple-darwin & x86_64-apple-darwin) cross-target container
 │   └── docker-compose.kvm-os.yml # KVM-accelerated Windows 11 & macOS desktop VM containers (dockurr/windows & dockurr/macos)
 ├── scripts/
-│   ├── build-engine-packages.mjs # Stages @ng-native/engine-* platform binary packages
+│   ├── build-engine-packages.mjs # Stages @ng-desktop/engine-* platform binary packages
 │   ├── build-packages.mjs        # Angular Package Format (APF) partial-Ivy compiler (dist/packages/*)
 │   ├── generate-release-notes.mjs # Engine vs Pokédex Demo release changelog builder
 │   ├── test-containers.sh        # Multi-OS container test runner (ubuntu | fedora | windows | macos | all)
@@ -235,8 +235,8 @@ NG_NATIVE_BATCH=1 cargo run
 | Command                                             | Description                                                             |
 | :-------------------------------------------------- | :---------------------------------------------------------------------- |
 | `pnpm run dev`                                      | Watch Angular files & hot-reload native GTK4 window via Unix socket     |
-| `pnpm run build:packages`                           | Compile all 6 `@ng-native/*` packages in Angular Package Format (APF)   |
-| `pnpm run build:engine-packages -- --all-manifests` | Stage `@ng-native/engine-*` optional binary packages                    |
+| `pnpm run build:packages`                           | Compile all 6 `@ng-desktop/*` packages in Angular Package Format (APF)  |
+| `pnpm run build:engine-packages -- --all-manifests` | Stage `@ng-desktop/engine-*` optional binary packages                   |
 | `pnpm run test:pack`                                | Pack `.tgz` archives and validate external out-of-monorepo consumption  |
 | `pnpm run check`                                    | Run full verification gate (OxFmt + OxLint + ESLint + Clippy + Test)    |
 | `pnpm run package:linux`                            | Build bundle and stage Linux `.deb`, AppImage, and Flatpak packages     |
@@ -262,7 +262,7 @@ NG_NATIVE_BATCH=1 cargo run
 
 ## 🤝 Contributing, Security & Governance
 
-We welcome contributions across Rust core, platform backends (`GTK4`, `WinUI 3`, `AppKit`), Angular 22+ packages (`@ng-native/*`), and packaging/containers:
+We welcome contributions across Rust core, platform backends (`GTK4`, `WinUI 3`, `AppKit`), Angular 22+ packages (`@ng-desktop/*`), and packaging/containers:
 
 - **Contributing Guidelines:** Read [**CONTRIBUTING.md**](./CONTRIBUTING.md) for setup, SOLID/FFI standards, and verification commands (`pnpm run check`).
 - **Security Policy & Private Disclosure:** See [**SECURITY.md**](./SECURITY.md) — **never report security vulnerabilities publicly**; use [GitHub Private Vulnerability Reporting](https://github.com/Gaspar1992/ng-desktop-engine/security/advisories/new).

@@ -6,6 +6,6 @@ contact_links:
   - name: 🗺️ Architectural Roadmap & Milestones
     url: https://github.com/Gaspar1992/ng-desktop-engine/blob/main/ROADMAP.md
     about: Check planned phases (Windows WinUI 3, macOS AppKit, Angular compatibility, and publishing milestones) before proposing new work.
-  - name: 📦 Download Prebuilt Releases (.deb / .exe / .dmg / @ng-native/*.tgz)
+  - name: 📦 Download Prebuilt Releases (.deb / .exe / .dmg / @ng-desktop/*.tgz)
     url: https://github.com/Gaspar1992/ng-desktop-engine/releases
     about: Download ready-to-run Pokédex demo installers and individual Angular 22+ package tarballs.

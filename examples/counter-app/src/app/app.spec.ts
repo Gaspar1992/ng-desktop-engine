@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
-import { provideHttpClient } from '@ng-native/http';
-import { ensureNgNativeBridge, NativeTitleService } from '@ng-native/platform';
+import { provideHttpClient } from '@ng-desktop/http';
+import { ensureNgNativeBridge, NativeTitleService } from '@ng-desktop/platform';
 import { firstValueFrom } from 'rxjs';
 import { App } from './app';
 import { PokedexService } from './pokedex.service';

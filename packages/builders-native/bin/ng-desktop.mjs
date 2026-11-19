@@ -55,7 +55,7 @@ function handleInit(args) {
   const targetPlatform = getFlag(args, '--target') || 'linux-gtk4';
   const projectHint = getFlag(args, '--project');
   const nativeConfigBlock = {
-    builder: '@ng-native/builders:application',
+    builder: '@ng-desktop/builders:application',
     options: {
       targetPlatform,
       permissions: { mode: 'auto' },
@@ -81,7 +81,7 @@ function handleInit(args) {
     const raw = JSON.parse(readFileSync(nxProjectPath, 'utf8'));
     raw.targets ??= {};
     raw.targets.native ??= {
-      executor: '@ng-native/builders:application',
+      executor: '@ng-desktop/builders:application',
       options: nativeConfigBlock.options,
     };
     writeFileSync(nxProjectPath, `${JSON.stringify(raw, null, 2)}\n`, 'utf8');

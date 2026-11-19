@@ -261,7 +261,7 @@ function main() {
     buildSinglePackage(pkg, builtPackages);
   }
   process.stdout.write(
-    `[APF Build] Successfully compiled ${builtPackages.length} @ng-native/* packages.\n`,
+    `[APF Build] Successfully compiled ${builtPackages.length} @ng-desktop/* packages.\n`,
   );
 }
 

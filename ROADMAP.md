@@ -13,7 +13,7 @@ When `@angular/platform-browser` is removed, Angular's Ivy runtime still require
 - **Why:** To execute real compiled Angular bundles (`main.js` output by `@angular/build:application`), the Rust binary must embed a spec-compliant ES2024+ JS engine (QuickJS-NG via `rquickjs` or V8 via `deno_core`).
 - **Event Loop Unification:** Angular Zoneless change detection schedules UI refreshes via `queueMicrotask`, `Promise.then`, and `setTimeout` / `requestAnimationFrame`. The JS engine's job queue must be hooked directly into GTK4's `glib::MainContext` (`g_idle_add` / `g_timeout_add`), ensuring every microtask checkpoint flushes `RenderEngine::flush_frame()` on the main thread without race conditions.
 
-### 2. Custom Angular Platform (`@ng-native/platform`) & `RendererFactory2`
+### 2. Custom Angular Platform (`@ng-desktop/platform`) & `RendererFactory2`
 
 - **Why:** Angular's component tree interacts with the host environment exclusively through `PlatformRef`, `RendererFactory2`, `Renderer2`, `Sanitizer`, `ErrorHandler`, and `ApplicationRef`.
 - **What Must Be Implemented in TypeScript (`packages/platform-native`):**
@@ -32,7 +32,7 @@ When `@angular/platform-browser` is removed, Angular's Ivy runtime still require
 - **Why:** Angular `FormsModule` and `ReactiveFormsModule` (`FormControl`, `FormGroup`, `Validators`) do not depend on HTML `<input>` directly — they depend on **`ControlValueAccessor` (`CVA`)** directives.
 - **What Must Be Implemented:**
   - Native input widgets in Rust/GTK4: `<ng-entry>` (`GtkEntry` / `GtkPasswordEntry`), `<ng-switch>` (`GtkSwitch`), `<ng-check>` (`GtkCheckButton`), `<ng-Scale>` (`GtkScale`), `<ng-dropdown>` (`GtkDropDown`), `<ng-text-view>` (`GtkTextView`).
-  - Default `ControlValueAccessor` directives in `@ng-native/forms` that listen to native GTK4 signals (`notify::text`, `notify::active`, `notify::selected`) and call `onChange` / `onTouched`.
+  - Default `ControlValueAccessor` directives in `@ng-desktop/forms` that listen to native GTK4 signals (`notify::text`, `notify::active`, `notify::selected`) and call `onChange` / `onTouched`.
 
 ### 5. Navigation & Multi-Window Routing (`@angular/router`)
 
@@ -78,11 +78,11 @@ When `@angular/platform-browser` is removed, Angular's Ivy runtime still require
   - [x] `<ng-grid>` (`GtkGrid`)
   - [x] `<ng-separator>` (`GtkSeparator`)
 
-### Phase 3: Embedded JS Engine & Custom `@ng-native/platform` (Completed ✅)
+### Phase 3: Embedded JS Engine & Custom `@ng-desktop/platform` (Completed ✅)
 
 - [x] **Decoupled JS Engine Architecture (`JsEngineBackend`):** Support both Apple/WebKit **JavaScriptCore (`JscEngine` via `libjavascriptcoregtk-6.0.so.1`)** with 4-tier JIT and portable **QuickJS (`QuickJsEngine`)**, selectable via `angular.json` (`"jsEngine": "jsc" | "quickjs"`).
 - [x] **Bridge `glib::MainContext` + JS Microtask & Event Queue:** Wire `setTimeout`, `clearTimeout`, `queueMicrotask`, `console.*`, and live event closures (`__dispatchEvent`) in Rust so `provideZonelessChangeDetection()` runs natively.
-- [x] **Create `@ng-native/platform` TypeScript Package (`packages/platform-native`):**
+- [x] **Create `@ng-desktop/platform` TypeScript Package (`packages/platform-native`):**
   - [x] Implement `NativeRendererFactory2` and `NativeRenderer2` (all 19 `Renderer2` methods) over `globalThis.__NG_NATIVE__`.
   - [x] Support Angular `@if`, `@for`, `@switch`, and `@defer` blocks using `insert_before` and comment/anchor nodes.
   - [x] Provide `provideNativePlatform()` and `bootstrapNativeApplication()`.
@@ -95,24 +95,24 @@ When `@angular/platform-browser` is removed, Angular's Ivy runtime still require
   - [x] `<ng-checkbox>` (`GtkCheckButton` with `toggled` signal)
   - [x] `<ng-slider>` (`GtkScale` with `value-changed` signal)
   - [x] `<ng-select>` (`GtkDropDown` with `notify::selected` signal)
-- [x] **`@ng-native/forms` ControlValueAccessors (`packages/forms-native`):**
+- [x] **`@ng-desktop/forms` ControlValueAccessors (`packages/forms-native`):**
   - [x] Implement `NativeTextValueAccessor`, `NativeBooleanValueAccessor`, and `NativeNumberValueAccessor` for native widgets.
   - [x] Full compatibility with `FormsModule` (`[(ngModel)]`), `ReactiveFormsModule` (`formControl`, `formGroup`, `Validators`), and Angular Signal Forms.
 
 ### Phase 5: `@angular/router`, `@angular/common/http`, & Desktop OS APIs (Completed ✅)
 
-- [x] **`@ng-native/router` (`NativePlatformLocation` — `packages/router-native`):**
+- [x] **`@ng-desktop/router` (`NativePlatformLocation` — `packages/router-native`):**
   - [x] Support `<router-outlet>`, `routerLink`, route guards, resolvers, and lazy loading without `window.location`.
-- [x] **`@ng-native/http` (`NativeHttpBackend` — `packages/http-native`):**
+- [x] **`@ng-desktop/http` (`NativeHttpBackend` — `packages/http-native`):**
   - [x] Implement HTTP client bridge in Rust (`DesktopServices` & `__NG_NATIVE__.httpRequest`) feeding `HttpClient`, `HttpInterceptorFn`, and `httpResource()`.
-- [x] **Linux Desktop System Services (`@ng-native/desktop` — `packages/desktop-native`):**
+- [x] **Linux Desktop System Services (`@ng-desktop/desktop` — `packages/desktop-native`):**
   - [x] Native File Dialogs (`openFileDialog` / `saveFileDialog`).
   - [x] Desktop Notifications (`notify`) & System Clipboard (`getClipboardText` / `setClipboardText`).
   - [x] System Dark/Light Theme Signal (`theme` WritableSignal) synchronized with `DesktopServices`.
 
 ### Phase 6: Packaging & Cross-Platform Native Backends (Windows & macOS) (Completed ✅)
 
-- [x] **Angular 22 CLI Builder (`@ng-native/builders` — `packages/builders-native`):** `createNativeTargetConfig` and `executeNativeBuilder` integration with `ng build` / `pnpm run package:linux`.
+- [x] **Angular 22 CLI Builder (`@ng-desktop/builders` — `packages/builders-native`):** `createNativeTargetConfig` and `executeNativeBuilder` integration with `ng build` / `pnpm run package:linux`.
 - [x] **Linux Distribution Bundler (`src/packager/mod.rs`):** Generate self-contained `.deb` (`DEBIAN/control` + Freedesktop `.desktop`), `AppImage` (`AppRun`), and `Flatpak` (`.yml`) distribution artifacts with `hicolor` icon sets (`cargo run -- --package`).
 - [x] **Windows Native Backend (`WinUiBackend`):** Stateful `NativeWinUiControl` scene tree (`Microsoft.UI.Xaml.*`) and command processor.
 - [x] **macOS Native Backend (`MacOsAppKitBackend`):** Stateful `NativeAppKitView` scene tree (`NSWindow` / `NSStackView` / `NSTextField` / `NSButton`) and command processor.
@@ -160,20 +160,20 @@ When `@angular/platform-browser` is removed, Angular's Ivy runtime still require
 
 ---
 
-### Phase 9: OS-Native HTTP/2, `@ng-native/builders` Toolchain, SQLite FFI, & Full Angular Platform Integration (Completed ✅)
+### Phase 9: OS-Native HTTP/2, `@ng-desktop/builders` Toolchain, SQLite FFI, & Full Angular Platform Integration (Completed ✅)
 
-- [x] **OS-Native HTTP/2 & `provideHttpClient` Parity (`@ng-native/http` + `src/desktop/http_native.rs`):**
+- [x] **OS-Native HTTP/2 & `provideHttpClient` Parity (`@ng-desktop/http` + `src/desktop/http_native.rs`):**
   - [x] `libsoup-3.0.so.0` FFI session (`libsoup_sys.rs`) with persistent TLS/HTTP2 sockets, `http_codec.rs` JSON bridge separation (SRP), parallel HTTP/2 batch transfers, and `createNativeHttpResource()`.
   - [x] JSC C callbacks (`__NG_NATIVE_HOST_HTTP__`, `__NG_NATIVE_HOST_HTTP_CONFIG__`) wired to Angular `provideHttpClient(...)` (`withFetch`, `withInterceptors`, `withXsrfConfiguration`, `withHttpCaching`, `withParallelBatching`).
-- [x] **Toolchain Extraction & Minimal `angular.json` Schema (`@ng-native/builders`):**
+- [x] **Toolchain Extraction & Minimal `angular.json` Schema (`@ng-desktop/builders`):**
   - [x] Extracted all AST compilers, HMR client, and dev-server out of `examples/counter-app` into `packages/builders-native/`, leaving `examples/counter-app` as a pure Angular 22 project.
   - [x] Added `angular-native-schema.json`, `native-builder-schema.json`, and minimal `{ os, arch, cpu }` config derivation in `builder.ts` and `src/config/mod.rs`.
 - [x] **Runtime Reactive Control Flow & Angular 22 Reactivity:**
   - [x] Implemented `.ngb` opcodes `bind_visible` and `bind_attr` across `parser.rs`, `reactivity.rs`, `bootstrap_js.rs`, `bridge.ts`, and `quickjs_engine.rs` for reactive `@if`/`@else`, `@switch`, `[visible]`, `[attr]`, and parent-child input/output forwarding.
   - [x] Migrated Angular Pipes, `@let`, `@for`/`@empty`, `@defer`/`@error`, `computed()`, `linkedSignal()`, `input()`, `model()`, `output()`, and `httpResource()`.
 - [x] **Nivel 1 & Nivel 2 OS/Angular Integrations:**
-  - [x] **SQLite3 FFI & Live Queries (`src/desktop/sqlite_sys.rs`, `@ng-native/desktop`):** `NativeSqliteDatabase` (`libsqlite3.so.0`, WAL mode) + Signal-based `NativeSqliteService.liveQuery()`.
-  - [x] **OS Environment & Network Monitor (`src/desktop/system_env.rs`, `@ng-native/desktop`):** `GNetworkMonitor` (`NativeNetworkService`), `GLib` locale/timezone (`provideSystemLocale()`), disk image cache (`provideNativeImageLoader()`), `NativeTitleService` (`Title`), `NativeTitleStrategy` (`TitleStrategy`), `NativeStackRouteReuseStrategy` (`RouteReuseStrategy`), `NativeViewportScroller` (`ViewportScroller`), `NativeKeyEventsPlugin` (`EVENT_MANAGER_PLUGINS`), and `NativeSystemErrorHandler` (`ErrorHandler`).
+  - [x] **SQLite3 FFI & Live Queries (`src/desktop/sqlite_sys.rs`, `@ng-desktop/desktop`):** `NativeSqliteDatabase` (`libsqlite3.so.0`, WAL mode) + Signal-based `NativeSqliteService.liveQuery()`.
+  - [x] **OS Environment & Network Monitor (`src/desktop/system_env.rs`, `@ng-desktop/desktop`):** `GNetworkMonitor` (`NativeNetworkService`), `GLib` locale/timezone (`provideSystemLocale()`), disk image cache (`provideNativeImageLoader()`), `NativeTitleService` (`Title`), `NativeTitleStrategy` (`TitleStrategy`), `NativeStackRouteReuseStrategy` (`RouteReuseStrategy`), `NativeViewportScroller` (`ViewportScroller`), `NativeKeyEventsPlugin` (`EVENT_MANAGER_PLUGINS`), and `NativeSystemErrorHandler` (`ErrorHandler`).
 - [x] **CI & Coverage:** Green GitHub Actions CI with Linux native shared libraries (`libgtk-4-1`, `libadwaita-1-0`, `libjavascriptcoregtk-6.0-1`, `libsoup-3.0-0`, `libsqlite3-0`) and 93 automated tests passing (38 Rust unit + 16 Rust integration + 39 Vitest).
 
 ---
@@ -206,23 +206,23 @@ When `@angular/platform-browser` is removed, Angular's Ivy runtime still require
 - [x] **Static Build-Time Permission Analysis & Least-Privilege Sandboxing (`src/config/permissions.rs` + `packages/builders-native/src/permission-analyzer.mjs`):**
   - [x] Added AST static analyzer powered by `oxc-parser` to infer OS capabilities (`network`, `sqlite`, `filesystem:xdg`, `filesystem:dialogs`, `filesystem:drop`, `clipboard`, `notifications`, `compute-threads`) with `mode: 'auto' | 'strict'` and `allow`/`deny` overrides in `angular.json` / `project.json`.
   - [x] Removed unconditional Windows `<rescap:Capability Name="runFullTrust" />` and unrestricted host capabilities unless explicitly opted into (`fullSystemAccess: true`), emitting minimal Windows `AppxManifest.xml`, macOS `Entitlements.plist` (`com.apple.security.app-sandbox`), Linux `AppArmor` profiles, and Flatpak manifests alongside runtime enforcement in `DesktopServices`.
-- [x] **Ecosystem Compatibility Bridges (`@ng-native/platform` + `docs/ECOSYSTEM_COMPATIBILITY.md`):**
+- [x] **Ecosystem Compatibility Bridges (`@ng-desktop/platform` + `docs/ECOSYSTEM_COMPATIBILITY.md`):**
   - [x] Extended `NativeElementNode` with WAI-ARIA/DOM attributes, focus tracking, `classList`, `contains()`, event listeners, and `getBoundingClientRect()` for `@angular/aria` and `@angular/cdk/a11y`.
   - [x] Added `NativeStorage` (`Storage` over SQLite), `NativeAriaAnnouncer` (`LiveAnnouncer`), `NativeDevToolsHook` (`__REDUX_DEVTOOLS_EXTENSION__`), `createNativeDocument()`, and `provideNativeEcosystemCompat()` for `@ngrx/signals`, `@ngrx/store`, `@ngrx/store-devtools`, and headless CDK/Aria libraries, plus documented `@angular/material` rendering gaps.
 - [x] **Angular Package Format (`APF`) Build Pipeline, `ng-desktop` CLI & `ng add` Schematic (`pnpm run build:packages`):**
-  - [x] Added `tsconfig.lib.json` (`compilationMode: "partial"`) and `scripts/build-packages.mjs` compiling all 6 `@ng-native/*` packages into `dist/packages/*` ESM + `.d.ts` APF bundles packed in `.github/workflows/release.yml`.
-  - [x] Added `ng-desktop` CLI (`packages/builders-native/bin/ng-desktop.mjs`) and `ng add @ng-native/builders` schematic (`packages/builders-native/schematics/ng-add`) supporting both Angular CLI and Nx.
+  - [x] Added `tsconfig.lib.json` (`compilationMode: "partial"`) and `scripts/build-packages.mjs` compiling all 6 `@ng-desktop/*` packages into `dist/packages/*` ESM + `.d.ts` APF bundles packed in `.github/workflows/release.yml`.
+  - [x] Added `ng-desktop` CLI (`packages/builders-native/bin/ng-desktop.mjs`) and `ng add @ng-desktop/builders` schematic (`packages/builders-native/schematics/ng-add`) supporting both Angular CLI and Nx.
 
 ---
 
 ### Phase 12: Automated npm / `crates.io` Publishing & Prebuilt Native Binary Distribution (Completed ✅)
 
 - [x] **Prebuilt Cross-Platform Rust Engine Binaries & Resolver (`packages/builders-native/src/resolve-engine-binary.mjs` + `scripts/build-engine-packages.mjs`):**
-  - [x] Staged platform binary npm packages (`@ng-native/engine-linux-x64-gnu`, `@ng-native/engine-linux-arm64-gnu`, `@ng-native/engine-win32-x64-msvc`, `@ng-native/engine-darwin-arm64`, `@ng-native/engine-darwin-x64`) pinned in `optionalDependencies` of `@ng-native/builders`.
-  - [x] Implemented `resolveEngineBinaryPath()` (`NG_DESKTOP_ENGINE_BIN` -> installed `@ng-native/engine-*` package -> local Cargo target -> `cargo run --` fallback) integrated across `dev-server.mjs`, `ng-desktop run`, `ng-desktop package`, and `builders.json` (`--noEmit` APF cross-OS `process.execPath` build fix).
+  - [x] Staged platform binary npm packages (`@ng-desktop/engine-linux-x64-gnu`, `@ng-desktop/engine-linux-arm64-gnu`, `@ng-desktop/engine-win32-x64-msvc`, `@ng-desktop/engine-darwin-arm64`, `@ng-desktop/engine-darwin-x64`) pinned in `optionalDependencies` of `@ng-desktop/builders`.
+  - [x] Implemented `resolveEngineBinaryPath()` (`NG_DESKTOP_ENGINE_BIN` -> installed `@ng-desktop/engine-*` package -> local Cargo target -> `cargo run --` fallback) integrated across `dev-server.mjs`, `ng-desktop run`, `ng-desktop package`, and `builders.json` (`--noEmit` APF cross-OS `process.execPath` build fix).
 - [x] **External `npm pack` Verification & Automated Publishing (`scripts/test-external-pack.mjs`, `Cargo.toml`, `.github/workflows/release.yml`):**
   - [x] Enriched `Cargo.toml` metadata for `crates.io` (`description`, `license`, `repository`, `documentation`, `keywords`, `categories`, scoped `include`) and APF npm manifests (`repository`, `publishConfig`, `README.md`, `LICENSE`).
-  - [x] Added `pnpm run test:pack` verifying tarball contents and out-of-monorepo import execution of packed `@ng-native/builders` across **121 passing tests** (51 Vitest + 50 Rust unit + 20 Rust integration).
+  - [x] Added `pnpm run test:pack` verifying tarball contents and out-of-monorepo import execution of packed `@ng-desktop/builders` across **121 passing tests** (51 Vitest + 50 Rust unit + 20 Rust integration).
   - [x] Added `publish-npm` (OIDC `--provenance` or safe `--dry-run`) and `publish-crates` (`cargo publish --locked` or safe `--dry-run`) jobs to `.github/workflows/release.yml`.
 
 ---
@@ -232,6 +232,6 @@ When `@angular/platform-browser` is removed, Angular's Ivy runtime still require
 1. **Angular 22 Interactive Docs Portal (`docs-site/` -> `dist/ng-native-docs`):**
    - [ ] Create the `ng-native-docs` Angular 22 application (`--base-href /ng-native-engine/`) featuring an interactive 27-primitive explorer, live `.ngb` template compiler playground, architecture guides, and Pokédex tutorial.
 2. **Automated TypeScript & Rust API Reference (`scripts/build-api-docs.mjs`):**
-   - [ ] Bundle `@ng-native/*` TypeScript API reference (`/api-ts/`), `cargo doc --no-deps` Rust engine documentation (`/api-rust/`), `.nojekyll`, and `404.html` SPA routing fallback into `dist/ng-native-docs/browser`.
+   - [ ] Bundle `@ng-desktop/*` TypeScript API reference (`/api-ts/`), `cargo doc --no-deps` Rust engine documentation (`/api-rust/`), `.nojekyll`, and `404.html` SPA routing fallback into `dist/ng-native-docs/browser`.
 3. **GitHub Pages Continuous Deployment (`.github/workflows/docs-pages.yml`):**
    - [ ] Automatically build and deploy `dist/ng-native-docs/browser` to `https://gaspar1992.github.io/ng-native-engine/` via `actions/upload-pages-artifact@v3` and `actions/deploy-pages@v4` on every push to `main`.

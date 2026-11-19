@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path';
 
 export const ENGINE_BINARY_PACKAGES = {
   'linux-x64': {
-    pkgName: '@ng-native/engine-linux-x64-gnu',
+    pkgName: '@ng-desktop/engine-linux-x64-gnu',
     dirName: 'engine-linux-x64-gnu',
     os: 'linux',
     cpu: 'x64',
@@ -12,7 +12,7 @@ export const ENGINE_BINARY_PACKAGES = {
     binaryName: 'ng-native-engine',
   },
   'linux-arm64': {
-    pkgName: '@ng-native/engine-linux-arm64-gnu',
+    pkgName: '@ng-desktop/engine-linux-arm64-gnu',
     dirName: 'engine-linux-arm64-gnu',
     os: 'linux',
     cpu: 'arm64',
@@ -20,21 +20,21 @@ export const ENGINE_BINARY_PACKAGES = {
     binaryName: 'ng-native-engine',
   },
   'win32-x64': {
-    pkgName: '@ng-native/engine-win32-x64-msvc',
+    pkgName: '@ng-desktop/engine-win32-x64-msvc',
     dirName: 'engine-win32-x64-msvc',
     os: 'win32',
     cpu: 'x64',
     binaryName: 'ng-native-engine.exe',
   },
   'darwin-arm64': {
-    pkgName: '@ng-native/engine-darwin-arm64',
+    pkgName: '@ng-desktop/engine-darwin-arm64',
     dirName: 'engine-darwin-arm64',
     os: 'darwin',
     cpu: 'arm64',
     binaryName: 'ng-native-engine',
   },
   'darwin-x64': {
-    pkgName: '@ng-native/engine-darwin-x64',
+    pkgName: '@ng-desktop/engine-darwin-x64',
     dirName: 'engine-darwin-x64',
     os: 'darwin',
     cpu: 'x64',
@@ -54,7 +54,7 @@ function defaultResolvePkgJsonPath(pkgName, cwd) {
 /**
  * Resolves the prebuilt `ng-native-engine` host executable in priority order:
  *   1. Explicit `NG_DESKTOP_ENGINE_BIN` / `NG_NATIVE_ENGINE_BIN` environment override
- *   2. Installed platform-specific `@ng-native/engine-*` npm `optionalDependencies` package
+ *   2. Installed platform-specific `@ng-desktop/engine-*` npm `optionalDependencies` package
  *   3. Local Cargo build artifact (`target/release` then `target/debug`)
  *   4. Fallback to `cargo run --` for source-checkout development
  */

@@ -5,7 +5,7 @@ import {
   analyzeSourcePermissions,
   executeNativeBuilder,
   resolveWorkspaceProject,
-} from '@ng-native/builders';
+} from '@ng-desktop/builders';
 import { applyNgAddToTree } from '../schematics/ng-add/index.mjs';
 
 describe('Phase 11 — Workspace-Agnostic Resolution & Static Permission Analysis', () => {
@@ -26,7 +26,7 @@ describe('Phase 11 — Workspace-Agnostic Resolution & Static Permission Analysi
           sourceRoot: 'apps/desktop-crm/src',
           targets: {
             native: {
-              executor: '@ng-native/builders:application',
+              executor: '@ng-desktop/builders:application',
               options: {
                 targetPlatform: 'windows-winui',
                 outputPath: 'dist/apps/desktop-crm',
@@ -59,7 +59,7 @@ describe('Phase 11 — Workspace-Agnostic Resolution & Static Permission Analysi
         file: 'app/services/api.ts',
         content: `
           import { HttpClient } from '@angular/common/http';
-          import { NativeSqliteService } from '@ng-native/desktop';
+          import { NativeSqliteService } from '@ng-desktop/desktop';
 
           export function syncAll(sql: NativeSqliteService) {
             fetch('https://example.test/api');
@@ -139,7 +139,7 @@ describe('Phase 11 — Workspace-Agnostic Resolution & Static Permission Analysi
       projects: Record<string, { architect: Record<string, unknown> }>;
     };
     expect(updatedAngular.projects['desktop-app']?.architect['native']).toEqual({
-      builder: '@ng-native/builders:application',
+      builder: '@ng-desktop/builders:application',
       options: {
         targetPlatform: 'windows-winui',
         permissions: { mode: 'strict' },
@@ -155,7 +155,7 @@ describe('Phase 11 — Workspace-Agnostic Resolution & Static Permission Analysi
       targets: Record<string, unknown>;
     };
     expect(updatedNx.targets['native']).toEqual({
-      executor: '@ng-native/builders:application',
+      executor: '@ng-desktop/builders:application',
       options: {
         targetPlatform: 'macos-appkit',
         permissions: { mode: 'auto' },
