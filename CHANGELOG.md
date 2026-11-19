@@ -5,6 +5,11 @@ This project adheres to [Conventional Commits](https://www.conventionalcommits.o
 
 ## [Unreleased]
 
+### Refactoring (Phase 1 — Decouple Generic Engine, Packages, Tests, and Release Pipeline from Showcase App)
+
+- **engine & packages:** replace `/tmp/ng_native_pokedex` and `'ng-linux-counter'` defaults with app-scoped cache directories (`NativeSystemEnv::detect_for_app`, `resolveDefaultAppId()`), embed a self-contained neutral `src/engine/default_icon.ico` instead of referencing `examples/counter-app/public/favicon.ico` in `Cargo.toml`, add generic `<ng-window>` resolution via `JsRuntime::resolve_primary_window()`, remove the batch-mode `'btn'` simulation, guard the legacy `PokedexController` hook in `src/main.rs`, and remove the `standalone_pokedex.ngb` copy step from `packages/builders-native/src/build-bundle.mjs`.
+- **tests, fixtures & ci/release:** add self-contained `tests/fixtures/sample-app/` fixtures so Rust unit/integration tests and TypeScript specs run without depending on `examples/counter-app` or Pokémon literals, and focus `.github/workflows/release.yml`, `scripts/generate-release-notes.mjs`, templates, and docs exclusively on `ng-desktop-engine` + `@ng-desktop/*` packages.
+
 ### Security & CI (Tokenless OIDC Trusted Publishing + SLSA Attestations)
 
 - **release & publishing:** migrate `publish-npm` and `publish-crates` in `.github/workflows/release.yml` from long-lived `NPM_TOKEN` / `CARGO_REGISTRY_TOKEN` secrets to pure **OIDC Trusted Publishing** (`npm >= 11.5.1` without `registry-url`/`NODE_AUTH_TOKEN`, `rust-lang/crates-io-auth-action@v1`) scoped to protected `v*` / `main` GitHub Environments (`npm-publish`, `crates-publish`) and gated on `vars.NPM_TRUSTED_PUBLISHING` / `vars.CRATES_TRUSTED_PUBLISHING`; add Sigstore SLSA build provenance attestations (`actions/attest@v4`) for release binaries/tarballs and `scripts/bootstrap-npm-packages.mjs` (`pnpm run publish:bootstrap`) for one-time initial package creation on npmjs.org.

@@ -332,33 +332,31 @@ mod tests {
     #[test]
     fn executes_crud_and_serializes_rows_with_native_sqlite() {
         let mut db = NativeSqliteDatabase::new_in_memory();
+        db.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL, note TEXT);")
+            .unwrap();
         db.execute(
-            "CREATE TABLE favorites (id INTEGER PRIMARY KEY, name TEXT NOT NULL, note TEXT);",
-        )
-        .unwrap();
-        db.execute(
-            "INSERT INTO favorites (id, name, note) VALUES (25, 'Pikachu', 'Electrico');
-             INSERT INTO favorites (id, name, note) VALUES (1, 'Bulbasaur', 'Semilla');",
+            "INSERT INTO items (id, name, note) VALUES (25, 'Widget', 'Active');
+             INSERT INTO items (id, name, note) VALUES (1, 'Anchor', 'Pinned');",
         )
         .unwrap();
 
         let rows = db
-            .query("SELECT id, name, note FROM favorites ORDER BY id ASC;")
+            .query("SELECT id, name, note FROM items ORDER BY id ASC;")
             .unwrap();
         if db.is_native_loaded() {
             assert_eq!(rows.len(), 2);
             assert_eq!(rows[0].get("id").map(String::as_str), Some("1"));
-            assert_eq!(rows[0].get("name").map(String::as_str), Some("Bulbasaur"));
-            assert_eq!(rows[1].get("name").map(String::as_str), Some("Pikachu"));
+            assert_eq!(rows[0].get("name").map(String::as_str), Some("Anchor"));
+            assert_eq!(rows[1].get("name").map(String::as_str), Some("Widget"));
 
-            db.execute("UPDATE favorites SET note = 'Favorito' WHERE id = 25;")
+            db.execute("UPDATE items SET note = 'Primary' WHERE id = 25;")
                 .unwrap();
-            db.execute("DELETE FROM favorites WHERE id = 1;").unwrap();
+            db.execute("DELETE FROM items WHERE id = 1;").unwrap();
 
             let json = db
-                .query_json("SELECT id, name, note FROM favorites ORDER BY id ASC;")
+                .query_json("SELECT id, name, note FROM items ORDER BY id ASC;")
                 .unwrap();
-            assert_eq!(json, r#"[{"id":"25","name":"Pikachu","note":"Favorito"}]"#);
+            assert_eq!(json, r#"[{"id":"25","name":"Widget","note":"Primary"}]"#);
         }
     }
 }

@@ -180,21 +180,21 @@ mod tests {
         let pool = NativeComputePool::with_threads(4);
         assert_eq!(pool.worker_threads(), 4);
 
-        let mut catalog: Vec<String> = (1..=120).map(|i| format!("pokemon-entry-{i:03}")).collect();
-        catalog.push(String::from("pikachu"));
-        catalog.push(String::from("pichu"));
-        catalog.push(String::from("raichu"));
+        let mut catalog: Vec<String> = (1..=120).map(|i| format!("catalog-entry-{i:03}")).collect();
+        catalog.push(String::from("delta"));
+        catalog.push(String::from("delphi"));
+        catalog.push(String::from("deluxe"));
 
-        let top = pool.fuzzy_filter(&catalog, "pikachu", 5);
+        let top = pool.fuzzy_filter(&catalog, "delta", 5);
         assert_eq!(top.len(), 1);
-        assert_eq!(top[0].value, "pikachu");
+        assert_eq!(top[0].value, "delta");
         assert_eq!(top[0].score, 1000);
 
-        let sub = pool.fuzzy_filter(&catalog, "chu", 5);
+        let sub = pool.fuzzy_filter(&catalog, "del", 5);
         assert_eq!(sub.len(), 3);
 
-        let json = pool.fuzzy_filter_json(&catalog, "pikachu", 1);
-        assert!(json.contains(r#""value":"pikachu""#));
+        let json = pool.fuzzy_filter_json(&catalog, "delta", 1);
+        assert!(json.contains(r#""value":"delta""#));
 
         let digest_a = pool.fnv1a_hex("ng-native-engine");
         let digest_b = pool.fnv1a_hex("ng-native-engine");

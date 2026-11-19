@@ -1,5 +1,10 @@
 export type NativeXdgDirKind = 'config' | 'data' | 'cache';
 
+export function resolveDefaultAppId(): string {
+  const raw = (globalThis as { __NG_NATIVE_APP_ID__?: unknown }).__NG_NATIVE_APP_ID__;
+  return typeof raw === 'string' && raw.trim().length > 0 ? raw.trim() : 'ng-desktop-app';
+}
+
 export interface NativeComputeMatch {
   index: number;
   score: number;
@@ -77,7 +82,7 @@ export class InMemoryFsStore {
   private readonly watched = new Set<string>();
   private readonly changed = new Set<string>();
 
-  resolvePath(kind: NativeXdgDirKind, relPath: string, appId = 'ng-linux-counter'): string {
+  resolvePath(kind: NativeXdgDirKind, relPath: string, appId = resolveDefaultAppId()): string {
     const clean = relPath.trim().replace(/^[/\\]+/, '');
     if (clean.length === 0 || clean.split(/[/\\]/).includes('..')) {
       throw new Error(`Invalid or unsafe XDG relative path: '${relPath}'`);

@@ -87,8 +87,8 @@ ng-native-engine/
 │   │   ├── libsoup_sys.rs        # Isolated C FFI dynamic loader for libsoup-3.0.so.0
 │   │   ├── sqlite_sys.rs         # Isolated C FFI dynamic loader for libsqlite3.so.0 (WAL + JSON rows)
 │   │   ├── system_env.rs         # GNetworkMonitor, GLib locale/timezone, disk image cache & error log
-│   │   ├── pokedex.rs            # Live PokéAPI HTTP client & sprite cache
-│   │   └── pokedex_ui.rs         # Async Pokédex controller, debounced search & loading spinner
+│   │   ├── pokedex.rs            # Legacy showcase PokéAPI helper (scheduled for Phase 3 removal)
+│   │   └── pokedex_ui.rs         # Legacy showcase UI controller (scheduled for Phase 3 removal)
 │   ├── ipc/
 │   │   └── mod.rs                # Non-blocking Unix Domain Socket HMR IPC Server & Client
 │   ├── packager/
@@ -144,15 +144,16 @@ ng-native-engine/
 ├── scripts/
 │   ├── build-engine-packages.mjs # Stages @ng-desktop/engine-* platform binary packages
 │   ├── build-packages.mjs        # Angular Package Format (APF) partial-Ivy compiler (dist/packages/*)
-│   ├── generate-release-notes.mjs # Engine vs Pokédex Demo release changelog builder
+│   ├── generate-release-notes.mjs # Engine & @ng-desktop/* release changelog builder
 │   ├── test-containers.sh        # Multi-OS container test runner (ubuntu | fedora | windows | macos | all)
 │   └── test-external-pack.mjs    # Verifies npm pack tarballs from an isolated external workspace
 ├── examples/
-│   └── counter-app/              # Pure Angular 22 Pokédex showcase application
+│   └── counter-app/              # Angular 22 showcase application
 │       ├── public/               # Application favicon assets
-│       └── src/app/              # app.{ts,html,css,config,spec}, pokedex.service.ts, pokemon-card.*, type-badge.*
+│       └── src/app/              # app.{ts,html,css,config,spec} and services
 ├── tests/
-│   ├── common/mod.rs             # Shared test helpers & headless harness
+│   ├── common/mod.rs             # Shared test helpers & fixture loader
+│   ├── fixtures/sample-app/      # Self-contained neutral Angular/NGB integration test fixture
 │   ├── test_cross_platform.rs    # WinUI 3, AppKit, Linux GTK4 & packager tests
 │   ├── test_forms_and_desktop.rs # Phase 4 forms & Phase 5 desktop/HTTP bridge tests
 │   ├── test_js_engines.rs        # Dual JSC & QuickJS engine parity tests
@@ -197,8 +198,8 @@ pnpm run build
 
 This runs the official Angular 22 compiler (`ng build`) followed by the AST-driven native compiler ([`build-bundle.mjs`](./packages/builders-native/src/build-bundle.mjs)), generating:
 
-- `dist/ng-linux-counter/main.ngb` (compiled native instructions, styles, and reactive signal bindings)
-- `dist/ng-linux-counter/icons/hicolor/<size>x<size>/apps/ng-linux-counter.png` (`16x16` through `256x256` taskbar icons)
+- `dist/<project>/main.ngb` (compiled native instructions, styles, and reactive signal bindings)
+- `dist/<project>/icons/hicolor/<size>x<size>/apps/<project>.png` (`16x16` through `256x256` taskbar icons)
 
 ### 3. Live Development with Zero-Latency Socket HMR (`pnpm run dev`)
 
@@ -206,7 +207,7 @@ This runs the official Angular 22 compiler (`ng build`) followed by the AST-driv
 pnpm run dev
 ```
 
-Starts the file watcher on `examples/counter-app/src/` and opens the native Linux GTK4 window. Whenever you save `app.ts`, `app.html`, or `app.css`, `build-bundle.mjs` recompiles and immediately pushes the update over the local Unix domain socket IPC to the running engine **in-place without closing the window or losing current Angular Signal state** (`count`).
+Starts the file watcher on your Angular project's `sourceRoot` and opens the native desktop window. Whenever you save `app.ts`, `app.html`, or `app.css`, `build-bundle.mjs` recompiles and immediately pushes the update over the local Unix domain socket IPC to the running engine **in-place without closing the window or losing current Angular Signal state**.
 
 ### 4. Stage Linux Distribution Packages (`.deb`, `AppImage`, `Flatpak`)
 

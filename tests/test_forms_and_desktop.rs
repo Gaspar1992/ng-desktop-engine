@@ -111,13 +111,13 @@ fn phase5_desktop_services_and_native_http_bridge() {
             cacheEnabled: true
         });
         __NG_NATIVE__.registerHttpEndpoint("GET", "https://api.ng-native.dev/version", 200, '{"version":"0.5.0"}');
-        __NG_NATIVE__.registerHttpEndpoint("POST", "https://beta.pokeapi.co/graphql/v1beta", 200, '{"data":{"ok":true}}');
+        __NG_NATIVE__.registerHttpEndpoint("POST", "https://api.example.test/graphql", 200, '{"data":{"ok":true}}');
         const res = __NG_NATIVE__.httpRequest("GET", "https://api.ng-native.dev/version", undefined, {
-            headers: { "Accept": "application/json", "X-App": "pokedex" }
+            headers: { "Accept": "application/json", "X-App": "desktop-suite" }
         });
         const batchRes = __NG_NATIVE__.httpBatchRequest([
             { method: "GET", url: "https://api.ng-native.dev/version" },
-            { method: "POST", url: "https://beta.pokeapi.co/graphql/v1beta", body: '{"query":"{ok}"}' }
+            { method: "POST", url: "https://api.example.test/graphql", body: '{"query":"{ok}"}' }
         ]);
         const parsed = JSON.parse(res.body);
         __NG_NATIVE__.setSystemTheme("light");
@@ -171,7 +171,7 @@ fn phase5_desktop_services_and_native_http_bridge() {
         assert_eq!(history.len(), 3);
         assert_eq!(
             history[0].headers.get("X-App").map(String::as_str),
-            Some("pokedex")
+            Some("desktop-suite")
         );
         assert_eq!(
             history[2].headers.get("X-NG-XSRF").map(String::as_str),
@@ -185,30 +185,29 @@ fn nivel1_native_sqlite_ffi_and_system_env() {
     let mut desktop = DesktopServices::new();
     desktop
         .sqlite_mut()
-        .execute("CREATE TABLE IF NOT EXISTS teams (id INTEGER PRIMARY KEY, name TEXT);")
+        .execute("CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT);")
         .unwrap();
     desktop
         .sqlite_mut()
-        .execute("INSERT INTO teams (id, name) VALUES (25, 'Pikachu');")
+        .execute("INSERT INTO items (id, name) VALUES (25, 'Notebook');")
         .unwrap();
 
     if desktop.sqlite().is_native_loaded() {
         let json = desktop
             .sqlite()
-            .query_json("SELECT id, name FROM teams ORDER BY id ASC;")
+            .query_json("SELECT id, name FROM items ORDER BY id ASC;")
             .unwrap();
-        assert_eq!(json, r#"[{"id":"25","name":"Pikachu"}]"#);
+        assert_eq!(json, r#"[{"id":"25","name":"Notebook"}]"#);
     }
 
     assert_ne!(desktop.system_env().locale(), "");
     assert_ne!(desktop.system_env().timezone(), "");
-    assert_eq!(
-        desktop.system_env().resolve_image_asset(
-            "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/6.png",
-            Some(180)
-        ),
-        "/tmp/ng_native_pokedex/6.png"
-    );
+    let resolved_asset = desktop
+        .system_env()
+        .resolve_image_asset("https://cdn.example.com/assets/avatar-6.png", Some(180))
+        .replace('\\', "/");
+    assert!(resolved_asset.contains("/images/img_"));
+    assert!(resolved_asset.ends_with(".png?w=180"));
 
     desktop.system_env_mut().set_network_status(false, false);
     assert_eq!(desktop.system_env().connectivity(), "offline");
@@ -225,15 +224,15 @@ fn nivel3_compute_pool_xdg_fs_watcher_and_native_drop_target() {
 
     let desktop = DesktopServices::new();
     let catalog = vec![
-        String::from("bulbasaur"),
-        String::from("charmander"),
-        String::from("pikachu"),
-        String::from("raichu"),
+        String::from("alpha"),
+        String::from("bravo"),
+        String::from("delta"),
+        String::from("deluxe"),
     ];
-    let matches = desktop.compute().fuzzy_filter(&catalog, "pikachu", 3);
-    assert_eq!(matches[0].value, "pikachu");
+    let matches = desktop.compute().fuzzy_filter(&catalog, "delta", 3);
+    assert_eq!(matches[0].value, "delta");
     assert_eq!(matches[0].score, 1000);
-    assert_eq!(desktop.compute().fnv1a_hex("pikachu").len(), 16);
+    assert_eq!(desktop.compute().fnv1a_hex("delta").len(), 16);
 
     let cfg_path = desktop
         .fs_manager()
@@ -264,9 +263,9 @@ fn nivel3_compute_pool_xdg_fs_watcher_and_native_drop_target() {
 
         const cfgPath = __NG_NATIVE__.fsResolvePath("data", "favorites.json");
         __NG_NATIVE__.fsWatchFile(cfgPath);
-        __NG_NATIVE__.fsWriteText(cfgPath, "pikachu,raichu");
+        __NG_NATIVE__.fsWriteText(cfgPath, "alpha,delta");
         const changed = __NG_NATIVE__.fsPollChangedFiles();
-        const scored = __NG_NATIVE__.computeFuzzyFilter(["bulbasaur", "pikachu"], "pika", 1);
+        const scored = __NG_NATIVE__.computeFuzzyFilter(["alpha", "delta"], "del", 1);
         const topName = scored.length > 0 ? scored[0].value : "none";
         __NG_NATIVE__.setText("lbl", `Top:${topName}|Changed:${changed.length}`);
 
@@ -280,7 +279,7 @@ fn nivel3_compute_pool_xdg_fs_watcher_and_native_drop_target() {
 
     if runtime.js_engine().is_jit_enabled() {
         let preview = engine.render_window_preview(win).unwrap();
-        assert!(preview.contains("Top:pikachu|Changed:1"));
+        assert!(preview.contains("Top:delta|Changed:1"));
 
         let _ = drain_pending_events();
         enqueue_event_with_payload(

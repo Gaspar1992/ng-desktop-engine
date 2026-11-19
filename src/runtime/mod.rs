@@ -30,6 +30,7 @@ pub struct JsRuntime {
     desktop: DesktopServices,
     variables: HashMap<String, NodeId>,
     node_vars: HashMap<NodeId, String>,
+    primary_window: Option<NodeId>,
     signals: HashMap<String, i64>,
     bindings: Vec<TextBinding>,
     attr_bindings: Vec<AttrBinding>,
@@ -65,6 +66,7 @@ impl JsRuntime {
             desktop,
             variables: HashMap::new(),
             node_vars: HashMap::new(),
+            primary_window: None,
             signals: HashMap::new(),
             bindings: Vec::new(),
             attr_bindings: Vec::new(),
@@ -186,6 +188,16 @@ impl JsRuntime {
             .copied()
             .ok_or_else(|| EngineError::ScriptSyntaxError(format!("Unknown JS handle: {name}")))
     }
+
+    pub fn resolve_primary_window(&self) -> Result<NodeId, EngineError> {
+        self.primary_window
+            .or_else(|| self.variables.get("win").copied())
+            .ok_or_else(|| {
+                EngineError::ScriptSyntaxError(String::from(
+                    "No root <ng-window> found in compiled bundle",
+                ))
+            })
+    }
 }
 
 #[cfg(test)]
@@ -227,5 +239,25 @@ mod tests {
             )
             .unwrap();
         assert_eq!(quickjs_path, "/home/user/.config/invoice-studio/prefs.json");
+    }
+
+    #[test]
+    fn resolves_primary_window_without_hardcoded_win_variable_name() {
+        let mut rt = JsRuntime::new();
+        let mut engine = RenderEngine::new(HeadlessBackend::new());
+        rt.eval_tick(
+            &mut engine,
+            "create main_window ng-window\ntext main_window Custom Root",
+        )
+        .unwrap();
+
+        let primary = rt.resolve_primary_window().unwrap();
+        assert_eq!(primary, rt.resolve_var("main_window").unwrap());
+        assert!(
+            engine
+                .render_window_preview(primary)
+                .unwrap()
+                .contains("Custom Root")
+        );
     }
 }

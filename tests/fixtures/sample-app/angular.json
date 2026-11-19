@@ -1,0 +1,21 @@
+{
+  "$schema": "../../../packages/builders-native/schema/angular-native-schema.json",
+  "version": 1,
+  "projects": {
+    "sample-desktop-app": {
+      "projectType": "application",
+      "root": "tests/fixtures/sample-app",
+      "sourceRoot": "tests/fixtures/sample-app/src",
+      "architect": {
+        "native": {
+          "builder": "@ng-desktop/builders:application",
+          "options": {
+            "os": "linux",
+            "arch": "x86_64",
+            "outputPath": "target/test-sample-desktop-app"
+          }
+        }
+      }
+    }
+  }
+}

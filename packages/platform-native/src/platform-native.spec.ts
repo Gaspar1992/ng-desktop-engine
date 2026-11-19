@@ -90,12 +90,12 @@ describe('@ng-desktop/platform — NativeRenderer2 & Bridge', () => {
     });
 
     const imageLoader = TestBed.inject(IMAGE_LOADER);
-    expect(
-      imageLoader({
-        src: 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/25.png',
-        width: 180,
-      }),
-    ).toBe('/tmp/ng_native_pokedex/25.png');
+    const pngImg = imageLoader({
+      src: 'https://cdn.example.com/assets/avatar-25.png',
+      width: 180,
+    });
+    expect(pngImg).toContain('/images/img_');
+    expect(pngImg.endsWith('.png?w=180')).toBe(true);
     const genericImg = imageLoader({ src: 'https://cdn.ng-native.dev/banner.webp', width: 640 });
     expect(genericImg).toContain('img_');
     expect(genericImg).toContain('.webp?w=640');
@@ -103,9 +103,9 @@ describe('@ng-desktop/platform — NativeRenderer2 & Bridge', () => {
     const title = TestBed.inject(Title);
     const nativeTitle = TestBed.inject(NativeTitleService);
     expect(title).toBe(nativeTitle);
-    title.setTitle('Pokédex — #0025 Pikachu');
-    expect(title.getTitle()).toBe('Pokédex — #0025 Pikachu');
-    expect(bridge.__drainQueue()).toContain('text win Pokédex — #0025 Pikachu');
+    title.setTitle('NgDesktop — Workspace');
+    expect(title.getTitle()).toBe('NgDesktop — Workspace');
+    expect(bridge.__drainQueue()).toContain('text win NgDesktop — Workspace');
 
     const scroller = TestBed.inject(ViewportScroller);
     scroller.setOffset([0, 20]);

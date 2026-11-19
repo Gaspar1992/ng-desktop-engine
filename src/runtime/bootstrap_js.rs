@@ -320,15 +320,12 @@ globalThis.__NG_NATIVE__ = (() => {
     },
     resolveImageAsset(src, width) {
       const trimmed = String(src ?? '').trim();
-      const idx = trimmed.indexOf('/official-artwork/');
-      if (idx !== -1) {
-        const part = trimmed.slice(idx + 18).split('?')[0];
-        if (part.endsWith('.png') && /^\d+$/.test(part.slice(0, -4))) {
-          return `/tmp/ng_native_pokedex/${part.slice(0, -4)}.png`;
-        }
-      }
       if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-        return width ? `${trimmed}?w=${width}` : trimmed;
+        const clean = trimmed.split('?')[0].toLowerCase();
+        const m = clean.match(/\.(png|jpg|jpeg|webp|svg|ico)$/);
+        const ext = m ? m[1] : 'img';
+        const suffix = width ? `?w=${width}` : '';
+        return `/home/user/.cache/${resolveAppId()}/images/img_${bridge.computeHash(trimmed)}.${ext}${suffix}`;
       }
       return trimmed;
     },

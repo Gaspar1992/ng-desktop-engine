@@ -118,7 +118,7 @@ fn phase11_packager_least_privilege_capabilities() {
 
 #[test]
 fn phase6_linux_distribution_packager_and_winui_appkit_stateful_backends() {
-    let cfg = AngularNativeConfig::from_file("angular.json").unwrap();
+    let cfg = AngularNativeConfig::from_file("tests/fixtures/sample-app/angular.json").unwrap();
     let artifacts = stage_linux_distribution(&cfg, "0.3.0").unwrap();
     assert_eq!(artifacts.len(), 7);
     for path in &artifacts {
@@ -145,7 +145,7 @@ fn phase6_linux_distribution_packager_and_winui_appkit_stateful_backends() {
         style card #242424 #ffffff 16 12
         create win ng-window
         text win CrossPlatform App
-        icon win ng-linux-counter examples/counter-app/public/favicon.ico
+        icon win sample-desktop-app src/engine/default_icon.ico
         create box ng-box
         add_class box card
         attr box spacing 12px
@@ -170,7 +170,7 @@ fn phase6_linux_distribution_packager_and_winui_appkit_stateful_backends() {
             .get_window_icon(win_id)
             .unwrap()
             .app_id,
-        "ng-linux-counter"
+        "sample-desktop-app"
     );
     assert_eq!(
         winui_engine
@@ -212,6 +212,7 @@ fn phase6_linux_distribution_packager_and_winui_appkit_stateful_backends() {
         appkit_engine.backend().get_view(mac_entry_id).unwrap().text,
         "NativeText"
     );
+    let _ = fs::remove_dir_all(&cfg.output_path);
 }
 
 #[test]

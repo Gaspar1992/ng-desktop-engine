@@ -18,12 +18,12 @@ pub struct WindowIconAsset {
     pub resolutions: Vec<IconResolution>,
 }
 
-const EMBEDDED_FAVICON_ICO: &[u8] = include_bytes!("../../examples/counter-app/public/favicon.ico");
+const EMBEDDED_DEFAULT_ICON_ICO: &[u8] = include_bytes!("default_icon.ico");
 
 impl WindowIconAsset {
-    /// Parses an `.ico` binary container from disk (falling back to the embedded Pokédex icon
-    /// when running as a standalone `.deb`, `.exe`, or `.dmg` outside the workspace)
-    /// and extracts all embedded resolutions.
+    /// Parses an `.ico` binary container from disk (falling back to the built-in default engine
+    /// icon when a `favicon.ico` path is resolved outside the workspace) and extracts all embedded
+    /// resolutions.
     pub fn from_ico_file(
         app_id: impl Into<String>,
         path: impl AsRef<Path>,
@@ -32,7 +32,7 @@ impl WindowIconAsset {
         let bytes = match fs::read(path_ref) {
             Ok(data) => data,
             Err(_) if path_ref.to_string_lossy().ends_with("favicon.ico") => {
-                EMBEDDED_FAVICON_ICO.to_vec()
+                EMBEDDED_DEFAULT_ICON_ICO.to_vec()
             }
             Err(e) => {
                 return Err(EngineError::ConfigError(format!(
@@ -45,6 +45,16 @@ impl WindowIconAsset {
         Ok(Self {
             app_id: app_id.into(),
             source_path: path_ref.to_string_lossy().into_owned(),
+            resolutions,
+        })
+    }
+
+    /// Returns the built-in multi-resolution default engine icon.
+    pub fn default_embedded(app_id: impl Into<String>) -> Result<Self, EngineError> {
+        let resolutions = Self::parse_ico_bytes(EMBEDDED_DEFAULT_ICON_ICO)?;
+        Ok(Self {
+            app_id: app_id.into(),
+            source_path: String::from("embedded://default_icon.ico"),
             resolutions,
         })
     }
@@ -108,13 +118,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_angular_favicon_ico_resolutions() {
-        let asset = WindowIconAsset::from_ico_file(
-            "ng-linux-counter",
-            "examples/counter-app/public/favicon.ico",
-        )
-        .unwrap();
-        assert_eq!(asset.app_id, "ng-linux-counter");
+    fn parses_default_and_fallback_ico_resolutions() {
+        let asset =
+            WindowIconAsset::from_ico_file("sample-desktop-app", "src/engine/default_icon.ico")
+                .unwrap();
+        assert_eq!(asset.app_id, "sample-desktop-app");
         assert_eq!(
             asset.resolutions,
             vec![
@@ -135,6 +143,13 @@ mod tests {
                 },
             ]
         );
+
+        let fallback =
+            WindowIconAsset::from_ico_file("sample-desktop-app", "missing/favicon.ico").unwrap();
+        assert_eq!(fallback.resolutions, asset.resolutions);
+
+        let embedded = WindowIconAsset::default_embedded("sample-desktop-app").unwrap();
+        assert_eq!(embedded.resolutions, asset.resolutions);
     }
 
     #[test]

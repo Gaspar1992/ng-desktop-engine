@@ -20,7 +20,7 @@ body:
         - '@ng-desktop/http (NativeHttpBackend, libsoup-3.0, httpResource)'
         - '@ng-desktop/desktop (SQLite, Network, Compute, FileSystem, DropTarget)'
         - '@ng-desktop/builders (AST Compilers, Architect Builder, HMR Client)'
-        - Pokédex Demo (examples/counter-app / .deb / .exe / .dmg)
+        - Example Applications (examples/ / .deb / .exe / .dmg)
     validations:
       required: true
   - type: dropdown
@@ -50,7 +50,7 @@ body:
       label: Environment Versions
       description: Output of `rustc --version`, `node --version`, Angular version, OS/Distro, and Wayland/X11 if on Linux.
       placeholder: |
-        - Release/Commit: v0.2.0
+        - Release/Commit: v0.3.0
         - Rust: 1.100.0
         - Node / Angular: Node 24 / @angular/core 22.2.6
         - OS / Display Server: Ubuntu 24.04 (Wayland)

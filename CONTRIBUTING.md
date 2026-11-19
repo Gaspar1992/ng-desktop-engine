@@ -15,7 +15,7 @@ This monorepo combines two tightly coupled layers:
   - `src/desktop/`: Native OS services (HTTP/2 via `libsoup-3.0`, SQLite3 WAL via `libsqlite3`, GLib/GIO system env, XDG + `inotify` watcher, multithreaded compute pool).
   - `src/ffi_dl.rs`: Centralized `DynLib` dynamic symbol loader.
   - `src/packager/`: Multi-OS packaging (`.deb`, AppImage, Flatpak, Windows WinUI 3 MSIX manifest, macOS `.app` / `.dmg`).
-- **Angular 22+ Packages ([`packages/`](./packages)) & Pokédex Demo ([`examples/counter-app/`](./examples/counter-app)):**
+- **Angular 22+ Packages ([`packages/`](./packages)) & Examples ([`examples/`](./examples)):**
   - `@ng-desktop/platform`, `@ng-desktop/forms`, `@ng-desktop/router`, `@ng-desktop/http`, `@ng-desktop/desktop`, `@ng-desktop/builders`.
 
 ---
@@ -98,11 +98,10 @@ This repository follows [Conventional Commits](https://www.conventionalcommits.o
 
 ### How Milestone Releases Work
 
-When a major milestone is complete, pushing a version tag (`vX.Y.Z`) triggers [`.github/workflows/release.yml`](./.github/workflows/release.yml) and [`scripts/generate-release-notes.mjs`](./scripts/generate-release-notes.mjs) to publish two linked GitHub Releases and verify/publish packages via **tokenless OIDC Trusted Publishing**:
+When a major milestone is complete, pushing a version tag (`vX.Y.Z`) triggers [`.github/workflows/release.yml`](./.github/workflows/release.yml) and [`scripts/generate-release-notes.mjs`](./scripts/generate-release-notes.mjs) to publish a GitHub Release and verify/publish packages via **tokenless OIDC Trusted Publishing**:
 
 1. **`vX.Y.Z` (Engine + Individual `@ng-desktop/*` Packages):** Rust binaries + standalone `.tgz` tarballs for `@ng-desktop/{platform,forms,router,http,desktop,builders}` and `@ng-desktop/engine-*` with Angular-style architecture diagrams, categorized changelogs, and Sigstore SLSA build provenance attestations (`actions/attest@v4`).
-2. **`pokedex-demo-vX.Y.Z` (Showcase Application):** Installable `.deb` (Linux), standalone `.exe` (Windows), and `.dmg` (macOS) executables built from the showcase app.
-3. **Tokenless OIDC Publishing (`npm` & `crates.io`):**
+2. **Tokenless OIDC Publishing (`npm` & `crates.io`):**
    - `publish-npm` runs inside GitHub Environment `npm-publish` (`id-token: write`, `npm >= 11.5.1`, no `NPM_TOKEN` secret) once `vars.NPM_TRUSTED_PUBLISHING == 'true'`. Initial one-time package creation is assisted by `pnpm run publish:bootstrap`.
    - `publish-crates` runs inside GitHub Environment `crates-publish` using `rust-lang/crates-io-auth-action@v1` once `vars.CRATES_TRUSTED_PUBLISHING == 'true'`.
 

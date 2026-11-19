@@ -1,6 +1,6 @@
 mod common;
 
-use common::load_or_build_test_bundle;
+use common::load_fixture_bundle;
 use ng_native_engine::config::AngularNativeConfig;
 use ng_native_engine::engine::{EngineError, RenderCommand, RenderEngine};
 #[cfg(unix)]
@@ -10,11 +10,11 @@ use ng_native_engine::runtime::JsRuntime;
 
 #[test]
 fn full_mvp_pipeline_with_headless_backend() {
-    let cfg = AngularNativeConfig::from_file("angular.json").unwrap();
-    assert_eq!(cfg.project_name, "ng-linux-counter");
+    let cfg = AngularNativeConfig::from_file("tests/fixtures/sample-app/angular.json").unwrap();
+    assert_eq!(cfg.project_name, "sample-desktop-app");
     assert_eq!(cfg.target_platform, "linux-gtk4");
 
-    let script = load_or_build_test_bundle(&cfg.output_path);
+    let script = load_fixture_bundle("tests/fixtures/sample-app/main.ngb");
 
     let mut engine = RenderEngine::new(HeadlessBackend::new());
     let mut runtime = JsRuntime::new();
@@ -22,7 +22,7 @@ fn full_mvp_pipeline_with_headless_backend() {
     // Tick 1: Mount Angular component (signals + styles + template + icon + declarative events)
     runtime.eval_tick(&mut engine, &script).unwrap();
     assert_eq!(engine.backend().frames.len(), 1);
-    assert_eq!(engine.backend().frames[0].len(), 274);
+    assert_eq!(engine.backend().frames[0].len(), 76);
 
     let win = runtime.resolve_var("win").unwrap();
     let hello = runtime.resolve_var("hello").unwrap();
@@ -30,36 +30,30 @@ fn full_mvp_pipeline_with_headless_backend() {
     let lbl = runtime.resolve_var("lbl").unwrap();
 
     let preview = engine.render_window_preview(win).unwrap();
-    assert!(preview.contains("Pokédex Nacional"));
+    assert!(preview.contains("Sample Desktop App"));
     assert!(preview.contains("[ICO:16x16, 32x32, 48x48]"));
-    assert!(preview.contains("[HeaderBar: Pokédex Nacional — Angular 22 + GTK4 / Libadwaita]"));
-    assert!(preview.contains("Bulbasaur"));
+    assert!(preview.contains("[HeaderBar: Sample Desktop App — Angular 22 + GTK4 / Libadwaita]"));
+    assert!(preview.contains("Workspace Ready"));
     assert!(preview.contains(".hero-title"));
     assert!(preview.contains(
         ".hero-title(bg:transparent, fg:#78aeed, pad:8px, font-size:22px, font-weight:800)"
     ));
     assert!(preview.contains(".main-card(bg:#242424, fg:#ffffff, pad:16px, radius:14px)"));
     assert!(preview.contains("[Clamp max-width:1080px]"));
-    assert!(preview.contains(
-        "[SearchEntry: \"Buscar Pokémon por nombre o N.º (ej. bul, pika, char, mew, 25)...\"]"
-    ));
-    assert!(preview.contains("[SpinButton: 0 (0..1025, step:1)]"));
+    assert!(preview.contains("[SearchEntry: \"Filter items by name or ID...\"]"));
+    assert!(preview.contains("[SpinButton: 0 (0..1000, step:1)]"));
     assert!(preview.contains("[Paned dir:horizontal, pos:420px]"));
-    assert!(preview.contains(
-        "[Expander ▼ Estadísticas Base Oficiales (PS / ATQ / DEF / AT.ESP / DF.ESP / VEL)]"
-    ));
-    assert!(preview.contains("[TextView: \"Pokédex Nacional Kanto/Johto\"]"));
-    assert!(preview.contains("Pokédex Nacional — Explorador Oficial (PokéAPI v2)"));
-    assert!(preview.contains("Cargar más Pokémon (+12) ›"));
+    assert!(preview.contains("[Expander ▼ System Metrics]"));
+    assert!(preview.contains("[TextView: \"Sample workspace notes\"]"));
     assert!(preview.contains("[Spinner:"));
 
     assert!(engine.backend().frames[0].iter().any(|cmd| matches!(
         cmd,
         RenderCommand::SetText { id, text }
-            if *id == hello && text == "Bulbasaur"
+            if *id == hello && text == "Workspace Ready"
     )));
 
-    // Tick 2: Declarative `(click)="increment()"` updates signal `count` -> `Pokémon #1`
+    // Tick 2: Declarative `(click)="increment()"` updates signal `count` -> `Count: 1`
     runtime
         .trigger_event(&mut engine, "btn", "clicked")
         .unwrap();
@@ -68,11 +62,11 @@ fn full_mvp_pipeline_with_headless_backend() {
         engine.backend().frames[1],
         vec![RenderCommand::SetText {
             id: lbl,
-            text: String::from("Pokémon #1"),
+            text: String::from("Count: 1"),
         }]
     );
 
-    // Tick 3: Second click increments signal `count` -> `Pokémon #2`
+    // Tick 3: Second click increments signal `count` -> `Count: 2`
     runtime
         .trigger_event(&mut engine, "btn", "clicked")
         .unwrap();
@@ -81,11 +75,11 @@ fn full_mvp_pipeline_with_headless_backend() {
         engine.backend().frames[2],
         vec![RenderCommand::SetText {
             id: lbl,
-            text: String::from("Pokémon #2"),
+            text: String::from("Count: 2"),
         }]
     );
 
-    // Tick 4: Decrement button `(click)="decrement()"` -> `Pokémon #1`
+    // Tick 4: Decrement button `(click)="decrement()"` -> `Count: 1`
     runtime
         .trigger_event(&mut engine, "btn_dec", "clicked")
         .unwrap();
@@ -93,11 +87,11 @@ fn full_mvp_pipeline_with_headless_backend() {
         engine.backend().frames[3],
         vec![RenderCommand::SetText {
             id: lbl,
-            text: String::from("Pokémon #1"),
+            text: String::from("Count: 1"),
         }]
     );
 
-    // Tick 5: Reset button `(click)="reset()"` -> `Pokémon #0`
+    // Tick 5: Reset button `(click)="reset()"` -> `Count: 0`
     runtime
         .trigger_event(&mut engine, "btn_reset", "clicked")
         .unwrap();
@@ -105,7 +99,7 @@ fn full_mvp_pipeline_with_headless_backend() {
         engine.backend().frames[4],
         vec![RenderCommand::SetText {
             id: lbl,
-            text: String::from("Pokémon #0"),
+            text: String::from("Count: 0"),
         }]
     );
 
@@ -122,8 +116,7 @@ fn full_mvp_pipeline_with_headless_backend() {
 
 #[test]
 fn hot_reload_preserves_signal_state_and_updates_template_and_styles() {
-    let cfg = AngularNativeConfig::from_file("angular.json").unwrap();
-    let initial_script = load_or_build_test_bundle(&cfg.output_path);
+    let initial_script = load_fixture_bundle("tests/fixtures/sample-app/main.ngb");
 
     let mut engine = RenderEngine::new(HeadlessBackend::new());
     let mut runtime = JsRuntime::new();
@@ -139,16 +132,16 @@ fn hot_reload_preserves_signal_state_and_updates_template_and_styles() {
 
     let win = runtime.resolve_var("win").unwrap();
     let before_preview = engine.render_window_preview(win).unwrap();
-    assert!(before_preview.contains("Pokémon #2"));
+    assert!(before_preview.contains("Count: 2"));
 
     // 2. Simulate saving updated `app.html` and `app.css` while window is open
     let updated_script = initial_script
         .lines()
         .map(|line| {
             if line.starts_with("text hello ") {
-                "text hello Hola Mundo en Vivo (HMR)!"
-            } else if line.starts_with("bind_text lbl pokemonId ") {
-                "bind_text lbl pokemonId Pokédex HMR: {}"
+                "text hello Live HMR Update!"
+            } else if line.starts_with("bind_text lbl count ") {
+                "bind_text lbl count HMR Count: {}"
             } else if line.starts_with("style hero-title ") {
                 "style hero-title none #22c55e 8 0"
             } else {
@@ -162,8 +155,8 @@ fn hot_reload_preserves_signal_state_and_updates_template_and_styles() {
 
     // 3. Verify signal `count` stayed at 2 while template text and CSS updated in-place
     let after_preview = engine.render_window_preview(win).unwrap();
-    assert!(after_preview.contains("Hola Mundo en Vivo (HMR)!"));
-    assert!(after_preview.contains("Pokédex HMR: 2"));
+    assert!(after_preview.contains("Live HMR Update!"));
+    assert!(after_preview.contains("HMR Count: 2"));
     assert!(after_preview.contains(".hero-title(bg:transparent, fg:#22c55e, pad:8px)"));
 
     // 4. Verify event listener re-bound cleanly after HMR (`count` -> 3)
@@ -171,7 +164,7 @@ fn hot_reload_preserves_signal_state_and_updates_template_and_styles() {
         .trigger_event(&mut engine, "btn", "clicked")
         .unwrap();
     let next_preview = engine.render_window_preview(win).unwrap();
-    assert!(next_preview.contains("Pokédex HMR: 3"));
+    assert!(next_preview.contains("HMR Count: 3"));
 }
 
 #[cfg(unix)]

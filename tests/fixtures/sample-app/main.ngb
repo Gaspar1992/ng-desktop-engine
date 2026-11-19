@@ -1,0 +1,81 @@
+signal count 0
+style hero-title none #78aeed 8 4 font-size=22 font-weight=800
+style main-card #242424 #ffffff 16 12 radius=14
+create win ng-window
+text win Sample Desktop App
+icon win sample-desktop-app src/engine/default_icon.ico
+create hdr ng-header-bar
+text hdr Sample Desktop App
+attr hdr subtitle Angular 22 + GTK4 / Libadwaita
+create scroll ng-scroll
+attr scroll min-height 540px
+create main_clamp ng-clamp
+attr main_clamp max-size 1080px
+create vbox ng-box
+attr vbox orientation vertical
+attr vbox spacing 14px
+add_class vbox main-card
+create hero ng-label
+text hero Desktop Workspace
+add_class hero hero-title
+create search_bar ng-box
+attr search_bar orientation horizontal
+attr search_bar spacing 10px
+create search_entry ng-search-entry
+attr search_entry hexpand true
+attr search_entry placeholder Filter items by name or ID...
+create spin_id ng-spin-button
+attr spin_id min 0
+attr spin_id max 1000
+attr spin_id step 1
+attr spin_id value 0
+create spinner ng-spinner
+attr spinner visible false
+create paned ng-paned
+attr paned orientation horizontal
+attr paned position 420
+create left_box ng-box
+attr left_box orientation vertical
+attr left_box spacing 8px
+create hello ng-label
+text hello Workspace Ready
+create lbl ng-label
+text lbl Count: 0
+create controls ng-box
+attr controls orientation horizontal
+attr controls spacing 8px
+create btn ng-button
+text btn Increment
+create btn_dec ng-button
+text btn_dec Decrement
+create btn_reset ng-button
+text btn_reset Reset
+create exp_stats ng-expander
+attr exp_stats label System Metrics
+attr exp_stats expanded true
+create notes_view ng-text-view
+text notes_view Sample workspace notes
+attr notes_view editable true
+append win hdr
+append search_bar search_entry
+append search_bar spin_id
+append vbox hero
+append vbox search_bar
+append vbox spinner
+append left_box hello
+append left_box lbl
+append controls btn
+append controls btn_dec
+append controls btn_reset
+append left_box controls
+append exp_stats notes_view
+append paned left_box
+append paned exp_stats
+append vbox paned
+append main_clamp vbox
+append scroll main_clamp
+append win scroll
+on_add btn clicked count 1
+on_add btn_dec clicked count -1
+on_set btn_reset clicked count 0
+bind_text lbl count Count: {}

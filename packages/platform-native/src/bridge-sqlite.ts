@@ -1,3 +1,5 @@
+import { resolveDefaultAppId } from './bridge-fs-compute';
+
 function splitSqlValues(input: string): string[] {
   const parts: string[] = [];
   let current = '';
@@ -256,19 +258,9 @@ function fnv1aHex(input: string): string {
 export function resolveNativeImageAsset(
   src: string,
   width?: number,
-  cacheDir = '/tmp/ng_native_cache',
+  cacheDir = `/home/user/.cache/${resolveDefaultAppId()}/images`,
 ): string {
   const trimmed = src.trim();
-  const artworkIdx = trimmed.indexOf('/official-artwork/');
-  if (artworkIdx !== -1) {
-    const filePart = trimmed.slice(artworkIdx + '/official-artwork/'.length).split('?')[0];
-    if (filePart.endsWith('.png')) {
-      const stem = filePart.slice(0, -4);
-      if (/^\d+$/.test(stem)) {
-        return `/tmp/ng_native_pokedex/${stem}.png`;
-      }
-    }
-  }
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     const clean = trimmed.split('?')[0].toLowerCase();
     const extMatch = clean.match(/\.(png|jpg|jpeg|webp|svg|ico)$/);

@@ -183,6 +183,17 @@ impl Default for NativeSystemEnv {
 
 impl NativeSystemEnv {
     pub fn detect() -> Self {
+        Self::detect_for_app("ng-desktop-app")
+    }
+
+    pub fn detect_for_app(app_id: &str) -> Self {
+        let trimmed = app_id.trim();
+        let clean_app_id = if trimmed.is_empty() {
+            "ng-desktop-app"
+        } else {
+            trimmed
+        };
+
         let (glib_locale, glib_tz) = probe_glib_locale_and_timezone();
         let locale = glib_locale
             .or_else(|| {
@@ -207,8 +218,8 @@ impl NativeSystemEnv {
             .ok()
             .filter(|v| !v.trim().is_empty())
             .map_or_else(
-                || PathBuf::from("/tmp/ng_native_cache"),
-                |xdg| PathBuf::from(xdg).join("ng-native"),
+                || env::temp_dir().join("ng-desktop-cache").join(clean_app_id),
+                |xdg| PathBuf::from(xdg).join(clean_app_id),
             );
 
         Self {
@@ -276,28 +287,18 @@ impl NativeSystemEnv {
         &self.error_logs
     }
 
-    /// Maps remote image URLs onto deterministic local OS cache paths (including `PokéAPI` artwork
-    /// under `/tmp/ng_native_pokedex/{id}.png` and general URLs under `cache_dir`).
+    /// Maps remote image URLs onto deterministic local OS cache paths under `cache_dir/images`.
     pub fn resolve_image_asset(&self, src: &str, width: Option<u32>) -> String {
         let trimmed = src.trim();
-        if let Some((_, tail)) = trimmed.split_once("/official-artwork/") {
-            let file_part = tail.split('?').next().unwrap_or(tail);
-            if let Some(stem) = file_part.strip_suffix(".png")
-                && !stem.is_empty()
-                && stem.bytes().all(|b| b.is_ascii_digit())
-            {
-                return format!("/tmp/ng_native_pokedex/{stem}.png");
-            }
-        }
-
         if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
             let hash = fnv1a_hash64(trimmed);
             let ext = extract_image_extension(trimmed);
             let width_suffix = width.map_or_else(String::new, |w| format!("?w={w}"));
-            return format!(
-                "{}/img_{hash:016x}.{ext}{width_suffix}",
-                self.cache_dir.display()
-            );
+            let images_path = self
+                .cache_dir
+                .join("images")
+                .join(format!("img_{hash:016x}.{ext}"));
+            return format!("{}{width_suffix}", images_path.display());
         }
 
         trimmed.to_string()
@@ -319,18 +320,21 @@ mod tests {
         let mut env = NativeSystemEnv::detect();
         assert_ne!(env.locale(), "");
         assert_ne!(env.timezone(), "");
-        assert_eq!(
-            env.resolve_image_asset(
-                "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/25.png",
-                Some(180)
-            ),
-            "/tmp/ng_native_pokedex/25.png"
-        );
+
+        let app_env = NativeSystemEnv::detect_for_app("acme-studio");
+        assert!(app_env.cache_dir().ends_with("acme-studio"));
+
+        let resolved_png =
+            env.resolve_image_asset("https://cdn.example.com/assets/avatar.png", Some(180));
+        let normalized_png = resolved_png.replace('\\', "/");
+        assert!(normalized_png.contains("/images/img_"));
+        assert!(normalized_png.ends_with(".png?w=180"));
 
         let resolved_generic =
             env.resolve_image_asset("https://cdn.example.com/hero.webp", Some(320));
-        assert!(resolved_generic.ends_with(".webp?w=320"));
-        assert!(resolved_generic.contains("img_"));
+        let normalized_generic = resolved_generic.replace('\\', "/");
+        assert!(normalized_generic.contains("/images/img_"));
+        assert!(normalized_generic.ends_with(".webp?w=320"));
 
         env.set_network_status(false, true);
         assert_eq!(env.connectivity(), "offline");

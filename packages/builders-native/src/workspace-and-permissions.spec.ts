@@ -10,9 +10,37 @@ import { applyNgAddToTree } from '../schematics/ng-add/index.mjs';
 
 describe('Phase 11 — Workspace-Agnostic Resolution & Static Permission Analysis', () => {
   it('resolves Angular CLI angular.json and Nx project.json workspaces dynamically', () => {
-    const angularProject = resolveWorkspaceProject();
-    expect(angularProject.workspaceKind).toBe('angular');
-    expect(angularProject.projectName).toBe('ng-linux-counter');
+    const ngRoot = mkdtempSync(join(tmpdir(), 'ng-desktop-ng-'));
+    try {
+      mkdirSync(join(ngRoot, 'apps/desktop-notes/src'), { recursive: true });
+      writeFileSync(
+        join(ngRoot, 'angular.json'),
+        JSON.stringify({
+          projects: {
+            'desktop-notes': {
+              projectType: 'application',
+              root: 'apps/desktop-notes',
+              sourceRoot: 'apps/desktop-notes/src',
+              architect: {
+                native: {
+                  builder: '@ng-desktop/builders:application',
+                  options: {
+                    os: 'linux',
+                    arch: 'x86_64',
+                  },
+                },
+              },
+            },
+          },
+        }),
+        'utf8',
+      );
+      const angularProject = resolveWorkspaceProject({ cwd: ngRoot });
+      expect(angularProject.workspaceKind).toBe('angular');
+      expect(angularProject.projectName).toBe('desktop-notes');
+    } finally {
+      rmSync(ngRoot, { recursive: true, force: true });
+    }
 
     const nxRoot = mkdtempSync(join(tmpdir(), 'ng-desktop-nx-'));
     try {
