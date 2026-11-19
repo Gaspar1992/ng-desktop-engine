@@ -1,11 +1,13 @@
 import {
   ApplicationConfig,
+  ApplicationRef,
   EnvironmentProviders,
   makeEnvironmentProviders,
   provideZonelessChangeDetection,
   RendererFactory2,
   Type,
 } from '@angular/core';
+import { bootstrapApplication } from '@angular/platform-browser';
 import { ensureNgNativeBridge, NgNativeBridge } from './bridge';
 import { provideNativeImageLoader } from './image-loader';
 import { NativeRendererFactory2 } from './native-renderer';
@@ -40,6 +42,7 @@ export interface NativeBootstrapContext {
   readonly rootComponent: Type<unknown>;
   readonly bridge: NgNativeBridge;
   readonly config: ApplicationConfig;
+  readonly appRefPromise?: Promise<ApplicationRef>;
 }
 
 /**
@@ -53,9 +56,14 @@ export function bootstrapNativeApplication(
   const mergedConfig: ApplicationConfig = {
     providers: [provideNativePlatform(), ...(appConfig?.providers ?? [])],
   };
+  const isIvyComponent = 'ɵcmp' in (rootComponent as object);
+  const appRefPromise = isIvyComponent
+    ? bootstrapApplication(rootComponent, mergedConfig)
+    : undefined;
   return {
     rootComponent,
     bridge,
     config: mergedConfig,
+    ...(appRefPromise ? { appRefPromise } : {}),
   };
 }

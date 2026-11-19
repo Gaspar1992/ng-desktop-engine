@@ -48,6 +48,10 @@ pub enum RenderCommand {
         node: NodeId,
         style_id: StyleId,
     },
+    RemoveStyleClass {
+        node: NodeId,
+        style_id: StyleId,
+    },
     DestroyWidget {
         id: NodeId,
     },

@@ -4,7 +4,7 @@ use super::http_native::{
 use std::collections::HashMap;
 use std::fmt::Write;
 
-pub(super) fn encode_response_json(res: &NativeHttpResponse) -> String {
+pub(crate) fn encode_response_json(res: &NativeHttpResponse) -> String {
     let hdrs: Vec<String> = res
         .headers
         .iter()
@@ -169,12 +169,12 @@ fn parse_json_string_at(after_colon: &str) -> Option<(String, usize)> {
     None
 }
 
-pub(super) fn extract_json_string(json: &str, key: &str) -> Option<String> {
+pub(crate) fn extract_json_string(json: &str, key: &str) -> Option<String> {
     let val = find_json_value_start(json, key)?;
     parse_json_string_at(val).map(|(s, _)| s)
 }
 
-pub(super) fn extract_json_bool(json: &str, key: &str) -> Option<bool> {
+pub(crate) fn extract_json_bool(json: &str, key: &str) -> Option<bool> {
     let val = find_json_value_start(json, key)?;
     if val.starts_with("true") {
         Some(true)
@@ -185,7 +185,7 @@ pub(super) fn extract_json_bool(json: &str, key: &str) -> Option<bool> {
     }
 }
 
-pub(super) fn extract_json_u64(json: &str, key: &str) -> Option<u64> {
+pub(crate) fn extract_json_u64(json: &str, key: &str) -> Option<u64> {
     let val = find_json_value_start(json, key)?;
     let digits: String = val.chars().take_while(char::is_ascii_digit).collect();
     digits.parse::<u64>().ok()
@@ -225,7 +225,75 @@ pub(super) fn extract_json_flat_map(json: &str, key: &str) -> HashMap<String, St
     map
 }
 
-pub(super) fn escape_json(raw: &str) -> String {
+pub(crate) fn extract_json_string_array(json: &str, key: &str) -> Vec<String> {
+    let mut items = Vec::new();
+    let Some(val) = find_json_value_start(json, key) else {
+        return items;
+    };
+    let Some(mut rest) = val.strip_prefix('[') else {
+        return items;
+    };
+    loop {
+        rest = rest.trim_start();
+        if rest.is_empty() || rest.starts_with(']') {
+            break;
+        }
+        if let Some(next) = rest.strip_prefix(',') {
+            rest = next;
+            continue;
+        }
+        let Some((item, len)) = parse_json_string_at(rest) else {
+            break;
+        };
+        items.push(item);
+        rest = rest.get(len..).unwrap_or_default();
+    }
+    items
+}
+
+pub(crate) fn extract_json_raw_value(json: &str, key: &str) -> Option<String> {
+    let val = find_json_value_start(json, key)?;
+    if val.starts_with('"') {
+        let (_, len) = parse_json_string_at(val)?;
+        return val.get(..len).map(str::to_string);
+    }
+    if val.starts_with('{') || val.starts_with('[') {
+        let mut depth = 0usize;
+        let mut in_string = false;
+        let mut escaped = false;
+        for (idx, ch) in val.char_indices() {
+            if in_string {
+                if escaped {
+                    escaped = false;
+                } else if ch == '\\' {
+                    escaped = true;
+                } else if ch == '"' {
+                    in_string = false;
+                }
+                continue;
+            }
+            match ch {
+                '"' => in_string = true,
+                '{' | '[' => depth += 1,
+                '}' | ']' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        let end = idx + ch.len_utf8();
+                        return val.get(..end).map(str::to_string);
+                    }
+                }
+                _ => {}
+            }
+        }
+        return None;
+    }
+    let end = val
+        .find(|c: char| c.is_ascii_whitespace() || matches!(c, ',' | '}' | ']'))
+        .unwrap_or(val.len());
+    val.get(..end).filter(|s| !s.is_empty()).map(str::to_string)
+}
+
+pub(crate) fn escape_json(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len() + 16);
     for c in raw.chars() {
         match c {

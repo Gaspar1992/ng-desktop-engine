@@ -24,7 +24,12 @@ import {
   makeEnvironmentProviders,
   Provider,
 } from '@angular/core';
-import { ensureNgNativeBridge, NativeHttpCallKind, NativeHttpConfig } from '@ng-desktop/platform';
+import {
+  ensureNgNativeBridge,
+  type NativeHttpBridgeResponse,
+  NativeHttpCallKind,
+  NativeHttpConfig,
+} from '@ng-desktop/platform';
 import { Observable } from 'rxjs';
 
 export {
@@ -239,24 +244,11 @@ function extractRequestHeaders(req: HttpRequest<unknown>): Record<string, string
 export class NativeHttpBackend implements HttpBackend {
   handle(req: HttpRequest<unknown>): Observable<HttpEvent<unknown>> {
     return new Observable<HttpEvent<unknown>>((observer) => {
-      try {
-        const bridge = ensureNgNativeBridge();
-        const serializedBody = req.serializeBody();
-        const bodyStr =
-          serializedBody === null || serializedBody === undefined
-            ? undefined
-            : typeof serializedBody === 'string'
-              ? serializedBody
-              : JSON.stringify(serializedBody);
-
-        const callKind = detectNativeCallKind(req);
-        const rawRes = bridge.httpRequest(req.method, req.urlWithParams, bodyStr, {
-          headers: extractRequestHeaders(req),
-          responseType: req.responseType,
-          callKind,
-          withCredentials: req.withCredentials,
-        });
-
+      let cancelled = false;
+      const emitResponse = (rawRes: NativeHttpBridgeResponse): void => {
+        if (cancelled) {
+          return;
+        }
         let parsedBody: unknown = rawRes.body;
         if (req.responseType === 'json' && rawRes.body.length > 0) {
           try {
@@ -293,9 +285,49 @@ export class NativeHttpBackend implements HttpBackend {
             }),
           );
         }
+      };
+
+      try {
+        const bridge = ensureNgNativeBridge();
+        const serializedBody = req.serializeBody();
+        const bodyStr =
+          serializedBody === null || serializedBody === undefined
+            ? undefined
+            : typeof serializedBody === 'string'
+              ? serializedBody
+              : JSON.stringify(serializedBody);
+
+        const callKind = detectNativeCallKind(req);
+        const options = {
+          headers: extractRequestHeaders(req),
+          responseType: req.responseType,
+          callKind,
+          withCredentials: req.withCredentials,
+        };
+        const hasHostService =
+          typeof (globalThis as { __NG_NATIVE_HOST_SERVICE__?: unknown })
+            .__NG_NATIVE_HOST_SERVICE__ === 'function';
+
+        if (hasHostService && typeof bridge.httpRequestAsync === 'function') {
+          bridge
+            .httpRequestAsync(req.method, req.urlWithParams, bodyStr, options)
+            .then(emitResponse)
+            .catch((err) => {
+              if (!cancelled) {
+                observer.error(err);
+              }
+            });
+          return () => {
+            cancelled = true;
+          };
+        }
+
+        const rawRes = bridge.httpRequest(req.method, req.urlWithParams, bodyStr, options);
+        emitResponse(rawRes);
       } catch (err) {
         observer.error(err);
       }
+      return undefined;
     });
   }
 }

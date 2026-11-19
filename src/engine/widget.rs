@@ -394,6 +394,7 @@ impl WidgetKind {
         parent_id: NodeId,
         new_child: NodeId,
         ref_child: Option<NodeId>,
+        is_header_bar: bool,
     ) -> Result<(), EngineError> {
         match self {
             Self::Box { children, .. }
@@ -413,8 +414,17 @@ impl WidgetKind {
                 }
                 Ok(())
             }
-            Self::Window { child, .. }
-            | Self::Scroll { child, .. }
+            Self::Window {
+                header_bar, child, ..
+            } => {
+                if is_header_bar {
+                    *header_bar = Some(new_child);
+                } else {
+                    *child = Some(new_child);
+                }
+                Ok(())
+            }
+            Self::Scroll { child, .. }
             | Self::Expander { child, .. }
             | Self::Clamp { child, .. } => {
                 *child = Some(new_child);
@@ -656,7 +666,7 @@ mod tests {
 
         let mut bx = WidgetKind::from_tag("ng-box").unwrap();
         bx.add_child(parent_id, c1, false).unwrap();
-        bx.insert_before(parent_id, c2, Some(c1)).unwrap();
+        bx.insert_before(parent_id, c2, Some(c1), false).unwrap();
         if let WidgetKind::Box { children, .. } = &bx {
             assert_eq!(children, &vec![c2, c1]);
         }

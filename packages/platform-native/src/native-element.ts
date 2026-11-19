@@ -38,6 +38,8 @@ export class NativeElementNode {
   readonly id: string;
   readonly tag: string;
   readonly isComment: boolean;
+  readonly isVirtual: boolean;
+  readonly isText: boolean;
   parent: NativeElementNode | null = null;
   readonly children: NativeElementNode[] = [];
   readonly attributes = new Map<string, string>();
@@ -53,10 +55,12 @@ export class NativeElementNode {
     contains: (token: string) => boolean;
   };
 
-  constructor(id: string, tag: string, isComment = false) {
+  constructor(id: string, tag: string, isComment = false, isVirtual = false, isText = false) {
     this.id = id;
     this.tag = tag;
     this.isComment = isComment;
+    this.isVirtual = isVirtual;
+    this.isText = isText;
     this.classList = {
       add: (...tokens: string[]) => {
         for (const token of tokens) {

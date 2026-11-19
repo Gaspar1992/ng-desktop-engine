@@ -147,4 +147,93 @@ describe('@ng-desktop/platform — NativeRenderer2 & Bridge', () => {
     expect(shortcutTriggered).toBe(1);
     unlisten();
   });
+
+  it('supports virtual component hosts, text interpolation sync, removeClass, class diffing, styles, async images, and scrollEdge', async () => {
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+
+    let resolvedPath = '';
+    const originalDownload = bridge.downloadImageAsync;
+    bridge.downloadImageAsync = async (url: string) => {
+      resolvedPath = `/tmp/cached-${bridge.computeHash(url)}.png`;
+      return { ok: true, cached: false, path: resolvedPath };
+    };
+
+    try {
+      const factory = new NativeRendererFactory2();
+      const renderer = factory.createRenderer(null, {
+        id: 'app-sample-card',
+        encapsulation: 0,
+        styles: [
+          `/* scoped comment */
+           .hero-card[_ngcontent-abc] {
+             background-color: #1e293b;
+             color: #f8fafc;
+             padding: 12px;
+             gap: 8px;
+             border-radius: 10px;
+             font-size: 16px;
+             font-weight: bold;
+           }`,
+        ],
+        data: {},
+      });
+
+      const appRoot = renderer.selectRootElement('app-root');
+      expect(appRoot.isVirtual).toBe(true);
+
+      const win = renderer.createElement('ng-window');
+      renderer.appendChild(appRoot, win);
+
+      const hostCard = renderer.createElement('app-card');
+      expect(hostCard.isVirtual).toBe(true);
+      const box = renderer.createElement('ng-box');
+      renderer.setAttribute(box, '_ngcontent-abc', '');
+      renderer.setAttribute(box, 'class', 'hero-card active');
+      renderer.setAttribute(box, 'class', 'hero-card highlighted');
+      renderer.removeClass(box, 'highlighted');
+
+      const lbl = renderer.createElement('ng-label');
+      const txt = renderer.createText('Hello ');
+      const dyn = renderer.createText('World');
+      renderer.appendChild(lbl, txt);
+      renderer.appendChild(lbl, dyn);
+      renderer.setValue(dyn, 'Angular\nDesktop');
+      renderer.appendChild(hostCard, lbl);
+      renderer.appendChild(box, hostCard);
+      renderer.appendChild(win, box);
+
+      const img = renderer.createElement('ng-image');
+      renderer.setAttribute(img, 'src', 'https://cdn.example.test/sprite.png');
+      renderer.appendChild(box, img);
+
+      const scroll = renderer.createElement('ng-scroll');
+      let edgeHits = 0;
+      const unlistenEdge = renderer.listen(scroll, 'scrollEdge', () => {
+        edgeHits += 1;
+      });
+      bridge.__dispatchEvent(scroll.id, 'edge-reached', { position: 2 });
+      expect(edgeHits).toBe(1);
+      unlistenEdge();
+
+      await Promise.resolve();
+      const cmds = bridge.__drainQueue();
+      expect(cmds).toContain(
+        'style hero-card #1e293b #f8fafc 12 8 radius=10 font-size=16 font-weight=700',
+      );
+      expect(cmds).not.toContain('create app-root');
+      expect(cmds).not.toContain('create app-card');
+      expect(cmds).not.toContain('_ngcontent-abc');
+      expect(cmds).toContain(`add_class ${box.id} hero-card`);
+      expect(cmds).toContain(`add_class ${box.id} active`);
+      expect(cmds).toContain(`remove_class ${box.id} active`);
+      expect(cmds).toContain(`add_class ${box.id} highlighted`);
+      expect(cmds).toContain(`remove_class ${box.id} highlighted`);
+      expect(cmds).toContain(`text ${lbl.id} Hello Angular\u001eDesktop`);
+      expect(cmds).toContain(`append ${box.id} ${lbl.id}`);
+      expect(cmds).toContain(`text ${img.id} ${resolvedPath}`);
+    } finally {
+      bridge.downloadImageAsync = originalDownload;
+    }
+  });
 });

@@ -148,6 +148,47 @@ export function emitNgbBundle(
   return lines.join('\n') + '\n';
 }
 
+function emitAppJsBundleIfPresent(outDir, projectName, allStyleRules, iconMeta) {
+  const browserDir = resolve(outDir, 'browser');
+  if (!existsSync(browserDir)) {
+    return undefined;
+  }
+  const entries = readdirSync(browserDir);
+  const mainFile =
+    entries.find((f) => f === 'main.js') ?? entries.find((f) => /^main-.*\.js$/.test(f));
+  if (!mainFile) {
+    return undefined;
+  }
+  const polyfillsFile =
+    entries.find((f) => f === 'polyfills.js') ?? entries.find((f) => /^polyfills-.*\.js$/.test(f));
+
+  const preamble = [
+    `globalThis.__NG_NATIVE_APP_ID__ = ${JSON.stringify(projectName)};`,
+    iconMeta
+      ? `globalThis.__NG_DESKTOP_ICON__ = ${JSON.stringify(iconMeta)};`
+      : 'delete globalThis.__NG_DESKTOP_ICON__;',
+  ];
+  for (const rule of allStyleRules) {
+    const extensions = [];
+    if (rule.borderRadius !== null) extensions.push(`radius=${rule.borderRadius}`);
+    if (rule.fontSize !== null) extensions.push(`font-size=${rule.fontSize}`);
+    if (rule.fontWeight !== null) extensions.push(`font-weight=${rule.fontWeight}`);
+    preamble.push(
+      `globalThis.__NG_NATIVE__?.registerStyle(${JSON.stringify(rule.className)}, ${JSON.stringify(rule.background)}, ${JSON.stringify(rule.color)}, ${Number(rule.padding) || 0}, ${Number(rule.spacing) || 0}, ${JSON.stringify(extensions.join(' '))});`,
+    );
+  }
+
+  const chunks = [preamble.join('\n')];
+  if (polyfillsFile) {
+    chunks.push(readFileSync(resolve(browserDir, polyfillsFile), 'utf8'));
+  }
+  chunks.push(readFileSync(resolve(browserDir, mainFile), 'utf8'));
+
+  const entryBundleFile = resolve(outDir, 'app.bundle.js');
+  writeFileSync(entryBundleFile, chunks.join('\n'), 'utf8');
+  return entryBundleFile;
+}
+
 export function compileBundle({
   rebuildIcons = true,
   cwd,
@@ -237,6 +278,8 @@ export function compileBundle({
   const bundleFile = resolve(outDir, 'main.ngb');
   writeFileSync(bundleFile, bundle, 'utf8');
 
+  const entryBundleFile = emitAppJsBundleIfPresent(outDir, projectName, allStyleRules, iconMeta);
+
   const permissions = analyzeProjectPermissions(sourceRootAbs, nativeOptions.permissions);
   const permissionsFile = resolve(outDir, 'permissions.manifest.json');
   writeFileSync(permissionsFile, JSON.stringify(permissions, null, 2) + '\n', 'utf8');
@@ -249,6 +292,7 @@ export function compileBundle({
     targetPlatform: nativeOptions.targetPlatform || 'linux-gtk4',
     outputPath: resolvedOutputPath,
     iconSearchDir: `${resolvedOutputPath}/icons`,
+    ...(entryBundleFile ? { entryBundle: 'app.bundle.js' } : {}),
     permissions,
   };
   const runtimeConfigFile = resolve(outDir, 'ng-desktop.runtime.json');
@@ -257,6 +301,9 @@ export function compileBundle({
   console.log(
     `[Angular Native Compiler] Compiled ${projectName} v${resolvedVersion} (${workspace.workspaceKind}) -> ${bundleFile}`,
   );
+  if (entryBundleFile) {
+    console.log(`[Angular Native Compiler] Bundled Ivy JS runtime entry -> ${entryBundleFile}`);
+  }
 
   const socketPath = resolve(outDir, 'hmr.sock');
   if (existsSync(socketPath)) {
@@ -272,6 +319,7 @@ export function compileBundle({
     version: resolvedVersion,
     sourceRoot: sourceRootAbs,
     bundleFile,
+    ...(entryBundleFile ? { entryBundleFile } : {}),
     permissionsFile,
     runtimeConfigFile,
     permissions,

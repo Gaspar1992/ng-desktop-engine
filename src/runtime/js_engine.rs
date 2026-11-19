@@ -1,4 +1,5 @@
 pub use super::bootstrap_js::NG_NATIVE_BOOTSTRAP_JS;
+use super::host_bridge::HostBridge;
 use super::jsc_sys::JscSys;
 pub use super::quickjs_engine::QuickJsEngine;
 use crate::desktop::NativeHttpEngine;
@@ -11,6 +12,7 @@ pub trait JsEngineBackend {
     fn engine_name(&self) -> &str;
     fn is_jit_enabled(&self) -> bool;
     fn attach_http_engine(&mut self, _engine: Arc<Mutex<NativeHttpEngine>>) {}
+    fn attach_host_bridge(&mut self, _bridge: Arc<HostBridge>) {}
     fn eval_script(&mut self, js_code: &str) -> Result<String, EngineError>;
     fn dispatch_js_event(&mut self, node_var: &str, event_name: &str) -> Result<(), EngineError> {
         self.dispatch_js_event_with_payload(node_var, event_name, &EventPayload::None)
@@ -69,6 +71,12 @@ impl JsEngineBackend for JscEngine {
     fn attach_http_engine(&mut self, engine: Arc<Mutex<NativeHttpEngine>>) {
         if let Some(jsc) = &self.jsc {
             jsc.set_http_engine(engine);
+        }
+    }
+
+    fn attach_host_bridge(&mut self, bridge: Arc<HostBridge>) {
+        if let Some(jsc) = &self.jsc {
+            jsc.set_host_bridge(bridge);
         }
     }
 
@@ -157,6 +165,13 @@ impl JsEngineBackend for AnyJsEngine {
         match self {
             Self::Jsc(e) => e.attach_http_engine(engine),
             Self::QuickJs(e) => e.attach_http_engine(engine),
+        }
+    }
+
+    fn attach_host_bridge(&mut self, bridge: Arc<HostBridge>) {
+        match self {
+            Self::Jsc(e) => e.attach_host_bridge(bridge),
+            Self::QuickJs(e) => e.attach_host_bridge(bridge),
         }
     }
 

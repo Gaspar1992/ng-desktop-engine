@@ -140,12 +140,13 @@ impl<B: PlatformBackend> RenderEngine<B> {
         new_child: NodeId,
         ref_child: Option<NodeId>,
     ) -> Result<(), EngineError> {
-        let _ = self.arena.get(new_child)?;
+        let is_header_bar = self.arena.get(new_child)?.is_header_bar();
         if let Some(ref_id) = ref_child {
             let _ = self.arena.get(ref_id)?;
         }
-        self.arena
-            .with_exclusive_mut(parent, |w| w.insert_before(parent, new_child, ref_child))?;
+        self.arena.with_exclusive_mut(parent, |w| {
+            w.insert_before(parent, new_child, ref_child, is_header_bar)
+        })?;
         self.commands.push(RenderCommand::InsertBefore {
             parent,
             child: new_child,
@@ -168,6 +169,15 @@ impl<B: PlatformBackend> RenderEngine<B> {
         let style_id = self.styles.attach_class(node, class_name)?;
         self.commands
             .push(RenderCommand::ApplyStyleClass { node, style_id });
+        Ok(())
+    }
+
+    pub fn remove_class(&mut self, node: NodeId, class_name: &str) -> Result<(), EngineError> {
+        let _ = self.arena.get(node)?;
+        if let Some(style_id) = self.styles.detach_class(node, class_name) {
+            self.commands
+                .push(RenderCommand::RemoveStyleClass { node, style_id });
+        }
         Ok(())
     }
 

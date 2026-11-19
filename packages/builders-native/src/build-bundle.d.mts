@@ -16,6 +16,7 @@ export interface CompileBundleResult {
   version: string;
   sourceRoot: string;
   bundleFile: string;
+  entryBundleFile?: string;
   permissionsFile: string;
   runtimeConfigFile: string;
   permissions: PermissionAnalysisManifest;

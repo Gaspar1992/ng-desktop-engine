@@ -64,6 +64,23 @@ impl NativeSceneState {
         Some((x, y))
     }
 
+    fn apply_scene_attribute(node: &mut NativeSceneNode, key: &str, value: &str) {
+        match key {
+            "drop-target" => {
+                let trimmed = value.trim();
+                node.drop_target = !trimmed.eq_ignore_ascii_case("false") && trimmed != "0";
+            }
+            "scroll-to" => {
+                node.scroll_position = Self::parse_scroll_coords(value);
+            }
+            "scroll-anchor" => {
+                node.scroll_anchor = Some(value.to_string());
+            }
+            _ => {}
+        }
+        node.attributes.insert(key.to_string(), value.to_string());
+    }
+
     pub fn apply_command<F>(&mut self, cmd: &RenderCommand, comment_class: &'static str, map_tag: F)
     where
         F: Fn(&str) -> &'static str,
@@ -109,21 +126,7 @@ impl NativeSceneState {
             }
             RenderCommand::SetAttribute { node, key, value } => {
                 if let Some(n) = self.nodes.get_mut(node) {
-                    match key.as_str() {
-                        "drop-target" => {
-                            let trimmed = value.trim();
-                            n.drop_target =
-                                !trimmed.eq_ignore_ascii_case("false") && trimmed != "0";
-                        }
-                        "scroll-to" => {
-                            n.scroll_position = Self::parse_scroll_coords(value);
-                        }
-                        "scroll-anchor" => {
-                            n.scroll_anchor = Some(value.clone());
-                        }
-                        _ => {}
-                    }
-                    n.attributes.insert(key.clone(), value.clone());
+                    Self::apply_scene_attribute(n, key, value);
                 }
             }
             RenderCommand::SetWindowIcon { node, icon } => {
@@ -134,6 +137,11 @@ impl NativeSceneState {
                     && !n.style_classes.contains(style_id)
                 {
                     n.style_classes.push(*style_id);
+                }
+            }
+            RenderCommand::RemoveStyleClass { node, style_id } => {
+                if let Some(n) = self.nodes.get_mut(node) {
+                    n.style_classes.retain(|id| *id != *style_id);
                 }
             }
             RenderCommand::AppendChild { parent, child } => {

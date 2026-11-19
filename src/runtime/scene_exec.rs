@@ -44,6 +44,9 @@ impl JsRuntime {
                 value,
             } => {
                 let id = self.resolve_var(&var_name)?;
+                if key == "id" && !value.trim().is_empty() {
+                    self.variables.insert(value.trim().to_string(), id);
+                }
                 engine.set_attribute(id, key, value)
             }
             Instruction::SetIcon {
@@ -57,53 +60,66 @@ impl JsRuntime {
             Instruction::AppendChild {
                 parent_var,
                 child_var,
-            } => {
-                if !is_hmr || newly_created.contains(&child_var) {
-                    let parent = self.resolve_var(&parent_var)?;
-                    let child = self.resolve_var(&child_var)?;
-                    engine.append_child(parent, child)?;
-                }
-                Ok(())
+            } if !is_hmr || newly_created.contains(&child_var) => {
+                let (p, c) = (
+                    self.resolve_var(&parent_var)?,
+                    self.resolve_var(&child_var)?,
+                );
+                engine.append_child(p, c)
             }
             Instruction::InsertBefore {
                 parent_var,
                 child_var,
                 ref_var,
-            } => {
-                if !is_hmr || newly_created.contains(&child_var) {
-                    let parent = self.resolve_var(&parent_var)?;
-                    let child = self.resolve_var(&child_var)?;
-                    let ref_child = ref_var.map(|r| self.resolve_var(&r)).transpose()?;
-                    engine.insert_before(parent, child, ref_child)?;
-                }
-                Ok(())
+            } if !is_hmr || newly_created.contains(&child_var) => {
+                let (p, c) = (
+                    self.resolve_var(&parent_var)?,
+                    self.resolve_var(&child_var)?,
+                );
+                let ref_child = ref_var.map(|r| self.resolve_var(&r)).transpose()?;
+                engine.insert_before(p, c, ref_child)
             }
             Instruction::RemoveChild {
                 parent_var,
                 child_var,
-            } => {
-                let parent = self.resolve_var(&parent_var)?;
-                let child = self.resolve_var(&child_var)?;
-                engine.remove_child(parent, child)
-            }
+            } => engine.remove_child(
+                self.resolve_var(&parent_var)?,
+                self.resolve_var(&child_var)?,
+            ),
             Instruction::AddClass {
                 var_name,
                 class_name,
             } => {
                 let id = self.resolve_var(&var_name)?;
-                engine.add_class(id, &class_name)
-            }
-            Instruction::Destroy { var_name } => {
-                let id = self.resolve_var(&var_name)?;
-                self.variables.remove(&var_name);
-                self.node_vars.remove(&id);
-                if self.primary_window == Some(id) {
-                    self.primary_window = None;
+                match engine.add_class(id, &class_name) {
+                    Ok(()) | Err(EngineError::StyleNotFound(_)) => Ok(()),
+                    Err(e) => Err(e),
                 }
-                engine.destroy_node(id)
             }
+            Instruction::RemoveClass {
+                var_name,
+                class_name,
+            } => {
+                let id = self.resolve_var(&var_name)?;
+                engine.remove_class(id, &class_name)
+            }
+            Instruction::Destroy { var_name } => self.exec_destroy_node(engine, &var_name),
             _ => Ok(()),
         }
+    }
+
+    fn exec_destroy_node<B: PlatformBackend>(
+        &mut self,
+        engine: &mut RenderEngine<B>,
+        var_name: &str,
+    ) -> Result<(), EngineError> {
+        let id = self.resolve_var(var_name)?;
+        self.variables.remove(var_name);
+        self.node_vars.remove(&id);
+        if self.primary_window == Some(id) {
+            self.primary_window = None;
+        }
+        engine.destroy_node(id)
     }
 
     fn register_handle(&mut self, var_name: &str, id: NodeId) {

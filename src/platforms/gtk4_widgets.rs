@@ -205,6 +205,12 @@ impl Gtk4Sys {
         }
     }
 
+    pub fn flow_box_insert(&self, flow: GtkHandle, child: GtkHandle, position: i32) {
+        unsafe {
+            (self.gtk_flow_box_insert)(flow.0, child.0, position);
+        }
+    }
+
     pub fn flow_box_remove(&self, flow: GtkHandle, child: GtkHandle) {
         unsafe {
             (self.gtk_flow_box_remove)(flow.0, child.0);

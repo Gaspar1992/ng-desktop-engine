@@ -7,7 +7,7 @@ use ng_native_engine::platforms::AnyPlatformBackend;
 use ng_native_engine::runtime::{JsEngineBackend, JsRuntime};
 use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread;
 use std::time::{Duration, SystemTime};
@@ -51,6 +51,22 @@ fn handle_hmr_messages(
 }
 
 const STANDALONE_POKEDEX_NGB: &str = include_str!("standalone_pokedex.ngb");
+
+fn resolve_app_bundle_path(cfg: &AngularNativeConfig) -> Option<PathBuf> {
+    let mut candidates = vec![PathBuf::from(format!("{}/app.bundle.js", cfg.output_path))];
+    if let Ok(exe_path) = env::current_exe()
+        && let Some(exe_dir) = exe_path.parent()
+    {
+        candidates.push(exe_dir.join("app.bundle.js"));
+        candidates.push(exe_dir.join("../Resources/app.bundle.js"));
+        candidates.push(exe_dir.join(format!("../share/{}/app.bundle.js", cfg.project_name)));
+    }
+    candidates.push(PathBuf::from(format!(
+        "/usr/share/{}/app.bundle.js",
+        cfg.project_name
+    )));
+    candidates.into_iter().find(|p| p.is_file())
+}
 
 fn ensure_bundle_compiled(cfg: &AngularNativeConfig, bundle_path: &str) -> String {
     if let Ok(script) = fs::read_to_string(bundle_path) {
@@ -98,6 +114,7 @@ fn ensure_bundle_compiled(cfg: &AngularNativeConfig, bundle_path: &str) -> Strin
 struct InteractiveContext<'a> {
     cfg: &'a AngularNativeConfig,
     bundle_path: &'a str,
+    is_js_bundle: bool,
     last_mtime: Option<SystemTime>,
     win_id: NodeId,
 }
@@ -112,10 +129,14 @@ fn run_interactive_loop(
         "\n[GTK4 Native Window Active] Opened native Linux window '{}'. Watching '{}' for Hot Reload...",
         ctx.cfg.project_name, ctx.bundle_path
     );
-    let mut pokedex = js_runtime
-        .resolve_var("pokemon_grid")
-        .ok()
-        .map(|_| PokedexController::new(&js_runtime));
+    let mut pokedex = if ctx.is_js_bundle {
+        None
+    } else {
+        js_runtime
+            .resolve_var("pokemon_grid")
+            .ok()
+            .map(|_| PokedexController::new(&js_runtime))
+    };
     if let Some(ctrl) = pokedex.as_mut() {
         ctrl.show_list(&mut engine);
         ctrl.start_initial_load(&mut engine);
@@ -126,12 +147,21 @@ fn run_interactive_loop(
             if let Some(ctrl) = pokedex.as_mut() {
                 ctrl.handle_event(&ev, &mut engine, &mut js_runtime);
             }
-            js_runtime
-                .trigger_node_event_with_payload(&mut engine, ev.node, &ev.event_name, &ev.payload)
-                .unwrap();
+            if let Err(err) = js_runtime.trigger_node_event_with_payload(
+                &mut engine,
+                ev.node,
+                &ev.event_name,
+                &ev.payload,
+            ) {
+                eprintln!("[JS Event Error] {err:?}");
+            }
         }
 
-        if let Some(ctrl) = pokedex.as_mut() {
+        if ctx.is_js_bundle {
+            if let Err(err) = js_runtime.tick(&mut engine) {
+                eprintln!("[JS Tick Error] {err:?}");
+            }
+        } else if let Some(ctrl) = pokedex.as_mut() {
             ctrl.tick(&mut engine, &mut js_runtime);
         }
         // Commands queued outside event dispatch (async results, view switches) must be
@@ -152,7 +182,12 @@ fn run_interactive_loop(
             && !updated_script.trim().is_empty()
         {
             ctx.last_mtime = current_mtime;
-            if let Err(err) = js_runtime.hot_reload(&mut engine, &updated_script) {
+            let update_res = if ctx.is_js_bundle {
+                js_runtime.eval_js(&mut engine, &updated_script).map(|_| ())
+            } else {
+                js_runtime.hot_reload(&mut engine, &updated_script)
+            };
+            if let Err(err) = update_res {
                 eprintln!("[Hot Reload Error] Failed to apply bundle update: {err:?}");
             } else {
                 if let Some(ctrl) = pokedex.as_mut() {
@@ -221,20 +256,6 @@ fn main() {
         return;
     }
 
-    let bundle_path = format!("{}/main.ngb", cfg.output_path);
-    let bootstrap_script = ensure_bundle_compiled(&cfg, &bundle_path);
-    let last_mtime = bundle_modified_time(&bundle_path);
-
-    println!(
-        "Loaded config -> project='{}' v'{}', platform='{}', bundle='{}', permissions={:?}\n",
-        cfg.project_name,
-        cfg.version,
-        cfg.target_platform,
-        bundle_path,
-        cfg.permissions.summary_labels()
-    );
-
-    // Resolve the OS Backend & Pluggable JS Engine (`jsc` or `quickjs`) via Factory Method
     let backend = AnyPlatformBackend::from_config(&cfg).unwrap();
     let mut engine = RenderEngine::new(backend);
     let mut js_runtime = JsRuntime::from_config(&cfg).unwrap();
@@ -244,10 +265,45 @@ fn main() {
         js_runtime.js_engine().is_jit_enabled()
     );
 
-    // 3. Tick #1: JS Runtime evaluates the compiled Angular bundle (styles + template + bindings)
-    js_runtime
-        .eval_tick(&mut engine, &bootstrap_script)
-        .unwrap();
+    let (bundle_path, is_js_bundle, last_mtime) = if let Some(js_path) =
+        resolve_app_bundle_path(&cfg)
+        && js_runtime.js_engine().is_jit_enabled()
+    {
+        let path_str = js_path.to_string_lossy().into_owned();
+        let js_source = fs::read_to_string(&js_path).unwrap();
+        let mtime = bundle_modified_time(&path_str);
+        js_runtime.eval_js(&mut engine, &js_source).unwrap();
+        for _ in 0..50 {
+            if js_runtime.resolve_primary_window().is_ok() {
+                break;
+            }
+            let _ = js_runtime.tick(&mut engine).unwrap();
+            thread::sleep(Duration::from_millis(5));
+        }
+        (path_str, true, mtime)
+    } else {
+        let ngb_path = format!("{}/main.ngb", cfg.output_path);
+        let bootstrap_script = ensure_bundle_compiled(&cfg, &ngb_path);
+        let mtime = bundle_modified_time(&ngb_path);
+        js_runtime
+            .eval_tick(&mut engine, &bootstrap_script)
+            .unwrap();
+        (ngb_path, false, mtime)
+    };
+
+    println!(
+        "Loaded runtime -> project='{}' v'{}', platform='{}', bundle='{}' ({}), permissions={:?}\n",
+        cfg.project_name,
+        cfg.version,
+        cfg.target_platform,
+        bundle_path,
+        if is_js_bundle {
+            "Angular Ivy JS"
+        } else {
+            "legacy .ngb"
+        },
+        cfg.permissions.summary_labels()
+    );
 
     // 4. Render visual preview of the mounted native window
     let win_id = js_runtime.resolve_primary_window().unwrap();
@@ -265,6 +321,7 @@ fn main() {
             InteractiveContext {
                 cfg: &cfg,
                 bundle_path: &bundle_path,
+                is_js_bundle,
                 last_mtime,
                 win_id,
             },
