@@ -223,7 +223,7 @@ When `@angular/platform-browser` is removed, Angular's Ivy runtime still require
 - [x] **External `npm pack` Verification & Automated Publishing (`scripts/test-external-pack.mjs`, `Cargo.toml`, `.github/workflows/release.yml`):**
   - [x] Enriched `Cargo.toml` metadata for `crates.io` (`description`, `license`, `repository`, `documentation`, `keywords`, `categories`, scoped `include`) and APF npm manifests (`repository`, `publishConfig`, `README.md`, `LICENSE`).
   - [x] Added `pnpm run test:pack` verifying tarball contents and out-of-monorepo import execution of packed `@ng-desktop/builders` across **121 passing tests** (51 Vitest + 50 Rust unit + 20 Rust integration).
-  - [x] Added `publish-npm` (OIDC `--provenance` or safe `--dry-run`) and `publish-crates` (`cargo publish --locked` or safe `--dry-run`) jobs to `.github/workflows/release.yml`.
+  - [x] Added `publish-npm` (tokenless OIDC Trusted Publishing `--provenance` inside `npm-publish` environment), `publish-crates` (`rust-lang/crates-io-auth-action@v1` inside `crates-publish` environment), SLSA artifact attestations (`actions/attest@v4`), and `scripts/bootstrap-npm-packages.mjs` (`pnpm run publish:bootstrap`).
 
 ---
 

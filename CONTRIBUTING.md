@@ -98,9 +98,12 @@ This repository follows [Conventional Commits](https://www.conventionalcommits.o
 
 ### How Milestone Releases Work
 
-When a major milestone is complete, pushing a version tag (`vX.Y.Z`) triggers [`.github/workflows/release.yml`](./.github/workflows/release.yml) and [`scripts/generate-release-notes.mjs`](./scripts/generate-release-notes.mjs) to publish two linked GitHub Releases:
+When a major milestone is complete, pushing a version tag (`vX.Y.Z`) triggers [`.github/workflows/release.yml`](./.github/workflows/release.yml) and [`scripts/generate-release-notes.mjs`](./scripts/generate-release-notes.mjs) to publish two linked GitHub Releases and verify/publish packages via **tokenless OIDC Trusted Publishing**:
 
-1. **`vX.Y.Z` (Engine + Individual `@ng-desktop/*` Packages):** Rust binaries + standalone `.tgz` tarballs for `@ng-desktop/{platform,forms,router,http,desktop,builders}` and `@ng-desktop/engine-*` with Angular-style architecture diagrams and categorized changelogs.
+1. **`vX.Y.Z` (Engine + Individual `@ng-desktop/*` Packages):** Rust binaries + standalone `.tgz` tarballs for `@ng-desktop/{platform,forms,router,http,desktop,builders}` and `@ng-desktop/engine-*` with Angular-style architecture diagrams, categorized changelogs, and Sigstore SLSA build provenance attestations (`actions/attest@v4`).
 2. **`pokedex-demo-vX.Y.Z` (Showcase Application):** Installable `.deb` (Linux), standalone `.exe` (Windows), and `.dmg` (macOS) executables built from the showcase app.
+3. **Tokenless OIDC Publishing (`npm` & `crates.io`):**
+   - `publish-npm` runs inside GitHub Environment `npm-publish` (`id-token: write`, `npm >= 11.5.1`, no `NPM_TOKEN` secret) once `vars.NPM_TRUSTED_PUBLISHING == 'true'`. Initial one-time package creation is assisted by `pnpm run publish:bootstrap`.
+   - `publish-crates` runs inside GitHub Environment `crates-publish` using `rust-lang/crates-io-auth-action@v1` once `vars.CRATES_TRUSTED_PUBLISHING == 'true'`.
 
 All contributors agree to abide by our [Code of Conduct](./CODE_OF_CONDUCT.md) and license their contributions under the [MIT License](./LICENSE).
