@@ -73,11 +73,12 @@ describe('@ng-native/desktop Nivel 1-3 services', () => {
     desktop.setTheme('dark');
     expect(desktop.theme()).toBe('dark');
 
-    sqlite.execute('CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, title TEXT)');
+    sqlite.execute('CREATE TABLE IF NOT EXISTS desktop_notes (id TEXT PRIMARY KEY, title TEXT)');
+    sqlite.execute('DELETE FROM desktop_notes');
     const live = sqlite.liveQuery<{ id: string; title: string }>(
-      'SELECT * FROM notes ORDER BY id ASC',
+      'SELECT * FROM desktop_notes ORDER BY id ASC',
     );
-    sqlite.execute("INSERT OR REPLACE INTO notes (id, title) VALUES ('1', 'Nivel 3')");
+    sqlite.execute("INSERT OR REPLACE INTO desktop_notes (id, title) VALUES ('1', 'Nivel 3')");
     expect(live.count()).toBe(1);
     expect(live.rows()[0]?.title).toBe('Nivel 3');
 
