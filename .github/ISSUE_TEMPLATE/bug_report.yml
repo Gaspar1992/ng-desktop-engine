@@ -1,0 +1,81 @@
+name: 🐛 Bug Report
+description: Report a bug, crash, FFI issue, or template compilation failure in ng-desktop-engine or @ng-native/*.
+title: '[Bug]: '
+labels: ['bug', 'triage']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve **NgDesktop Engine**! If this is a security vulnerability, **stop** and report it privately via [Security Advisories](https://github.com/Gaspar1992/ng-desktop-engine/security/advisories/new).
+  - type: dropdown
+    id: package
+    attributes:
+      label: Affected Package or Component
+      description: Which part of the monorepo is affected?
+      options:
+        - ng-desktop-engine (Rust Core / Engine / Runtime)
+        - '@ng-native/platform (NativeRenderer2, Title, ViewportScroller, ImageLoader)'
+        - '@ng-native/forms (ControlValueAccessor directives)'
+        - '@ng-native/router (NativePlatformLocation, TitleStrategy, ReuseStrategy)'
+        - '@ng-native/http (NativeHttpBackend, libsoup-3.0, httpResource)'
+        - '@ng-native/desktop (SQLite, Network, Compute, FileSystem, DropTarget)'
+        - '@ng-native/builders (AST Compilers, Architect Builder, HMR Client)'
+        - Pokédex Demo (examples/counter-app / .deb / .exe / .dmg)
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Operating System / Backend
+      options:
+        - Linux (GTK4 / Libadwaita)
+        - Windows 11 / 10 (WinUI 3)
+        - macOS (AppKit / Cocoa)
+        - Headless / Docker Container
+    validations:
+      required: true
+  - type: dropdown
+    id: js_engine
+    attributes:
+      label: JavaScript Engine Backend
+      options:
+        - JavaScriptCore (jsc — libjavascriptcoregtk-6.0)
+        - QuickJS (quickjs — zero-JIT fallback)
+        - N/A (Build-time / CLI / Compiler only)
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment Versions
+      description: Output of `rustc --version`, `node --version`, Angular version, OS/Distro, and Wayland/X11 if on Linux.
+      placeholder: |
+        - Release/Commit: v0.2.0
+        - Rust: 1.100.0
+        - Node / Angular: Node 24 / @angular/core 22.2.6
+        - OS / Display Server: Ubuntu 24.04 (Wayland)
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal Reproduction Steps
+      description: Provide clear steps, Angular template snippet, or `.ngb` commands to reproduce the issue.
+      placeholder: |
+        1. Create `<ng-box>` with ...
+        2. Run `pnpm run dev` or `cargo test` ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs. Actual Behavior
+      description: Describe what you expected to happen and what actually happened.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console Output, Clippy Warnings, or Rust Backtrace
+      description: Paste any terminal logs (`RUST_BACKTRACE=1 cargo run`) or Vitest output here.
+      render: shell

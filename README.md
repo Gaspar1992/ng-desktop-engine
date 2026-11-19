@@ -152,7 +152,18 @@ ng-native-engine/
 │   ├── test_pipeline_and_hmr.rs  # Full bundle pipeline, HMR & Unix socket IPC tests
 │   └── test_scene_graph.rs       # Arena invariants, anchors & reverse event dispatch tests
 ├── ROADMAP.md                    # Deep architectural roadmap & completed milestone history
-└── CHANGELOG.md                  # Release notes and version changelog
+├── CHANGELOG.md                  # Release notes and version changelog
+├── SECURITY.md                   # Vulnerability disclosure policy, SLAs & FFI threat model
+├── CONTRIBUTING.md               # Contribution guidelines, SOLID standards & release workflow
+├── CODE_OF_CONDUCT.md            # Contributor Covenant v2.1 community standards
+├── SUPPORT.md                    # Documentation links & where to file bugs/features
+├── LICENSE                       # MIT License
+└── .github/
+    ├── ISSUE_TEMPLATE/           # Bug, Feature Request, and Cross-Platform Parity forms
+    ├── PULL_REQUEST_TEMPLATE.md  # SOLID, FFI safety, and multi-OS verification checklist
+    ├── CODEOWNERS                # Repository review ownership
+    ├── dependabot.yml            # Weekly Cargo, npm, and GitHub Actions security updates
+    └── workflows/                # Multi-OS CI (Linux/Win/macOS) & Release workflows
 ```
 
 ---
@@ -235,3 +246,14 @@ NG_NATIVE_BATCH=1 cargo run
 
 - See [**ROADMAP.md**](./ROADMAP.md) for the complete technical analysis and phased milestones to reach **100% Angular ecosystem compatibility** on Linux, Windows, and macOS.
 - See [**CHANGELOG.md**](./CHANGELOG.md) for release notes and detailed version history.
+
+---
+
+## 🤝 Contributing, Security & Governance
+
+We welcome contributions across Rust core, platform backends (`GTK4`, `WinUI 3`, `AppKit`), Angular 22+ packages (`@ng-native/*`), and packaging/containers:
+
+- **Contributing Guidelines:** Read [**CONTRIBUTING.md**](./CONTRIBUTING.md) for setup, SOLID/FFI standards, and verification commands (`pnpm run check`).
+- **Security Policy & Private Disclosure:** See [**SECURITY.md**](./SECURITY.md) — **never report security vulnerabilities publicly**; use [GitHub Private Vulnerability Reporting](https://github.com/Gaspar1992/ng-desktop-engine/security/advisories/new).
+- **Reporting Bugs & Feature Proposals:** Use the structured forms in [GitHub Issues](https://github.com/Gaspar1992/ng-desktop-engine/issues/new/choose) (Bug Report, Feature Request, or Cross-Platform Parity).
+- **Community & Support:** Reviewed under the [**Contributor Covenant Code of Conduct**](./CODE_OF_CONDUCT.md). See [**SUPPORT.md**](./SUPPORT.md) for navigation and [**LICENSE**](./LICENSE) (MIT).

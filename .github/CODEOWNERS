@@ -1,0 +1,10 @@
+# Code Owners for NgDesktop Engine
+# Pull requests modifying these paths will request review from the designated maintainers.
+
+*               @Gaspar1992
+/src/           @Gaspar1992
+/packages/      @Gaspar1992
+/.github/       @Gaspar1992
+/docker/        @Gaspar1992
+/SECURITY.md    @Gaspar1992
+/CONTRIBUTING.md @Gaspar1992

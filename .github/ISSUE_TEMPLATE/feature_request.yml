@@ -1,0 +1,43 @@
+name: ✨ Feature Request
+description: Propose a new native widget primitive, Angular API integration, or OS service for NgDesktop Engine.
+title: '[Feature]: '
+labels: ['enhancement']
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Target Layer
+      options:
+        - Rust Core Engine / Arena / Scene Graph
+        - Platform Backends (GTK4 / WinUI 3 / AppKit)
+        - Desktop OS Services (@ng-native/desktop)
+        - Angular Integration (@ng-native/platform, forms, router, http)
+        - Compiler & CLI Toolchain (@ng-native/builders)
+        - Multi-OS Packaging / CI / Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement / Use Case
+      description: What limitation or Angular capability are you trying to enable natively on desktop?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Angular & Rust API
+      description: Sketch the proposed Angular selector/service API and corresponding Rust commands or FFI hooks.
+    validations:
+      required: true
+  - type: textarea
+    id: cross_platform
+    attributes:
+      label: Cross-Platform OS Mapping (Linux / Windows / macOS)
+      description: Note how this capability maps to native controls or APIs across GTK4/GIO (Linux), WinUI 3/WinRT (Windows), and AppKit/Foundation (macOS).
+      placeholder: |
+        - Linux (GTK4 / GIO):
+        - Windows (WinUI 3 / WinRT):
+        - macOS (AppKit / Foundation):
+    validations:
+      required: false

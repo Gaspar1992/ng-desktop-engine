@@ -1,0 +1,30 @@
+name: 🖥️ Cross-Platform Parity Issue
+description: Report a behavior difference or contribute native bindings across Linux GTK4, Windows WinUI 3, and macOS AppKit.
+title: '[Parity]: '
+labels: ['cross-platform', 'parity']
+body:
+  - type: dropdown
+    id: target_os
+    attributes:
+      label: Target Platform with Parity Gap
+      options:
+        - Windows 11 (WinUiBackend / WinRT / WinHTTP)
+        - macOS (MacOsAppKitBackend / Foundation / URLSession)
+        - Linux (GtkLinuxBackend / GTK4 / Libadwaita / GIO)
+        - All Platforms (Shared Trait / NativeSceneState)
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Primitive or OS Service Involved
+      description: Specify the primitive tag (`ng-*`), attribute, event payload, or desktop service (`NativeHttpEngine`, `NativeFsManager`, `NativeSqliteDatabase`, `NativeSystemEnv`) exhibiting the gap.
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Expected Native Parity Behavior
+      description: Describe how Linux GTK4 handles this feature and what equivalent behavior is expected on Windows WinUI 3 / macOS AppKit.
+    validations:
+      required: true

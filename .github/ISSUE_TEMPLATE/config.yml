@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔒 Security Vulnerability (Private Reporting)
+    url: https://github.com/Gaspar1992/ng-desktop-engine/security/advisories/new
+    about: Never report security vulnerabilities in public issues. Submit a confidential report via GitHub Security Advisories (see SECURITY.md).
+  - name: 🗺️ Architectural Roadmap & Milestones
+    url: https://github.com/Gaspar1992/ng-desktop-engine/blob/main/ROADMAP.md
+    about: Check planned phases (Windows WinUI 3, macOS AppKit, Angular compatibility, and publishing milestones) before proposing new work.
+  - name: 📦 Download Prebuilt Releases (.deb / .exe / .dmg / @ng-native/*.tgz)
+    url: https://github.com/Gaspar1992/ng-desktop-engine/releases
+    about: Download ready-to-run Pokédex demo installers and individual Angular 22+ package tarballs.

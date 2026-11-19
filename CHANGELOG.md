@@ -5,6 +5,11 @@ This project adheres to [Conventional Commits](https://www.conventionalcommits.o
 
 ## [Unreleased]
 
+### Features & Governance (Security Policy, Third-Party Collaboration, & Automated Auditing)
+
+- **governance & security:** add `SECURITY.md` (supported versions, 48h/7d SLAs, private vulnerability reporting, & Rust FFI/Arena threat model), `CONTRIBUTING.md` (SOLID, safe Rust, cross-OS parity & `>=22.0.0` Angular guidelines), `CODE_OF_CONDUCT.md` (Contributor Covenant v2.1), `SUPPORT.md`, and `LICENSE` (MIT).
+- **github templates & automation:** add structured `.github/ISSUE_TEMPLATE/{config,bug_report,feature_request,platform_parity}.yml` forms, `.github/PULL_REQUEST_TEMPLATE.md`, `.github/CODEOWNERS`, and weekly `.github/dependabot.yml` updates for `cargo`, `npm`, and `github-actions`.
+
 ### Features (Phase 10 / Nivel 3 — Multithreaded Compute Pool, XDG & `inotify` Watcher, Native Drag & Drop, Cross-Platform Parity, & Multi-Container Testing)
 
 - **compute & fs (Nivel 3):** add `src/desktop/compute_pool.rs` (`NativeComputePool` multithreaded fuzzy search + 64-bit FNV-1a hashing), `src/desktop/fs_watcher.rs` (`NativeFsManager` with XDG Base Directory traversal validation, atomic file writes, and non-blocking Linux `inotify` kernel watcher via `libc.so.6`), `packages/desktop-native/src/compute-service.ts` (`NativeComputeService`), `packages/desktop-native/src/fs-service.ts` (`NativeFileSystemService`), and `packages/desktop-native/src/drop-target.directive.ts` (`NativeDropTargetDirective`).
