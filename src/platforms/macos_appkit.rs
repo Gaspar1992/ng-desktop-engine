@@ -1,6 +1,6 @@
 use super::PlatformBackend;
 use super::scene_state::{NativeSceneNode, NativeSceneState};
-use crate::engine::{NodeId, RenderCommand};
+use crate::engine::{NativeEvent, NodeId, RenderCommand};
 
 /// Concrete macOS AppKit (Cocoa) platform adapter.
 #[derive(Default)]
@@ -14,7 +14,7 @@ impl MacOsAppKitBackend {
         Self::default()
     }
 
-    pub fn scene_state(&self) -> &NativeSceneState {
+    pub const fn scene_state(&self) -> &NativeSceneState {
         &self.state
     }
 
@@ -24,6 +24,14 @@ impl MacOsAppKitBackend {
 
     pub fn get_view(&self, id: NodeId) -> Option<&NativeSceneNode> {
         self.state.get_node(id)
+    }
+
+    pub fn queue_native_event(&self, event: NativeEvent) {
+        self.state.push_event(event);
+    }
+
+    pub fn step_native_events(&self) -> Vec<NativeEvent> {
+        self.state.drain_events()
     }
 
     fn map_appkit_tag(tag: &str) -> &'static str {

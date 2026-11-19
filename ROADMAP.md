@@ -178,22 +178,21 @@ When `@angular/platform-browser` is removed, Angular's Ivy runtime still require
 
 ---
 
-### Phase 10 (Nivel 3): Multithreaded Compute Pool, Zero-Copy File System & Kernel Watcher (`inotify`), and Native Drag & Drop (Next Up 🚀)
+### Phase 10 (Nivel 3): Multithreaded Compute Pool, Zero-Copy File System & Kernel Watcher (`inotify`), Native Drag & Drop, and Multi-Container Testing (Completed ✅)
 
-Designed as a self-contained blueprint for the next implementation iteration:
-
-1. **Multithreaded Rust Compute Pool (`src/desktop/compute_pool.rs` + `packages/desktop-native/src/compute-service.ts`):**
-   - [ ] Implement `NativeComputePool` using `std::thread` workers + `mpsc` channels for off-UI-thread fuzzy filtering (`fuzzy_filter`), sorting (`sort_items`), and cryptographic/FNV hashing (`hash_text`), exposed via `DesktopServices` and `__NG_NATIVE__` (`computeFuzzyFilter`, `computeHash`).
-   - [ ] Implement Angular `NativeComputeService` with `fuzzyFilterSignal<T>(itemsSignal, querySignal, keyFn)` and `hashText(input)`.
-2. **XDG File System, Atomic I/O & Linux `inotify` Watcher (`src/desktop/fs_watcher.rs` + `packages/desktop-native/src/fs-service.ts`):**
-   - [ ] Implement `NativeFsManager` with XDG base dir resolution (`config_dir`, `data_dir`, `cache_dir`), atomic file writes (`write_text_atomic` via temp file + `fs::rename`), file reads (`read_text`), and Linux `inotify` (`inotify_init1(IN_NONBLOCK)` + `inotify_add_watch` via `libc` dynamic FFI or direct Linux syscall wrapper with `#![allow(unsafe_code)]`) for non-blocking change polling.
-   - [ ] Expose `fsResolvePath`, `fsReadText`, `fsWriteText`, `fsWatchFile`, and `fsPollChangedFiles` on `NgNativeBridge` (`bridge.ts` + `bootstrap_js.rs` + `quickjs_engine.rs`) and wrap in Angular `NativeFileSystemService` (`readTextFile`, `writeTextFile`, `resolveXdgPath`, and reactive `watchTextFile` Signal).
-3. **Native Drag & Drop (`GtkDropTarget` + `NativeDropTargetDirective`):**
-   - [ ] Extend `gtk4_sys.rs`, `gtk4_callbacks.rs`, `gtk4_widgets.rs`, and `linux_gtk.rs` to handle `drop-target="true"` attributes on container widgets (`GtkBox`, `GtkFlowBox`, `GtkPaned`) and emit `"file-drop"` events carrying `EventPayload::Text(paths)`.
-   - [ ] Create `NativeDropTargetDirective` (`[ngNativeDropTarget]`, `fileDrop = output<string[]>()`) in `packages/desktop-native/src/drop-target.directive.ts`.
-4. **Pokédex Nivel 3 Integration & Verification:**
-   - [ ] Wire `NativeComputeService`, `NativeFileSystemService`, and `NativeDropTargetDirective` into `examples/counter-app/src/app/pokedex.service.ts` for XDG trainer notes export/import, live external file reload, and fuzzy search over cached entries.
-   - [ ] Preserve the 274-command Frame 0 invariant in `tests/test_pipeline_and_hmr.rs`, add Rust + Vitest coverage for all 3 modules, and verify `pnpm run build:native && pnpm run format:all && pnpm run check` plus GitHub Actions CI pass with 0 warnings.
+- [x] **Multithreaded Rust Compute Pool (`src/desktop/compute_pool.rs` + `packages/desktop-native/src/compute-service.ts`):**
+  - [x] Implemented `NativeComputePool` using `std::thread::scope` parallel worker chunks for off-UI-thread fuzzy filtering (`fuzzy_filter`, `fuzzy_filter_json`) and 64-bit FNV-1a hashing (`fnv1a_hex`), exposed via `DesktopServices` and `__NG_NATIVE__` (`computeFuzzyFilter`, `computeHash`).
+  - [x] Implemented Angular `NativeComputeService` with `fuzzyFilter<T>()`, `fuzzyFilterStrings()`, and `hash()`.
+- [x] **XDG File System, Atomic I/O & Kernel File Watcher (`src/desktop/fs_watcher.rs` + `packages/desktop-native/src/fs-service.ts`):**
+  - [x] Implemented `NativeFsManager` with XDG base dir resolution (`XdgDirKind::{Config, Data, Cache}` + traversal protection), atomic file writes (`write_text_atomic` via `.tmp.<pid>` + `fs::rename`), and Linux `inotify` (`inotify_init1(IN_NONBLOCK)` + `inotify_add_watch` via `libc.so.6` dynamic FFI) with cross-platform `OsFileWatcherBackend` tracking (`LinuxInotify`, `WindowsReadDirectoryChanges`, `MacOsFsEvents`).
+  - [x] Exposed `fsResolvePath`, `fsReadText`, `fsWriteText`, `fsWatchFile`, and `fsPollChangedFiles` on `NgNativeBridge` (`bridge.ts` + `bridge-fs-compute.ts` + `bootstrap_js.rs` + `quickjs_engine.rs`) and wrapped in Angular `NativeFileSystemService` (`resolveXdgPath`, `readText`, `writeText`, `readJson`, `writeJson`, `watchFile`, `watchJson`).
+- [x] **Native Drag & Drop (`GtkDropTarget` + `NativeDropTargetDirective`) & Cross-Platform Parity:**
+  - [x] Extracted `src/platforms/gtk4_controls.rs` from `gtk4_widgets.rs` (SRP) and completed all 27 widget mappings in `PlatformBackend::map_native_widget`.
+  - [x] Synchronized `drop-target`, `scroll-to`, and `scroll-anchor` attributes + native event queues across `GtkLinuxBackend`, `WinUiBackend`, and `MacOsAppKitBackend` (`NativeSceneState`), and added explicit OS driver enums (`OsHttpPlatform`, `OsFileWatcherBackend`, `OsSqliteBackend`, `OsSystemEnvBackend`).
+  - [x] Created `NativeDropTargetDirective` (`[ngNativeDropTarget]`, `fileDrop = output<string[]>()`) in `packages/desktop-native/src/drop-target.directive.ts` and wired `PokedexService` (`exportFavoritesToDisk`, `importFavoritesFromFile`, `filterCatalog`).
+- [x] **Multi-Container & Xvfb CI Testing Infrastructure:**
+  - [x] Added `docker/Dockerfile.ubuntu-gtk4` (Ubuntu 24.04), `docker/Dockerfile.fedora-gtk4` (Fedora 41), `scripts/test-containers.sh` (`pnpm run test:containers`), and `xvfb-run -a cargo test` in `.github/workflows/ci.yml`.
+  - [x] Expanded automated coverage to **102 passing tests** (40 Rust unit + 19 Rust integration + 43 Vitest) with zero warnings.
 
 ---
 

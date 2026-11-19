@@ -1,11 +1,13 @@
 export {
   ensureNgNativeBridge,
+  type NativeComputeMatch,
   type NativeConnectivity,
   type NativeHttpBridgeResponse,
   type NativeHttpCallKind,
   type NativeHttpConfig,
   type NativeHttpRequestOptions,
   type NativeNetworkStatus,
+  type NativeXdgDirKind,
   type NgNativeBridge,
 } from './bridge';
 export { nativeImageLoader, provideNativeImageLoader } from './image-loader';

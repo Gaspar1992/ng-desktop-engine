@@ -78,7 +78,9 @@ ng-native-engine/
 │   ├── config/
 │   │   └── mod.rs                # Angular CLI (angular.json) native target parser
 │   ├── desktop/
-│   │   ├── mod.rs                # Desktop OS hub (Theme, Clipboard, Notifications, Dialogs, HTTP, SQLite, Env)
+│   │   ├── mod.rs                # Desktop OS hub (Theme, Clipboard, Notifications, Dialogs, HTTP, SQLite, Env, Compute, FS)
+│   │   ├── compute_pool.rs       # Multithreaded Rust compute pool (fuzzy filtering & 64-bit FNV-1a hashing)
+│   │   ├── fs_watcher.rs         # XDG Base Directory resolver, atomic file writes & Linux inotify watcher
 │   │   ├── http_native.rs        # OS-native HTTP/2 engine (libsoup-3.0 / URLSession / WinHTTP, cache & XSRF)
 │   │   ├── http_codec.rs         # JSON bridge serialization & request/response parsing (SRP)
 │   │   ├── libsoup_sys.rs        # Isolated C FFI dynamic loader for libsoup-3.0.so.0
@@ -104,9 +106,10 @@ ng-native-engine/
 │   ├── platforms/                # Concrete OS backend adapters (Bridge + Factory)
 │   │   ├── mod.rs                # PlatformBackend trait & AnyPlatformBackend factory
 │   │   ├── gtk4_callbacks.rs     # Thread-safe GTK4 C signal trampolines & event queue
+│   │   ├── gtk4_controls.rs      # Interactive GTK4 control mutators & signal connectors (SRP)
 │   │   ├── gtk4_styling.rs       # GTK4 CSS stylesheet builder & widget attribute dispatcher
 │   │   ├── gtk4_sys.rs           # Isolated C FFI dynamic loader for libgtk-4.so.1
-│   │   ├── gtk4_widgets.rs       # Safe GTK4 widget, layout & interactive control wrappers
+│   │   ├── gtk4_widgets.rs       # Safe GTK4 widget & layout container wrappers
 │   │   ├── linux_gtk.rs          # Native Linux GTK4 + Freedesktop hicolor icon adapter
 │   │   ├── scene_state.rs        # DRY retaining scene state machine (WinUI 3 & AppKit)
 │   │   ├── windows_winui.rs      # Windows WinUI 3 adapter
@@ -127,8 +130,13 @@ ng-native-engine/
 │   ├── forms-native/             # @ng-native/forms ControlValueAccessor directives
 │   ├── router-native/            # @ng-native/router (NativePlatformLocation, NativeTitleStrategy, NativeStackRouteReuseStrategy)
 │   ├── http-native/              # @ng-native/http (NativeHttpBackend, provideHttpClient features, createNativeHttpResource)
-│   ├── desktop-native/           # @ng-native/desktop (NativeDesktopService, NativeSqliteService, NativeNetworkService)
+│   ├── desktop-native/           # @ng-native/desktop (Desktop, SQLite, Network, Compute, FileSystem, DropTarget)
 │   └── builders-native/          # @ng-native/builders (Angular 22 Architect builder, schema, AST compilers, HMR & dev server)
+├── docker/
+│   ├── Dockerfile.ubuntu-gtk4    # Ubuntu 24.04 container image (GTK4 + Libadwaita + JSC + libsoup3 + SQLite3 + Xvfb)
+│   └── Dockerfile.fedora-gtk4    # Fedora 41 container image (GTK4 + Libadwaita + WebKitGTK 6.0 + libsoup3 + SQLite3 + Xvfb)
+├── scripts/
+│   └── test-containers.sh        # Multi-distro container test runner (Docker / Podman)
 ├── examples/
 │   └── counter-app/              # Pure Angular 22 Pokédex showcase application
 │       ├── public/               # Application favicon assets
@@ -203,19 +211,20 @@ NG_NATIVE_BATCH=1 cargo run
 
 ## 🛠️ Quality & Verification Commands
 
-| Command                                     | Description                                                          |
-| :------------------------------------------ | :------------------------------------------------------------------- |
-| `pnpm run dev`                              | Watch Angular files & hot-reload native GTK4 window via Unix socket  |
-| `pnpm run check`                            | Run full verification gate (OxFmt + OxLint + ESLint + Clippy + Test) |
-| `pnpm run package:linux`                    | Build bundle and stage Linux `.deb`, AppImage, and Flatpak packages  |
-| `pnpm run format:all`                       | Format both TypeScript/Angular (`oxfmt`) and Rust (`cargo fmt`)      |
-| `pnpm run format`                           | Format TypeScript, HTML, CSS, JSON, and Markdown via `oxfmt`         |
-| `pnpm run format:check`                     | Verify formatting with `oxfmt`                                       |
-| `pnpm run lint`                             | Lint TypeScript & Angular templates via `oxlint` + `angular-eslint`  |
-| `pnpm run test`                             | Run all 39 Vitest specs for packages and showcase app                |
-| `cargo fmt --all -- --check`                | Verify Rust formatting                                               |
-| `cargo clippy --all-targets -- -D warnings` | Run strict Rust Clippy lints (pedantic + nursery, zero warnings)     |
-| `cargo test`                                | Execute all 38 unit tests + 16 E2E integration tests in Rust         |
+| Command                                     | Description                                                             |
+| :------------------------------------------ | :---------------------------------------------------------------------- |
+| `pnpm run dev`                              | Watch Angular files & hot-reload native GTK4 window via Unix socket     |
+| `pnpm run check`                            | Run full verification gate (OxFmt + OxLint + ESLint + Clippy + Test)    |
+| `pnpm run package:linux`                    | Build bundle and stage Linux `.deb`, AppImage, and Flatpak packages     |
+| `pnpm run format:all`                       | Format both TypeScript/Angular (`oxfmt`) and Rust (`cargo fmt`)         |
+| `pnpm run format`                           | Format TypeScript, HTML, CSS, JSON, and Markdown via `oxfmt`            |
+| `pnpm run format:check`                     | Verify formatting with `oxfmt`                                          |
+| `pnpm run lint`                             | Lint TypeScript & Angular templates via `oxlint` + `angular-eslint`     |
+| `pnpm run test`                             | Run all 43 Vitest specs for packages and showcase app                   |
+| `pnpm run test:containers`                  | Run Xvfb + GTK4 + FFI test suite in Ubuntu 24.04 & Fedora 41 containers |
+| `cargo fmt --all -- --check`                | Verify Rust formatting                                                  |
+| `cargo clippy --all-targets -- -D warnings` | Run strict Rust Clippy lints (pedantic + nursery, zero warnings)        |
+| `cargo test`                                | Execute all 40 unit tests + 19 E2E integration tests in Rust            |
 
 ---
 

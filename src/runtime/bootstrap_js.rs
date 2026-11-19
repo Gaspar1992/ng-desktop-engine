@@ -18,6 +18,9 @@ globalThis.__NG_NATIVE__ = (() => {
   let systemTimezone = 'UTC';
   let systemErrors = [];
   let sqliteTables = new Map();
+  let fsFiles = new Map();
+  let fsWatched = new Set();
+  let fsChanged = new Set();
   let httpEndpoints = new Map();
   let httpConfig = {
     platform: 'auto',
@@ -330,6 +333,68 @@ globalThis.__NG_NATIVE__ = (() => {
     },
     getSystemErrors() {
       return [...systemErrors];
+    },
+    computeFuzzyFilter(items = [], query = '', limit = 50) {
+      const needle = String(query ?? '').trim().toLowerCase();
+      const out = [];
+      for (let index = 0; index < items.length; index++) {
+        const value = String(items[index] ?? '');
+        const cand = value.toLowerCase();
+        let score = null;
+        if (!needle) score = 1;
+        else if (cand === needle) score = 1000;
+        else if (cand.startsWith(needle)) score = 600 + Math.max(0, 80 - value.length);
+        else if (cand.includes(needle)) score = 350 + Math.max(0, 60 - cand.indexOf(needle) * 2);
+        if (score !== null) out.push({ index, score, value });
+      }
+      out.sort((a, b) => (b.score !== a.score ? b.score - a.score : a.index - b.index));
+      return out.slice(0, limit);
+    },
+    computeHash(input = '') {
+      const str = String(input ?? '');
+      let hi = 0x84222325;
+      let lo = 0xcbf29ce4;
+      for (let i = 0; i < str.length; i++) {
+        lo = (lo ^ str.charCodeAt(i)) >>> 0;
+        hi = (Math.imul(hi, 0x01000193) ^ (lo >>> 16)) >>> 0;
+        lo = Math.imul(lo, 0x01000193) >>> 0;
+      }
+      return hi.toString(16).padStart(8, '0') + lo.toString(16).padStart(8, '0');
+    },
+    fsResolvePath(kind = 'config', relPath = '') {
+      const clean = String(relPath ?? '').trim().replace(/^[/\\]+/, '');
+      if (!clean || clean.split(/[/\\]/).includes('..')) {
+        throw new Error('Invalid XDG path: ' + relPath);
+      }
+      const base =
+        kind === 'data'
+          ? '/home/user/.local/share/ng-linux-counter'
+          : kind === 'cache'
+            ? '/home/user/.cache/ng-linux-counter'
+            : '/home/user/.config/ng-linux-counter';
+      return base + '/' + clean;
+    },
+    fsReadText(path) {
+      const clean = String(path ?? '').trim();
+      return fsFiles.has(clean) ? fsFiles.get(clean) : null;
+    },
+    fsWriteText(path, content) {
+      const clean = String(path ?? '').trim();
+      if (!clean) return false;
+      fsFiles.set(clean, String(content ?? ''));
+      if (fsWatched.has(clean)) fsChanged.add(clean);
+      return true;
+    },
+    fsWatchFile(path) {
+      const clean = String(path ?? '').trim();
+      if (!clean) return false;
+      fsWatched.add(clean);
+      return true;
+    },
+    fsPollChangedFiles() {
+      const out = Array.from(fsChanged);
+      fsChanged.clear();
+      return out;
     },
     __drainQueue() {
       const out = queue.join('\n');

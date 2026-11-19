@@ -21,12 +21,16 @@ pub const fn unpack_node_id(packed: usize) -> NodeId {
 }
 
 fn enqueue_event(packed: usize, event_name: &str) {
+    enqueue_event_with_payload(packed, event_name, EventPayload::None);
+}
+
+pub fn enqueue_event_with_payload(packed: usize, event_name: &str, payload: EventPayload) {
     let node = unpack_node_id(packed);
     PENDING_EVENTS.with(|queue| {
         queue.borrow_mut().push(NativeEvent {
             node,
             event_name: String::from(event_name),
-            payload: EventPayload::None,
+            payload,
         });
     });
 }

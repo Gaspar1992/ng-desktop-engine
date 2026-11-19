@@ -5,6 +5,12 @@ This project adheres to [Conventional Commits](https://www.conventionalcommits.o
 
 ## [Unreleased]
 
+### Features (Phase 10 / Nivel 3 — Multithreaded Compute Pool, XDG & `inotify` Watcher, Native Drag & Drop, Cross-Platform Parity, & Multi-Container Testing)
+
+- **compute & fs (Nivel 3):** add `src/desktop/compute_pool.rs` (`NativeComputePool` multithreaded fuzzy search + 64-bit FNV-1a hashing), `src/desktop/fs_watcher.rs` (`NativeFsManager` with XDG Base Directory traversal validation, atomic file writes, and non-blocking Linux `inotify` kernel watcher via `libc.so.6`), `packages/desktop-native/src/compute-service.ts` (`NativeComputeService`), `packages/desktop-native/src/fs-service.ts` (`NativeFileSystemService`), and `packages/desktop-native/src/drop-target.directive.ts` (`NativeDropTargetDirective`).
+- **cross-platform & solid:** extract `src/platforms/gtk4_controls.rs` from `gtk4_widgets.rs` (SRP); map all 27 primitives in `PlatformBackend::map_native_widget`; synchronize `drop-target`, `scroll-to`, `scroll-anchor`, and native event queuing across `GtkLinuxBackend`, `WinUiBackend`, and `MacOsAppKitBackend` (`NativeSceneState`); add explicit OS service driver enums (`OsFileWatcherBackend`, `OsSqliteBackend`, `OsSystemEnvBackend`, `OsHttpPlatform`).
+- **containers & ci:** add multi-container test harness (`docker/Dockerfile.ubuntu-gtk4`, `docker/Dockerfile.fedora-gtk4`, `scripts/test-containers.sh`), run `xvfb-run -a cargo test` in `.github/workflows/ci.yml`, and expand test suite to **102 passing tests** (40 Rust unit + 19 Rust integration + 43 Vitest).
+
 ### Features (Phase 9 — OS-Native HTTP/2, `@ng-native/builders`, Reactive Control Flow, SQLite FFI, & Angular Platform Integration)
 
 - **http:** add OS-native `libsoup-3.0` HTTP/2 transport (`src/desktop/libsoup_sys.rs`, `src/desktop/http_native.rs`, `src/desktop/http_codec.rs`), JSC FFI callbacks (`__NG_NATIVE_HOST_HTTP__`, `__NG_NATIVE_HOST_HTTP_CONFIG__`), `provideHttpClient(...)` Angular feature mapping + `createNativeHttpResource` in `@ng-native/http`, and parallel HTTP/2 batch transfers.

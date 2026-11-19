@@ -1,6 +1,8 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
 import {
+  NativeComputeService,
+  NativeFileSystemService,
   type NativeLiveQueryRef,
   NativeNetworkService,
   NativeSqliteService,
@@ -35,6 +37,8 @@ export class PokedexService {
   private readonly http = inject(HttpClient, { optional: true });
   private readonly sqlite = inject(NativeSqliteService);
   private readonly network = inject(NativeNetworkService);
+  private readonly compute = inject(NativeComputeService);
+  private readonly fs = inject(NativeFileSystemService);
   private readonly titleService = inject(NativeTitleService);
 
   readonly selectedId = signal(1);
@@ -126,10 +130,26 @@ export class PokedexService {
     if (!clean) {
       return entries.slice(0, limit);
     }
-    return entries
-      .filter(
-        (entry) => entry.name.toLowerCase().includes(clean) || String(entry.id).startsWith(clean),
-      )
-      .slice(0, limit);
+    return this.compute
+      .fuzzyFilter(entries, (entry) => `${entry.id} ${entry.name}`, clean, limit)
+      .map((scored) => scored.item);
+  }
+
+  exportFavoritesToDisk(relPath = 'favorites.json'): string {
+    const targetPath = this.fs.resolveXdgPath('data', relPath);
+    this.fs.writeJson(targetPath, this.favorites.rows());
+    return targetPath;
+  }
+
+  importFavoritesFromFile(filePath: string): number {
+    const rows = this.fs.readJson<FavoritePokemonRow[]>(filePath, []);
+    let imported = 0;
+    for (const row of rows) {
+      if (typeof row.id === 'number' && typeof row.name === 'string') {
+        this.saveFavorite(row.id, row.name, row.note ?? '');
+        imported += 1;
+      }
+    }
+    return imported;
   }
 }

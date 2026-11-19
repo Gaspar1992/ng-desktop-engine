@@ -156,6 +156,22 @@ impl GtkLinuxBackend {
     }
 
     pub(super) fn apply_native_attribute(&mut self, node: NodeId, key: &str, value: &str) {
+        if let Some(w) = self.widgets.get_mut(&node) {
+            match key {
+                "drop-target" => {
+                    let trimmed = value.trim();
+                    w.drop_target = !trimmed.eq_ignore_ascii_case("false") && trimmed != "0";
+                }
+                "scroll-to" => {
+                    w.scroll_position =
+                        super::scene_state::NativeSceneState::parse_scroll_coords(value);
+                }
+                "scroll-anchor" => {
+                    w.scroll_anchor = Some(value.to_string());
+                }
+                _ => {}
+            }
+        }
         let (Some(gtk), Some(widget)) = (&self.gtk, self.widgets.get(&node)) else {
             return;
         };

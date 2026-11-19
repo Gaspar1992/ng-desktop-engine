@@ -45,7 +45,9 @@ jobs:
             libadwaita-1-0 \
             libjavascriptcoregtk-6.0-1 \
             libsoup-3.0-0 \
-            libsqlite3-0
+            libsqlite3-0 \
+            xvfb \
+            xauth
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -58,5 +60,5 @@ jobs:
       - name: Run Clippy linter
         run: cargo clippy --all-targets -- -D warnings
 
-      - name: Run unit and integration tests (Headless Backend)
-        run: cargo test --verbose
+      - name: Run unit and integration tests (Headless + Xvfb GTK4 Display)
+        run: xvfb-run -a cargo test --verbose

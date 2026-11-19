@@ -1,4 +1,5 @@
-use crate::engine::{NodeId, RenderCommand, StyleId, StyleRule, WindowIconAsset};
+use crate::engine::{NativeEvent, NodeId, RenderCommand, StyleId, StyleRule, WindowIconAsset};
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 /// Platform-agnostic native control/view state node shared by WinUI 3 and macOS AppKit backends.
@@ -9,6 +10,9 @@ pub struct NativeSceneNode {
     pub attributes: HashMap<String, String>,
     pub style_classes: Vec<StyleId>,
     pub children: Vec<NodeId>,
+    pub drop_target: bool,
+    pub scroll_position: Option<(i32, i32)>,
+    pub scroll_anchor: Option<String>,
 }
 
 /// Shared retaining state machine for cross-platform native scene trees (WinUI 3, AppKit).
@@ -17,6 +21,7 @@ pub struct NativeSceneState {
     nodes: HashMap<NodeId, NativeSceneNode>,
     styles: HashMap<StyleId, StyleRule>,
     window_icons: HashMap<NodeId, WindowIconAsset>,
+    pending_events: RefCell<Vec<NativeEvent>>,
 }
 
 impl NativeSceneState {
@@ -44,6 +49,21 @@ impl NativeSceneState {
         self.window_icons.get(&window)
     }
 
+    pub fn push_event(&self, event: NativeEvent) {
+        self.pending_events.borrow_mut().push(event);
+    }
+
+    pub fn drain_events(&self) -> Vec<NativeEvent> {
+        std::mem::take(&mut *self.pending_events.borrow_mut())
+    }
+
+    pub fn parse_scroll_coords(raw: &str) -> Option<(i32, i32)> {
+        let mut parts = raw.split(',');
+        let x = parts.next()?.trim().parse::<i32>().ok()?;
+        let y = parts.next()?.trim().parse::<i32>().ok()?;
+        Some((x, y))
+    }
+
     pub fn apply_command<F>(&mut self, cmd: &RenderCommand, comment_class: &'static str, map_tag: F)
     where
         F: Fn(&str) -> &'static str,
@@ -61,6 +81,9 @@ impl NativeSceneState {
                         attributes: HashMap::new(),
                         style_classes: Vec::new(),
                         children: Vec::new(),
+                        drop_target: false,
+                        scroll_position: None,
+                        scroll_anchor: None,
                     },
                 );
             }
@@ -73,6 +96,9 @@ impl NativeSceneState {
                         attributes: HashMap::new(),
                         style_classes: Vec::new(),
                         children: Vec::new(),
+                        drop_target: false,
+                        scroll_position: None,
+                        scroll_anchor: None,
                     },
                 );
             }
@@ -83,6 +109,20 @@ impl NativeSceneState {
             }
             RenderCommand::SetAttribute { node, key, value } => {
                 if let Some(n) = self.nodes.get_mut(node) {
+                    match key.as_str() {
+                        "drop-target" => {
+                            let trimmed = value.trim();
+                            n.drop_target =
+                                !trimmed.eq_ignore_ascii_case("false") && trimmed != "0";
+                        }
+                        "scroll-to" => {
+                            n.scroll_position = Self::parse_scroll_coords(value);
+                        }
+                        "scroll-anchor" => {
+                            n.scroll_anchor = Some(value.clone());
+                        }
+                        _ => {}
+                    }
                     n.attributes.insert(key.clone(), value.clone());
                 }
             }

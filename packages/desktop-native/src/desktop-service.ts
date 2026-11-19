@@ -6,6 +6,8 @@ import {
   WritableSignal,
 } from '@angular/core';
 import { ensureNgNativeBridge } from '@ng-native/platform';
+import { NativeComputeService } from './compute-service';
+import { NativeFileSystemService } from './fs-service';
 import { NativeNetworkService } from './network-service';
 import { NativeSqliteService } from './sqlite-service';
 
@@ -74,5 +76,7 @@ export function provideNativeDesktop(): EnvironmentProviders {
     NativeDesktopService,
     NativeSqliteService,
     NativeNetworkService,
+    NativeComputeService,
+    NativeFileSystemService,
   ]);
 }

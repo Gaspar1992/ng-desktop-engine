@@ -143,10 +143,42 @@ fn extract_image_extension(url: &str) -> &'static str {
     "img"
 }
 
+/// Cross-platform OS provider for network status, system locale, and timezone probing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OsSystemEnvBackend {
+    /// Linux `GNetworkMonitor` (`libgio-2.0.so.0`) + `GLib` (`libglib-2.0.so.0`).
+    LinuxGioGlib,
+    /// Windows `WinRT` (`NetworkInformation` + `Windows.Globalization`).
+    WindowsWinRt,
+    /// macOS `Network.framework` (`NWPathMonitor`) + `Foundation` (`NSLocale`).
+    MacOsFoundation,
+}
+
+impl OsSystemEnvBackend {
+    pub const fn current() -> Self {
+        if cfg!(target_os = "windows") {
+            Self::WindowsWinRt
+        } else if cfg!(target_os = "macos") {
+            Self::MacOsFoundation
+        } else {
+            Self::LinuxGioGlib
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::LinuxGioGlib => "linux-gio-glib",
+            Self::WindowsWinRt => "windows-winrt",
+            Self::MacOsFoundation => "macos-foundation",
+        }
+    }
+}
+
 /// Operating System environment probe (`GNetworkMonitor`, `GLib` locale/timezone,
 /// XDG image asset cache resolution, and structured system error logging).
 #[derive(Debug, Clone)]
 pub struct NativeSystemEnv {
+    backend: OsSystemEnvBackend,
     locale: String,
     timezone: String,
     online: bool,
@@ -192,6 +224,7 @@ impl NativeSystemEnv {
             );
 
         Self {
+            backend: OsSystemEnvBackend::current(),
             locale,
             timezone,
             online,
@@ -199,6 +232,10 @@ impl NativeSystemEnv {
             cache_dir,
             error_logs: Vec::new(),
         }
+    }
+
+    pub const fn backend(&self) -> OsSystemEnvBackend {
+        self.backend
     }
 
     pub fn refresh_network(&mut self) {

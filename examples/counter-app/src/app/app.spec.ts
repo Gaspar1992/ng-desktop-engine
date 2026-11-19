@@ -108,5 +108,16 @@ describe('App', () => {
     const titleService = TestBed.inject(NativeTitleService);
     service.selectPokemon(25, 'Pikachu');
     expect(titleService.getTitle()).toBe('Pokédex Nacional — #0025 Pikachu');
+
+    const exportedPath = service.exportFavoritesToDisk('favorites-backup.json');
+    expect(exportedPath).toContain('favorites-backup.json');
+    service.removeFavorite(25);
+    expect(service.favorites.count()).toBe(0);
+
+    const importedCount = service.importFavoritesFromFile(exportedPath);
+    expect(importedCount).toBe(1);
+    expect(service.favorites.rows()).toEqual([
+      { id: 25, name: 'Pikachu', note: 'Inicial eléctrico' },
+    ]);
   });
 });

@@ -1,3 +1,4 @@
+export { NativeComputeService, type NativeScoredItem } from './compute-service';
 export {
   NativeDesktopService,
   provideNativeDesktop,
@@ -5,5 +6,7 @@ export {
   type OpenFileDialogOptions,
   type SaveFileDialogOptions,
 } from './desktop-service';
+export { NativeDropTargetDirective, type NativeFileDropPayload } from './drop-target.directive';
+export { NativeFileSystemService, type NativeWatchedFileRef } from './fs-service';
 export { NativeNetworkService } from './network-service';
 export { type NativeLiveQueryRef, NativeSqliteService } from './sqlite-service';

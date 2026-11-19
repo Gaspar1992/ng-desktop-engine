@@ -13,6 +13,7 @@
     "watch:native": "node packages/builders-native/src/build-bundle.mjs --watch",
     "test": "ng test",
     "test:rust": "cargo test",
+    "test:containers": "bash scripts/test-containers.sh",
     "lint": "oxlint . && eslint .",
     "lint:ox": "oxlint .",
     "lint:eslint": "eslint .",

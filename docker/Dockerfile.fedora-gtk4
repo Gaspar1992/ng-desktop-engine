@@ -1,0 +1,25 @@
+# Multi-Container Testing Image: Fedora 41 (GTK4 + Libadwaita + WebKitGTK 6.0 JSC + libsoup3 + SQLite3 + Xvfb)
+FROM fedora:41
+
+ENV CARGO_TERM_COLOR=always
+
+RUN dnf install -y \
+    cargo \
+    clippy \
+    gcc \
+    git \
+    gtk4 \
+    libadwaita \
+    libsoup3 \
+    rust \
+    rustfmt \
+    sqlite-libs \
+    webkitgtk6.0 \
+    xorg-x11-server-Xvfb \
+    xorg-x11-xauth \
+    && dnf clean all
+
+WORKDIR /workspace
+COPY . .
+
+CMD ["xvfb-run", "-a", "cargo", "test", "--verbose"]

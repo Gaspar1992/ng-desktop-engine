@@ -1,0 +1,29 @@
+# Multi-Container Testing Image: Ubuntu 24.04 LTS (GTK4 + Libadwaita + JavaScriptCore 6.0 + libsoup3 + SQLite3 + Xvfb)
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    CARGO_TERM_COLOR=always
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    curl \
+    git \
+    libadwaita-1-0 \
+    libgtk-4-1 \
+    libjavascriptcoregtk-6.0-1 \
+    libsoup-3.0-0 \
+    libsqlite3-0 \
+    pkg-config \
+    xvfb \
+    xauth \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust stable
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --component clippy,rustfmt
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+WORKDIR /workspace
+COPY . .
+
+CMD ["xvfb-run", "-a", "cargo", "test", "--verbose"]

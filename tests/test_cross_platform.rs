@@ -1,8 +1,12 @@
 use ng_native_engine::config::AngularNativeConfig;
-use ng_native_engine::engine::RenderEngine;
+use ng_native_engine::desktop::{
+    DesktopServices, OsFileWatcherBackend, OsHttpPlatform, OsSqliteBackend, OsSystemEnvBackend,
+};
+use ng_native_engine::engine::{EventPayload, NativeEvent, RenderEngine};
 use ng_native_engine::packager::stage_linux_distribution;
 use ng_native_engine::platforms::{
-    AnyPlatformBackend, MacOsAppKitBackend, PlatformBackend, WinUiBackend,
+    AnyPlatformBackend, GtkLinuxBackend, HeadlessBackend, MacOsAppKitBackend, PlatformBackend,
+    WinUiBackend,
 };
 use ng_native_engine::runtime::JsRuntime;
 use std::fs;
@@ -204,4 +208,158 @@ fn winui_and_appkit_retain_nested_grid_and_form_hierarchies() {
         "Microsoft.UI.Xaml.Controls.ToggleSwitch"
     );
     assert_eq!(sw_node.attributes.get("active"), Some(&"true".to_string()));
+}
+
+#[test]
+fn all_27_primitives_have_cross_platform_mapping_parity() {
+    let primitives = [
+        "ng-window",
+        "ng-header-bar",
+        "ng-scroll",
+        "ng-box",
+        "ng-grid",
+        "ng-separator",
+        "ng-label",
+        "ng-button",
+        "ng-entry",
+        "ng-switch",
+        "ng-checkbox",
+        "ng-slider",
+        "ng-select",
+        "ng-image",
+        "ng-level-bar",
+        "ng-progress-bar",
+        "ng-spinner",
+        "ng-flow",
+        "ng-paned",
+        "ng-stack",
+        "ng-expander",
+        "ng-text-view",
+        "ng-password-entry",
+        "ng-search-entry",
+        "ng-spin-button",
+        "ng-clamp",
+        "ng-anchor",
+    ];
+
+    let headless = HeadlessBackend::default();
+    let linux = GtkLinuxBackend::new_headless();
+    let winui = WinUiBackend::new();
+    let appkit = MacOsAppKitBackend::new();
+
+    for tag in primitives {
+        assert_ne!(
+            headless.map_native_widget(tag),
+            "NativeWidget",
+            "HeadlessBackend missing mapping for {tag}"
+        );
+        assert_ne!(
+            linux.map_native_widget(tag),
+            "GtkWidget",
+            "GtkLinuxBackend missing mapping for {tag}"
+        );
+        if tag != "ng-anchor" {
+            assert_ne!(
+                winui.map_native_widget(tag),
+                "Microsoft.UI.Xaml.UIElement",
+                "WinUiBackend missing mapping for {tag}"
+            );
+            assert_ne!(
+                appkit.map_native_widget(tag),
+                "NSView",
+                "MacOsAppKitBackend missing mapping for {tag}"
+            );
+        }
+    }
+}
+
+#[test]
+fn nivel3_attributes_events_and_os_drivers_have_cross_platform_parity() {
+    let script = r"
+        create win ng-window
+        create scroll ng-scroll
+        attr scroll scroll-to 0,240
+        attr scroll scroll-anchor section-favorites
+        create dropbox ng-box
+        attr dropbox drop-target true
+        append scroll dropbox
+        append win scroll
+    ";
+
+    // 1. Linux GTK4 Backend parity
+    let mut linux_engine = RenderEngine::new(GtkLinuxBackend::new_headless());
+    let mut linux_rt = JsRuntime::new();
+    linux_rt.eval_tick(&mut linux_engine, script).unwrap();
+    let l_scroll = linux_rt.resolve_var("scroll").unwrap();
+    let l_drop = linux_rt.resolve_var("dropbox").unwrap();
+    assert!(linux_engine.backend().is_drop_target(l_drop));
+    assert_eq!(
+        linux_engine.backend().scroll_position(l_scroll),
+        Some((0, 240))
+    );
+    assert_eq!(
+        linux_engine.backend().scroll_anchor(l_scroll),
+        Some("section-favorites")
+    );
+
+    // 2. Windows WinUI 3 Backend parity + native event queue
+    let mut winui_engine = RenderEngine::new(WinUiBackend::new());
+    let mut winui_rt = JsRuntime::new();
+    winui_rt.eval_tick(&mut winui_engine, script).unwrap();
+    let w_scroll = winui_rt.resolve_var("scroll").unwrap();
+    let w_drop = winui_rt.resolve_var("dropbox").unwrap();
+    let w_scroll_node = winui_engine.backend().get_control(w_scroll).unwrap();
+    let w_drop_node = winui_engine.backend().get_control(w_drop).unwrap();
+    assert!(w_drop_node.drop_target);
+    assert_eq!(w_scroll_node.scroll_position, Some((0, 240)));
+    assert_eq!(
+        w_scroll_node.scroll_anchor.as_deref(),
+        Some("section-favorites")
+    );
+    winui_engine.backend().queue_native_event(NativeEvent {
+        node: w_drop,
+        event_name: String::from("file-drop"),
+        payload: EventPayload::Text(String::from("C:\\Users\\Dev\\favorites.json")),
+    });
+    let w_events = winui_engine.backend().step_native_events();
+    assert_eq!(w_events.len(), 1);
+    assert_eq!(w_events[0].event_name, "file-drop");
+
+    // 3. macOS AppKit Backend parity + native event queue
+    let mut appkit_engine = RenderEngine::new(MacOsAppKitBackend::new());
+    let mut appkit_rt = JsRuntime::new();
+    appkit_rt.eval_tick(&mut appkit_engine, script).unwrap();
+    let m_scroll = appkit_rt.resolve_var("scroll").unwrap();
+    let m_drop = appkit_rt.resolve_var("dropbox").unwrap();
+    let m_scroll_node = appkit_engine.backend().get_view(m_scroll).unwrap();
+    let m_drop_node = appkit_engine.backend().get_view(m_drop).unwrap();
+    assert!(m_drop_node.drop_target);
+    assert_eq!(m_scroll_node.scroll_position, Some((0, 240)));
+    assert_eq!(
+        m_scroll_node.scroll_anchor.as_deref(),
+        Some("section-favorites")
+    );
+    appkit_engine.backend().queue_native_event(NativeEvent {
+        node: m_drop,
+        event_name: String::from("file-drop"),
+        payload: EventPayload::Text(String::from("/Users/dev/favorites.json")),
+    });
+    let m_events = appkit_engine.backend().step_native_events();
+    assert_eq!(m_events.len(), 1);
+    assert_eq!(m_events[0].event_name, "file-drop");
+
+    // 4. OS Service Driver Parity (HTTP, FileWatcher, SQLite, SystemEnv)
+    let desktop = DesktopServices::new();
+    assert_ne!(OsHttpPlatform::current().as_str(), "");
+    assert_eq!(
+        desktop.fs_manager().backend(),
+        OsFileWatcherBackend::current()
+    );
+    assert_eq!(desktop.sqlite().backend(), OsSqliteBackend::current());
+    assert_ne!(desktop.sqlite().backend().library_name(), "");
+    assert_eq!(
+        desktop.system_env().backend(),
+        OsSystemEnvBackend::current()
+    );
+    assert_ne!(desktop.system_env().backend().as_str(), "");
 }

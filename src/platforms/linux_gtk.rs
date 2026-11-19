@@ -41,6 +41,41 @@ pub(super) enum GtkWidgetType {
     Anchor,
 }
 
+impl GtkWidgetType {
+    fn from_tag(tag: &str) -> Option<Self> {
+        match tag {
+            "ng-window" | "adw-window" => Some(Self::Window),
+            "ng-header-bar" | "adw-header-bar" | "gtk-header-bar" => Some(Self::HeaderBar),
+            "ng-scroll" | "gtk-scrolled-window" => Some(Self::Scroll),
+            "ng-box" | "gtk-box" => Some(Self::Box),
+            "ng-grid" | "gtk-grid" => Some(Self::Grid),
+            "ng-separator" | "gtk-separator" => Some(Self::Separator),
+            "ng-label" | "gtk-label" => Some(Self::Label),
+            "ng-button" | "gtk-button" => Some(Self::Button),
+            "ng-entry" | "gtk-entry" => Some(Self::Entry),
+            "ng-switch" | "gtk-switch" => Some(Self::Switch),
+            "ng-checkbox" | "ng-check" | "gtk-check-button" => Some(Self::CheckButton),
+            "ng-slider" | "ng-scale" | "gtk-scale" => Some(Self::Slider),
+            "ng-select" | "ng-dropdown" | "gtk-drop-down" => Some(Self::DropDown),
+            "ng-image" | "gtk-picture" | "ng-picture" => Some(Self::Image),
+            "ng-level-bar" | "gtk-level-bar" => Some(Self::LevelBar),
+            "ng-spinner" | "gtk-spinner" => Some(Self::Spinner),
+            "ng-progress-bar" | "gtk-progress-bar" => Some(Self::ProgressBar),
+            "ng-flow" | "ng-flow-box" | "gtk-flow-box" => Some(Self::FlowBox),
+            "ng-paned" | "gtk-paned" => Some(Self::Paned),
+            "ng-stack" | "gtk-stack" | "adw-navigation-view" => Some(Self::Stack),
+            "ng-expander" | "gtk-expander" => Some(Self::Expander),
+            "ng-text-view" | "gtk-text-view" => Some(Self::TextView),
+            "ng-password-entry" | "gtk-password-entry" => Some(Self::PasswordEntry),
+            "ng-search-entry" | "gtk-search-entry" => Some(Self::SearchEntry),
+            "ng-spin-button" | "gtk-spin-button" => Some(Self::SpinButton),
+            "ng-clamp" | "adw-clamp" => Some(Self::Clamp),
+            "ng-anchor" | "#comment" => Some(Self::Anchor),
+            _ => None,
+        }
+    }
+}
+
 pub(super) struct NativeGtkWidget {
     pub(super) handle: Option<GtkHandle>,
     pub(super) kind: GtkWidgetType,
@@ -49,6 +84,11 @@ pub(super) struct NativeGtkWidget {
     pub(super) pulsing: bool,
     /// Tracks explicit width/height requests so updating one dimension preserves the other.
     pub(super) size_request: (i32, i32),
+    /// Tracks whether native OS drag-and-drop (`GtkDropTarget`) is enabled on this widget.
+    pub(super) drop_target: bool,
+    /// Tracks programmatic scroll offset (`scroll-to="x,y"`) and anchor (`scroll-anchor="id"`).
+    pub(super) scroll_position: Option<(i32, i32)>,
+    pub(super) scroll_anchor: Option<String>,
 }
 
 /// Concrete Linux GTK4 + Libadwaita platform adapter backed by `libgtk-4.so.1`.
@@ -79,12 +119,41 @@ impl GtkLinuxBackend {
         }
     }
 
+    pub fn new_headless() -> Self {
+        Self {
+            flushed_frames: 0,
+            gtk: None,
+            widgets: HashMap::new(),
+            styles: HashMap::new(),
+            header_titles: HashMap::new(),
+            pulse_tick: std::cell::Cell::new(0),
+        }
+    }
+
     pub fn is_native_display_active(&self) -> bool {
         self.gtk.is_some()
     }
 
     pub fn open_window_count(&self) -> u32 {
         self.gtk.as_ref().map_or(0, Gtk4Sys::open_window_count)
+    }
+
+    pub fn widget_count(&self) -> usize {
+        self.widgets.len()
+    }
+
+    pub fn is_drop_target(&self, node: NodeId) -> bool {
+        self.widgets.get(&node).is_some_and(|w| w.drop_target)
+    }
+
+    pub fn scroll_position(&self, node: NodeId) -> Option<(i32, i32)> {
+        self.widgets.get(&node).and_then(|w| w.scroll_position)
+    }
+
+    pub fn scroll_anchor(&self, node: NodeId) -> Option<&str> {
+        self.widgets
+            .get(&node)
+            .and_then(|w| w.scroll_anchor.as_deref())
     }
 
     pub fn step_event_loop(&self, may_block: bool) -> Vec<NodeId> {
@@ -113,6 +182,9 @@ impl GtkLinuxBackend {
         }
         if let Some(gtk) = &self.gtk {
             for ev in &mut events {
+                if ev.payload != EventPayload::None {
+                    continue;
+                }
                 if let Some(widget) = self.widgets.get(&ev.node)
                     && let Some(handle) = widget.handle
                 {
@@ -163,6 +235,9 @@ impl GtkLinuxBackend {
                         children: Vec::new(),
                         pulsing: false,
                         size_request: (-1, -1),
+                        drop_target: false,
+                        scroll_position: None,
+                        scroll_anchor: None,
                     },
                 );
             }
@@ -238,8 +313,34 @@ impl GtkLinuxBackend {
         }
     }
 
+    fn insert_widget_record(&mut self, id: NodeId, handle: Option<GtkHandle>, kind: GtkWidgetType) {
+        let size_request = if kind == GtkWidgetType::Image {
+            (120, 120)
+        } else {
+            (-1, -1)
+        };
+        self.widgets.insert(
+            id,
+            NativeGtkWidget {
+                handle,
+                kind,
+                children: Vec::new(),
+                pulsing: false,
+                size_request,
+                drop_target: false,
+                scroll_position: None,
+                scroll_anchor: None,
+            },
+        );
+    }
+
     fn create_native_widget(&mut self, id: NodeId, tag: &str) {
-        let Some(gtk) = &self.gtk else { return };
+        let Some(gtk) = &self.gtk else {
+            if let Some(kind) = GtkWidgetType::from_tag(tag) {
+                self.insert_widget_record(id, None, kind);
+            }
+            return;
+        };
         let (handle, kind) = match tag {
             "ng-window" | "adw-window" => (Some(gtk.create_window()), GtkWidgetType::Window),
             "ng-header-bar" | "adw-header-bar" | "gtk-header-bar" => {
@@ -306,21 +407,7 @@ impl GtkLinuxBackend {
                 None => return,
             },
         };
-        let size_request = if kind == GtkWidgetType::Image {
-            (120, 120)
-        } else {
-            (-1, -1)
-        };
-        self.widgets.insert(
-            id,
-            NativeGtkWidget {
-                handle,
-                kind,
-                children: Vec::new(),
-                pulsing: false,
-                size_request,
-            },
-        );
+        self.insert_widget_record(id, handle, kind);
     }
 
     fn create_extended_native_widget(

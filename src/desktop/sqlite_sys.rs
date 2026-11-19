@@ -218,9 +218,41 @@ unsafe fn load_sym<F: Copy>(handle: *mut c_void, sym: &CStr) -> Option<F> {
     }
 }
 
+/// Cross-platform OS dynamic library target for `NativeSqliteDatabase`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OsSqliteBackend {
+    /// Linux `libsqlite3.so.0`.
+    LinuxLibSqlite3,
+    /// Windows `winsqlite3.dll` (built into Windows 10/11).
+    WindowsWinSqlite3,
+    /// macOS `libsqlite3.dylib` (built into macOS SDK).
+    MacOsLibSqlite3,
+}
+
+impl OsSqliteBackend {
+    pub const fn current() -> Self {
+        if cfg!(target_os = "windows") {
+            Self::WindowsWinSqlite3
+        } else if cfg!(target_os = "macos") {
+            Self::MacOsLibSqlite3
+        } else {
+            Self::LinuxLibSqlite3
+        }
+    }
+
+    pub const fn library_name(self) -> &'static str {
+        match self {
+            Self::LinuxLibSqlite3 => "libsqlite3.so.0",
+            Self::WindowsWinSqlite3 => "winsqlite3.dll",
+            Self::MacOsLibSqlite3 => "libsqlite3.dylib",
+        }
+    }
+}
+
 /// Native `SQLite3` database engine dynamically bound to `libsqlite3.so.0` (Linux/macOS/Windows)
 /// with automatic WAL journaling and JSON serialization for reactive `@ng-native/desktop` queries.
 pub struct NativeSqliteDatabase {
+    backend: OsSqliteBackend,
     ffi: Option<SqliteFfi>,
     fallback_tables: HashMap<String, Vec<HashMap<String, String>>>,
 }
@@ -242,9 +274,14 @@ impl NativeSqliteDatabase {
             let _ = handle.execute("PRAGMA journal_mode=WAL;");
         }
         Self {
+            backend: OsSqliteBackend::current(),
             ffi,
             fallback_tables: HashMap::new(),
         }
+    }
+
+    pub const fn backend(&self) -> OsSqliteBackend {
+        self.backend
     }
 
     pub const fn is_native_loaded(&self) -> bool {

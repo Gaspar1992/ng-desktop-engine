@@ -2,6 +2,8 @@ use std::env;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+pub mod compute_pool;
+pub mod fs_watcher;
 mod http_codec;
 pub mod http_native;
 mod libsoup_sys;
@@ -10,14 +12,16 @@ pub mod pokedex_ui;
 pub mod sqlite_sys;
 pub mod system_env;
 
+pub use compute_pool::{ComputeMatch, NativeComputePool};
+pub use fs_watcher::{NativeFsManager, OsFileWatcherBackend, XdgDirKind};
 pub use http_native::{
     NativeHttpCallKind, NativeHttpConfig, NativeHttpEngine, NativeHttpRequest, NativeHttpResponse,
     OsHttpPlatform,
 };
 pub use pokedex::{PokemonIndexEntry, PokemonInfo};
 pub use pokedex_ui::PokedexController;
-pub use sqlite_sys::NativeSqliteDatabase;
-pub use system_env::NativeSystemEnv;
+pub use sqlite_sys::{NativeSqliteDatabase, OsSqliteBackend};
+pub use system_env::{NativeSystemEnv, OsSystemEnvBackend};
 
 /// Native system color scheme synchronized with GTK4 (`GtkSettings`) / Libadwaita (`AdwStyleManager`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +78,8 @@ pub struct DesktopServices {
     http_engine: Arc<Mutex<NativeHttpEngine>>,
     sqlite: NativeSqliteDatabase,
     system_env: NativeSystemEnv,
+    compute: NativeComputePool,
+    fs_manager: NativeFsManager,
 }
 
 impl Default for DesktopServices {
@@ -104,7 +110,21 @@ impl DesktopServices {
             http_engine,
             sqlite: NativeSqliteDatabase::new_in_memory(),
             system_env: NativeSystemEnv::detect(),
+            compute: NativeComputePool::new(),
+            fs_manager: NativeFsManager::new("ng-linux-counter"),
         }
+    }
+
+    pub const fn compute(&self) -> &NativeComputePool {
+        &self.compute
+    }
+
+    pub const fn fs_manager(&self) -> &NativeFsManager {
+        &self.fs_manager
+    }
+
+    pub const fn fs_manager_mut(&mut self) -> &mut NativeFsManager {
+        &mut self.fs_manager
     }
 
     pub const fn sqlite(&self) -> &NativeSqliteDatabase {

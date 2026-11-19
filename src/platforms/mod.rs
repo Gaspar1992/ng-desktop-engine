@@ -1,4 +1,5 @@
 pub mod gtk4_callbacks;
+mod gtk4_controls;
 pub mod gtk4_styling;
 pub mod gtk4_sys;
 pub mod gtk4_widgets;
@@ -35,6 +36,20 @@ pub trait PlatformBackend {
             "ng-checkbox" | "ng-check" | "gtk-check-button" => "NativeCheckButton",
             "ng-slider" | "ng-scale" | "gtk-scale" => "NativeSlider",
             "ng-select" | "ng-dropdown" | "gtk-drop-down" => "NativeDropDown",
+            "ng-image" | "gtk-picture" | "ng-picture" => "NativeImage",
+            "ng-level-bar" | "gtk-level-bar" => "NativeLevelBar",
+            "ng-progress-bar" | "gtk-progress-bar" => "NativeProgressBar",
+            "ng-spinner" | "gtk-spinner" => "NativeSpinner",
+            "ng-flow" | "ng-flow-box" | "gtk-flow-box" => "NativeFlowBox",
+            "ng-paned" | "gtk-paned" => "NativePaned",
+            "ng-stack" | "gtk-stack" | "adw-navigation-view" => "NativeStack",
+            "ng-expander" | "gtk-expander" => "NativeExpander",
+            "ng-text-view" | "gtk-text-view" => "NativeTextView",
+            "ng-password-entry" | "gtk-password-entry" => "NativePasswordEntry",
+            "ng-search-entry" | "gtk-search-entry" => "NativeSearchEntry",
+            "ng-spin-button" | "gtk-spin-button" => "NativeSpinButton",
+            "ng-clamp" | "adw-clamp" => "NativeClamp",
+            "ng-anchor" => "NativeAnchor",
             _ => "NativeWidget",
         }
     }
@@ -76,14 +91,16 @@ impl AnyPlatformBackend {
     pub fn step_event_loop(&self, may_block: bool) -> Vec<NodeId> {
         match self {
             Self::LinuxGtk(b) => b.step_event_loop(may_block),
-            Self::WindowsWinUi(_) | Self::MacOsAppKit(_) => Vec::new(),
+            Self::WindowsWinUi(b) => b.step_native_events().into_iter().map(|e| e.node).collect(),
+            Self::MacOsAppKit(b) => b.step_native_events().into_iter().map(|e| e.node).collect(),
         }
     }
 
     pub fn step_native_events(&self, may_block: bool) -> Vec<NativeEvent> {
         match self {
             Self::LinuxGtk(b) => b.step_native_events(may_block),
-            Self::WindowsWinUi(_) | Self::MacOsAppKit(_) => Vec::new(),
+            Self::WindowsWinUi(b) => b.step_native_events(),
+            Self::MacOsAppKit(b) => b.step_native_events(),
         }
     }
 }

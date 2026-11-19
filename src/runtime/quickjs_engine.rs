@@ -86,7 +86,14 @@ impl QuickJsEngine {
                 | "getSystemTimezone"
                 | "resolveImageAsset"
                 | "logSystemError"
-                | "getSystemErrors",
+                | "getSystemErrors"
+                | "computeFuzzyFilter"
+                | "computeHash"
+                | "fsResolvePath"
+                | "fsReadText"
+                | "fsWriteText"
+                | "fsWatchFile"
+                | "fsPollChangedFiles",
                 _,
             ) => return Ok(()),
             _ => {

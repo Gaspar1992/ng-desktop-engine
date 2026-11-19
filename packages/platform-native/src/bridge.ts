@@ -1,4 +1,13 @@
+import {
+  computeFuzzyFilterFallback,
+  computeHashFallback,
+  InMemoryFsStore,
+  type NativeComputeMatch,
+  type NativeXdgDirKind,
+} from './bridge-fs-compute';
 import { InMemorySqliteStore, resolveNativeImageAsset } from './bridge-sqlite';
+
+export type { NativeComputeMatch, NativeXdgDirKind } from './bridge-fs-compute';
 
 export type NativeHttpCallKind = 'json' | 'graphql' | 'asset' | 'batch' | 'text';
 
@@ -98,6 +107,13 @@ export interface NgNativeBridge {
   resolveImageAsset(src: string, width?: number): string;
   logSystemError(message: string): void;
   getSystemErrors(): string[];
+  computeFuzzyFilter(items: readonly string[], query: string, limit?: number): NativeComputeMatch[];
+  computeHash(input: string): string;
+  fsResolvePath(kind: NativeXdgDirKind, relPath: string): string;
+  fsReadText(path: string): string | null;
+  fsWriteText(path: string, content: string): boolean;
+  fsWatchFile(path: string): boolean;
+  fsPollChangedFiles(): string[];
   __dispatchEvent(id: string, eventName: string, eventPayload?: unknown): void;
   __flushTimers(): void;
   __drainQueue(): string;
@@ -121,6 +137,7 @@ export function ensureNgNativeBridge(): NgNativeBridge {
   let systemTheme: 'dark' | 'light' = 'dark';
   let clipboardText = '';
   const sqliteStore = new InMemorySqliteStore();
+  const fsStore = new InMemoryFsStore();
   let networkStatus: NativeNetworkStatus = {
     online: true,
     metered: false,
@@ -306,6 +323,27 @@ export function ensureNgNativeBridge(): NgNativeBridge {
     },
     getSystemErrors() {
       return [...systemErrors];
+    },
+    computeFuzzyFilter(items, query, limit = 50) {
+      return computeFuzzyFilterFallback(items, query, limit);
+    },
+    computeHash(input) {
+      return computeHashFallback(input);
+    },
+    fsResolvePath(kind, relPath) {
+      return fsStore.resolvePath(kind, relPath);
+    },
+    fsReadText(path) {
+      return fsStore.readText(path);
+    },
+    fsWriteText(path, content) {
+      return fsStore.writeText(path, content);
+    },
+    fsWatchFile(path) {
+      return fsStore.watchFile(path);
+    },
+    fsPollChangedFiles() {
+      return fsStore.pollChangedFiles();
     },
     __dispatchEvent(id, eventName, eventPayload = {}) {
       for (const entry of listeners.values()) {

@@ -215,3 +215,89 @@ fn nivel1_native_sqlite_ffi_and_system_env() {
     desktop.system_env_mut().log_error("Timeout warning");
     assert_eq!(desktop.system_env().error_logs(), ["Timeout warning"]);
 }
+
+#[test]
+fn nivel3_compute_pool_xdg_fs_watcher_and_native_drop_target() {
+    use ng_native_engine::desktop::XdgDirKind;
+    use ng_native_engine::platforms::gtk4_callbacks::{
+        drain_pending_events, enqueue_event_with_payload, pack_node_id,
+    };
+
+    let desktop = DesktopServices::new();
+    let catalog = vec![
+        String::from("bulbasaur"),
+        String::from("charmander"),
+        String::from("pikachu"),
+        String::from("raichu"),
+    ];
+    let matches = desktop.compute().fuzzy_filter(&catalog, "pikachu", 3);
+    assert_eq!(matches[0].value, "pikachu");
+    assert_eq!(matches[0].score, 1000);
+    assert_eq!(desktop.compute().fnv1a_hex("pikachu").len(), 16);
+
+    let cfg_path = desktop
+        .fs_manager()
+        .resolve_xdg_path(XdgDirKind::Data, "exports/favorites.json")
+        .unwrap();
+    assert!(
+        cfg_path
+            .to_string_lossy()
+            .contains("exports/favorites.json")
+    );
+    assert!(
+        desktop
+            .fs_manager()
+            .resolve_xdg_path(XdgDirKind::Data, "../secrets.json")
+            .is_err()
+    );
+
+    let mut engine = RenderEngine::new(HeadlessBackend::default());
+    let mut runtime = JsRuntime::new();
+    let js_bundle = r#"
+        const win = __NG_NATIVE__.createElement("win", "ng-window");
+        const dropZone = __NG_NATIVE__.createElement("dropZone", "ng-box");
+        const lbl = __NG_NATIVE__.createElement("lbl", "ng-label");
+        __NG_NATIVE__.setAttribute(dropZone, "drop-target", "true");
+        __NG_NATIVE__.appendChild(dropZone, lbl);
+        __NG_NATIVE__.appendChild(win, dropZone);
+
+        const cfgPath = __NG_NATIVE__.fsResolvePath("data", "favorites.json");
+        __NG_NATIVE__.fsWatchFile(cfgPath);
+        __NG_NATIVE__.fsWriteText(cfgPath, "pikachu,raichu");
+        const changed = __NG_NATIVE__.fsPollChangedFiles();
+        const scored = __NG_NATIVE__.computeFuzzyFilter(["bulbasaur", "pikachu"], "pika", 1);
+        const topName = scored.length > 0 ? scored[0].value : "none";
+        __NG_NATIVE__.setText(lbl, `Top:${topName}|Changed:${changed.length}`);
+
+        __NG_NATIVE__.listen(dropZone, "file-drop", function(evt) {
+            __NG_NATIVE__.setText(lbl, `Dropped:${evt.value}`);
+        });
+    "#;
+    runtime.eval_js(&mut engine, js_bundle).unwrap();
+    let win = runtime.resolve_var("win").unwrap();
+    let drop_zone = runtime.resolve_var("dropZone").unwrap();
+
+    if runtime.js_engine().is_jit_enabled() {
+        let preview = engine.render_window_preview(win).unwrap();
+        assert!(preview.contains("Top:pikachu|Changed:1"));
+
+        let _ = drain_pending_events();
+        enqueue_event_with_payload(
+            pack_node_id(drop_zone),
+            "file-drop",
+            EventPayload::Text(String::from("/tmp/team.json")),
+        );
+        let events = drain_pending_events();
+        assert_eq!(events.len(), 1);
+        runtime
+            .trigger_node_event_with_payload(
+                &mut engine,
+                events[0].node,
+                &events[0].event_name,
+                &events[0].payload,
+            )
+            .unwrap();
+        let after_drop = engine.render_window_preview(win).unwrap();
+        assert!(after_drop.contains("Dropped:/tmp/team.json"));
+    }
+}
