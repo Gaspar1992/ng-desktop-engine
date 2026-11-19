@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 pub mod compute_pool;
 pub mod fs_watcher;
-mod http_codec;
+pub mod http_codec;
 pub mod http_native;
 mod libsoup_sys;
 pub mod pokedex;

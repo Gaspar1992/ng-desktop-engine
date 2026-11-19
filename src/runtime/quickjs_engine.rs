@@ -63,7 +63,10 @@ impl QuickJsEngine {
         }
 
         let cmd = match (method, args) {
-            ("registerStyle", [cls, bg, fg, pad, space]) => {
+            ("registerStyle", [cls, bg, fg, pad, space, extras]) if !extras.trim().is_empty() => {
+                format!("style {cls} {bg} {fg} {pad} {space} {extras}")
+            }
+            ("registerStyle", [cls, bg, fg, pad, space] | [cls, bg, fg, pad, space, _]) => {
                 format!("style {cls} {bg} {fg} {pad} {space}")
             }
             ("declareSignal", [name, initial]) => format!("signal {name} {initial}"),
@@ -79,6 +82,7 @@ impl QuickJsEngine {
             }
             ("removeChild", [parent, child]) => format!("remove_child {parent} {child}"),
             ("addClass", [id, cls]) => format!("add_class {id} {cls}"),
+            ("removeClass", [id, cls]) => format!("remove_class {id} {cls}"),
             ("bindText", [id, sig, tpl]) => format!("bind_text {id} {sig} {tpl}"),
             ("bindAttr", [id, key, sig]) => format!("bind_attr {id} {key} {sig} {{}}"),
             ("bindAttr", [id, key, sig, tpl]) => format!("bind_attr {id} {key} {sig} {tpl}"),
@@ -95,7 +99,12 @@ impl QuickJsEngine {
                 | "getHttpConfig"
                 | "registerHttpEndpoint"
                 | "httpRequest"
+                | "httpRequestAsync"
                 | "httpBatchRequest"
+                | "httpBatchRequestAsync"
+                | "downloadImageAsync"
+                | "__tickTimers"
+                | "__resolveHostCallback"
                 | "getSystemTheme"
                 | "getClipboard"
                 | "openFileDialog"

@@ -57,7 +57,14 @@ export interface NativeHttpBridgeResponse {
  * (`JscEngine` or `QuickJsEngine`).
  */
 export interface NgNativeBridge {
-  registerStyle(cls: string, bg?: string, fg?: string, pad?: number, space?: number): void;
+  registerStyle(
+    cls: string,
+    bg?: string,
+    fg?: string,
+    pad?: number,
+    space?: number,
+    extras?: string,
+  ): void;
   declareSignal(name: string, initial?: number): void;
   createElement(id: string, tag: string): string;
   createComment(id: string, text?: string): string;
@@ -68,6 +75,7 @@ export interface NgNativeBridge {
   insertBefore(parent: string, child: string, refChild?: string): void;
   removeChild(parent: string, child: string): void;
   addClass(id: string, className: string): void;
+  removeClass(id: string, className: string): void;
   bindText(id: string, signalName: string, template: string): void;
   bindAttr(id: string, attrKey: string, signalName: string, template?: string): void;
   bindVisible(id: string, signalName: string, op?: string, rhs?: number): void;
@@ -99,6 +107,24 @@ export interface NgNativeBridge {
       options?: NativeHttpRequestOptions;
     }>,
   ): NativeHttpBridgeResponse[];
+  httpRequestAsync?(
+    method: string,
+    url: string,
+    body?: string,
+    options?: NativeHttpRequestOptions,
+  ): Promise<NativeHttpBridgeResponse>;
+  httpBatchRequestAsync?(
+    requests: Array<{
+      method: string;
+      url: string;
+      body?: string;
+      options?: NativeHttpRequestOptions;
+    }>,
+  ): Promise<NativeHttpBridgeResponse[]>;
+  downloadImageAsync?(
+    url: string,
+    width?: number,
+  ): Promise<{ ok: boolean; cached?: boolean; path: string; error?: string }>;
   sqliteExecute(sql: string): boolean;
   sqliteQuery(sql: string): Array<Record<string, string>>;
   getNetworkStatus(): NativeNetworkStatus;
@@ -117,6 +143,8 @@ export interface NgNativeBridge {
   fsPollChangedFiles(): string[];
   __dispatchEvent(id: string, eventName: string, eventPayload?: unknown): void;
   __flushTimers(): void;
+  __tickTimers?(nowMs?: number): void;
+  __resolveHostCallback?(id: number, payload: unknown): void;
   __drainQueue(): string;
 }
 
@@ -170,9 +198,16 @@ export function ensureNgNativeBridge(): NgNativeBridge {
   >();
   let nextListenerId = 1;
 
+  const escapeNewlines = (value: string): string => value.replace(/\r?\n/g, '\u001e');
+
   const fallbackBridge: NgNativeBridge = {
-    registerStyle(cls, bg = 'none', fg = 'none', pad = 0, space = 0) {
-      queue.push(`style ${cls} ${bg} ${fg} ${pad} ${space}`);
+    registerStyle(cls, bg = 'none', fg = 'none', pad = 0, space = 0, extras = '') {
+      const extraTrimmed = extras.trim();
+      queue.push(
+        extraTrimmed
+          ? `style ${cls} ${bg} ${fg} ${pad} ${space} ${extraTrimmed}`
+          : `style ${cls} ${bg} ${fg} ${pad} ${space}`,
+      );
     },
     declareSignal(name, initial = 0) {
       queue.push(`signal ${name} ${initial}`);
@@ -186,10 +221,10 @@ export function ensureNgNativeBridge(): NgNativeBridge {
       return id;
     },
     setText(id, text) {
-      queue.push(`text ${id} ${text}`);
+      queue.push(`text ${id} ${escapeNewlines(text)}`);
     },
     setAttribute(id, key, value) {
-      queue.push(`attr ${id} ${key} ${value}`);
+      queue.push(`attr ${id} ${key} ${escapeNewlines(value)}`);
     },
     setWindowIcon(id, appId, icoPath) {
       queue.push(`icon ${id} ${appId} ${icoPath}`);
@@ -209,6 +244,9 @@ export function ensureNgNativeBridge(): NgNativeBridge {
     },
     addClass(id, className) {
       queue.push(`add_class ${id} ${className}`);
+    },
+    removeClass(id, className) {
+      queue.push(`remove_class ${id} ${className}`);
     },
     bindText(id, signalName, template) {
       queue.push(`bind_text ${id} ${signalName} ${template}`);
@@ -294,6 +332,19 @@ export function ensureNgNativeBridge(): NgNativeBridge {
         fallbackBridge.httpRequest(req.method, req.url, req.body, req.options),
       );
     },
+    httpRequestAsync(method, url, body, options) {
+      return Promise.resolve(fallbackBridge.httpRequest(method, url, body, options));
+    },
+    httpBatchRequestAsync(requests) {
+      return Promise.resolve(fallbackBridge.httpBatchRequest!(requests));
+    },
+    downloadImageAsync(url, width) {
+      return Promise.resolve({
+        ok: true,
+        cached: false,
+        path: fallbackBridge.resolveImageAsset(url, width),
+      });
+    },
     sqliteExecute(sql) {
       return sqliteStore.execute(sql);
     },
@@ -354,6 +405,12 @@ export function ensureNgNativeBridge(): NgNativeBridge {
       }
     },
     __flushTimers() {
+      // No-op in synchronous fallback
+    },
+    __tickTimers() {
+      // No-op in synchronous fallback
+    },
+    __resolveHostCallback() {
       // No-op in synchronous fallback
     },
     __drainQueue() {

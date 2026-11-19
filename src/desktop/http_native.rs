@@ -313,12 +313,16 @@ impl NativeHttpEngine {
     }
 
     /// Downloads multiple `(url, dest_path)` pairs concurrently in a single multiplexed HTTP/2 process.
-    pub fn download_files_parallel(&self, pairs: &[(String, PathBuf)]) -> Vec<bool> {
+    pub(crate) fn download_files_parallel_with(
+        max_parallel_connections: u16,
+        timeout_ms: u32,
+        pairs: &[(String, PathBuf)],
+    ) -> Vec<bool> {
         if pairs.is_empty() {
             return Vec::new();
         }
-        let max_conn = self.config.max_parallel_connections.max(1).to_string();
-        let timeout_secs = self.config.timeout_ms.div_ceil(1000).max(1).to_string();
+        let max_conn = max_parallel_connections.max(1).to_string();
+        let timeout_secs = timeout_ms.div_ceil(1000).max(1).to_string();
         let mut cmd = Command::new("curl");
         cmd.args([
             "-s",
@@ -343,6 +347,14 @@ impl NativeHttpEngine {
             .iter()
             .map(|(_, dest)| fs::metadata(dest).is_ok_and(|m| m.len() > 0))
             .collect()
+    }
+
+    pub fn download_files_parallel(&self, pairs: &[(String, PathBuf)]) -> Vec<bool> {
+        Self::download_files_parallel_with(
+            self.config.max_parallel_connections,
+            self.config.timeout_ms,
+            pairs,
+        )
     }
 
     fn prepare_request(&self, req: &NativeHttpRequest) -> NativeHttpRequest {
@@ -681,6 +693,29 @@ mod tests {
                 .get("X-Trace")
                 .map(String::as_str),
             Some("abc")
+        );
+    }
+
+    #[test]
+    fn extracts_json_string_arrays_and_nested_raw_values() {
+        use crate::desktop::http_codec::{extract_json_raw_value, extract_json_string_array};
+
+        let payload = r#"{"items":["alpha","beta \"2\"","gamma"],"nested":{"a":[1,2],"text":"hi}"},"flag":true}"#;
+        assert_eq!(
+            extract_json_string_array(payload, "items"),
+            vec!["alpha", "beta \"2\"", "gamma"]
+        );
+        assert_eq!(
+            extract_json_raw_value(payload, "nested").as_deref(),
+            Some(r#"{"a":[1,2],"text":"hi}"}"#)
+        );
+        assert_eq!(
+            extract_json_raw_value(payload, "flag").as_deref(),
+            Some("true")
+        );
+        assert_eq!(
+            NativeHttpEngine::download_files_parallel_with(4, 1000, &[]),
+            Vec::<bool>::new()
         );
     }
 }

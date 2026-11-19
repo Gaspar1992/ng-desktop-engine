@@ -124,6 +124,14 @@ impl Gtk4Sys {
         }
     }
 
+    pub fn remove_css_class(&self, widget: GtkHandle, class_name: &str) {
+        if let Ok(c_str) = CString::new(class_name) {
+            unsafe {
+                (self.gtk_widget_remove_css_class)(widget.0, c_str.as_ptr());
+            }
+        }
+    }
+
     pub fn set_window_child(&self, win: GtkHandle, child: GtkHandle) {
         unsafe {
             (self.gtk_window_set_child)(win.0, child.0);

@@ -83,6 +83,10 @@ pub enum Instruction {
         var_name: String,
         class_name: String,
     },
+    RemoveClass {
+        var_name: String,
+        class_name: String,
+    },
     Destroy {
         var_name: String,
     },
@@ -169,6 +173,10 @@ pub fn parse_instruction(line: &str) -> Result<Instruction, EngineError> {
             var_name: (*var_name).to_string(),
             class_name: (*class_name).to_string(),
         }),
+        ["remove_class", var_name, class_name] => Ok(Instruction::RemoveClass {
+            var_name: (*var_name).to_string(),
+            class_name: (*class_name).to_string(),
+        }),
         ["destroy", var_name] => Ok(Instruction::Destroy {
             var_name: (*var_name).to_string(),
         }),
@@ -183,7 +191,7 @@ pub fn parse_instruction(line: &str) -> Result<Instruction, EngineError> {
 }
 
 fn normalize_text_payload(parts: &[&str]) -> String {
-    let joined = parts.join(" ");
+    let joined = parts.join(" ").replace('\u{001e}', "\n");
     if joined == "\"\"" || joined == "''" {
         return String::new();
     }

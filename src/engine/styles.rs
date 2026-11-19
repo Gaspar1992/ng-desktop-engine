@@ -80,6 +80,14 @@ impl StyleRegistry {
         Ok(style_id)
     }
 
+    pub fn detach_class(&mut self, node: NodeId, class_name: &str) -> Option<StyleId> {
+        let style_id = *self.ids_by_name.get(class_name)?;
+        if let Some(list) = self.node_styles.get_mut(&node) {
+            list.retain(|id| *id != style_id);
+        }
+        Some(style_id)
+    }
+
     pub fn get_rule(&self, id: StyleId) -> Option<&StyleRule> {
         self.rules_by_id.get(&id)
     }
@@ -141,6 +149,11 @@ mod tests {
         assert_eq!(reg.attach_class(node, "card").unwrap(), id1);
         assert_eq!(reg.node_classes(node), vec!["card"]);
 
+        assert_eq!(reg.detach_class(node, "card"), Some(id1));
+        assert_eq!(reg.node_classes(node), Vec::<&str>::new());
+        assert_eq!(reg.detach_class(node, "missing"), None);
+
+        assert_eq!(reg.attach_class(node, "card").unwrap(), id1);
         reg.remove_node(node);
         assert_eq!(reg.node_classes(node), Vec::<&str>::new());
     }

@@ -238,6 +238,32 @@ impl GtkLinuxBackend {
         events
     }
 
+    fn apply_gtk_set_text(&mut self, id: NodeId, text: &str) {
+        let (Some(gtk), Some(widget)) = (&self.gtk, self.widgets.get(&id)) else {
+            return;
+        };
+        let Some(handle) = widget.handle else { return };
+        match widget.kind {
+            GtkWidgetType::Window => gtk.set_window_title(handle, text),
+            GtkWidgetType::HeaderBar => {
+                let entry = self.header_titles.entry(id).or_default();
+                entry.0 = text.to_string();
+                let (t, s) = (entry.0.clone(), entry.1.clone());
+                gtk.set_header_bar_title(handle, &t, &s);
+            }
+            GtkWidgetType::Label => gtk.set_label_text(handle, text),
+            GtkWidgetType::Button => gtk.set_button_label(handle, text),
+            GtkWidgetType::Entry | GtkWidgetType::SearchEntry | GtkWidgetType::PasswordEntry => {
+                gtk.set_entry_text(handle, text);
+            }
+            GtkWidgetType::TextView => gtk.set_text_view_text(handle, text),
+            GtkWidgetType::CheckButton => gtk.set_check_button_label(handle, text),
+            GtkWidgetType::Expander => gtk.set_expander_label(handle, text),
+            GtkWidgetType::Image => gtk.set_image_file(handle, text),
+            _ => {}
+        }
+    }
+
     fn apply_command_to_gtk(&mut self, cmd: &RenderCommand) {
         match cmd {
             RenderCommand::RegisterStyle { style_id, rule } => {
@@ -263,31 +289,7 @@ impl GtkLinuxBackend {
                     },
                 );
             }
-            RenderCommand::SetText { id, text } => {
-                let (Some(gtk), Some(widget)) = (&self.gtk, self.widgets.get(id)) else {
-                    return;
-                };
-                let Some(handle) = widget.handle else { return };
-                match widget.kind {
-                    GtkWidgetType::Window => gtk.set_window_title(handle, text),
-                    GtkWidgetType::HeaderBar => {
-                        let entry = self.header_titles.entry(*id).or_default();
-                        entry.0.clone_from(text);
-                        let (t, s) = (entry.0.clone(), entry.1.clone());
-                        gtk.set_header_bar_title(handle, &t, &s);
-                    }
-                    GtkWidgetType::Label => gtk.set_label_text(handle, text),
-                    GtkWidgetType::Button => gtk.set_button_label(handle, text),
-                    GtkWidgetType::Entry
-                    | GtkWidgetType::SearchEntry
-                    | GtkWidgetType::PasswordEntry => gtk.set_entry_text(handle, text),
-                    GtkWidgetType::TextView => gtk.set_text_view_text(handle, text),
-                    GtkWidgetType::CheckButton => gtk.set_check_button_label(handle, text),
-                    GtkWidgetType::Expander => gtk.set_expander_label(handle, text),
-                    GtkWidgetType::Image => gtk.set_image_file(handle, text),
-                    _ => {}
-                }
-            }
+            RenderCommand::SetText { id, text } => self.apply_gtk_set_text(*id, text),
             RenderCommand::SetAttribute { node, key, value } => {
                 self.apply_native_attribute(*node, key, value);
             }
@@ -309,6 +311,16 @@ impl GtkLinuxBackend {
                 };
                 if let Some(handle) = widget.handle {
                     gtk.add_css_class(handle, &rule.class_name);
+                }
+            }
+            RenderCommand::RemoveStyleClass { node, style_id } => {
+                let (Some(gtk), Some(widget), Some(rule)) =
+                    (&self.gtk, self.widgets.get(node), self.styles.get(style_id))
+                else {
+                    return;
+                };
+                if let Some(handle) = widget.handle {
+                    gtk.remove_css_class(handle, &rule.class_name);
                 }
             }
             RenderCommand::AppendChild { parent, child } => {
@@ -564,27 +576,46 @@ impl GtkLinuxBackend {
         };
 
         let mut prev_real_sibling: Option<GtkHandle> = None;
-        if let Some(ref_id) = ref_child
-            && let Some(pos) = parent_w.children.iter().position(|c| *c == ref_id)
-        {
-            for prev_id in parent_w.children[..pos].iter().rev() {
-                if let Some(prev_w) = self.widgets.get(prev_id)
-                    && let Some(h) = prev_w.handle
-                {
+        let mut real_insert_idx: i32 = 0;
+        let mut total_real_children: i32 = 0;
+        let mut found_ref = false;
+        for sibling_id in &parent_w.children {
+            if Some(*sibling_id) == ref_child {
+                found_ref = true;
+            }
+            if *sibling_id == child {
+                continue;
+            }
+            if let Some(sib_w) = self.widgets.get(sibling_id)
+                && let Some(h) = sib_w.handle
+            {
+                if !found_ref {
                     prev_real_sibling = Some(h);
-                    break;
+                    real_insert_idx += 1;
                 }
+                total_real_children += 1;
             }
         }
+        let target_idx = if ref_child.is_some() && found_ref {
+            real_insert_idx
+        } else {
+            total_real_children
+        };
 
-        if parent_w.kind == GtkWidgetType::Box
-            && let (Some(p_h), Some(c_h)) = (parent_w.handle, child_w.handle)
+        if let Some(c_h) = child_w.handle
+            && let Some(p_h) = parent_w.handle
         {
-            if ref_child.is_some() {
-                gtk.box_insert_after(p_h, c_h, prev_real_sibling);
-            } else {
-                gtk.box_append(p_h, c_h);
-            }
+            Self::attach_gtk_child_at(
+                gtk,
+                parent_w.kind,
+                child_w.kind,
+                p_h,
+                c_h,
+                ref_child.is_some(),
+                prev_real_sibling,
+                target_idx,
+                parent_w.children.contains(&child),
+            );
         }
 
         if let Some(pw) = self.widgets.get_mut(&parent) {
@@ -596,6 +627,63 @@ impl GtkLinuxBackend {
             } else {
                 pw.children.push(child);
             }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
+    fn attach_gtk_child_at(
+        gtk: &Gtk4Sys,
+        parent_kind: GtkWidgetType,
+        child_kind: GtkWidgetType,
+        p_h: GtkHandle,
+        c_h: GtkHandle,
+        has_ref: bool,
+        prev_real_sibling: Option<GtkHandle>,
+        target_idx: i32,
+        is_existing_child: bool,
+    ) {
+        match parent_kind {
+            GtkWidgetType::Window => {
+                if child_kind == GtkWidgetType::HeaderBar {
+                    gtk.set_window_titlebar(p_h, c_h);
+                } else {
+                    gtk.set_window_child(p_h, c_h);
+                }
+            }
+            GtkWidgetType::HeaderBar => gtk.header_bar_pack_end(p_h, c_h),
+            GtkWidgetType::Scroll => gtk.set_scrolled_child(p_h, c_h),
+            GtkWidgetType::Clamp => gtk.set_clamp_child(p_h, Some(c_h)),
+            GtkWidgetType::Expander => gtk.set_expander_child(p_h, Some(c_h)),
+            GtkWidgetType::Paned => {
+                if target_idx == 0 {
+                    gtk.paned_set_start_child(p_h, Some(c_h));
+                } else {
+                    gtk.paned_set_end_child(p_h, Some(c_h));
+                }
+            }
+            GtkWidgetType::Box => {
+                if is_existing_child {
+                    gtk.box_remove(p_h, c_h);
+                }
+                if has_ref {
+                    gtk.box_insert_after(p_h, c_h, prev_real_sibling);
+                } else {
+                    gtk.box_append(p_h, c_h);
+                }
+            }
+            GtkWidgetType::FlowBox => {
+                if is_existing_child {
+                    gtk.flow_box_remove(p_h, c_h);
+                }
+                if has_ref {
+                    gtk.flow_box_insert(p_h, c_h, target_idx);
+                } else {
+                    gtk.flow_box_append(p_h, c_h);
+                }
+            }
+            GtkWidgetType::Grid => gtk.grid_attach(p_h, c_h, target_idx % 2, target_idx / 2),
+            GtkWidgetType::Stack => gtk.stack_add_named(p_h, c_h, &format!("page_{target_idx}")),
+            _ => {}
         }
     }
 

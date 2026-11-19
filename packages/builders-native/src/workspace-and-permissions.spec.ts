@@ -1,8 +1,9 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   analyzeSourcePermissions,
+  compileBundle,
   executeNativeBuilder,
   resolveWorkspaceProject,
 } from '@ng-desktop/builders';
@@ -189,5 +190,73 @@ describe('Phase 11 — Workspace-Agnostic Resolution & Static Permission Analysi
         permissions: { mode: 'auto' },
       },
     });
+  });
+
+  it('emits app.bundle.js and records entryBundle when Angular browser build output exists', () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), 'ng-desktop-ivy-bundle-'));
+    try {
+      mkdirSync(join(tmpRoot, 'src/app'), { recursive: true });
+      mkdirSync(join(tmpRoot, 'dist/sample-app/browser'), { recursive: true });
+      writeFileSync(
+        join(tmpRoot, 'angular.json'),
+        JSON.stringify({
+          projects: {
+            'sample-app': {
+              projectType: 'application',
+              root: '.',
+              sourceRoot: 'src',
+              architect: {
+                native: {
+                  builder: '@ng-desktop/builders:application',
+                  options: {
+                    outputPath: 'dist/sample-app',
+                  },
+                },
+              },
+            },
+          },
+        }),
+      );
+      writeFileSync(
+        join(tmpRoot, 'src/app/app.ts'),
+        `import { Component } from '@angular/core';
+@Component({ selector: 'app-root', templateUrl: './app.html', styleUrl: './app.css' })
+export class App {}`,
+      );
+      writeFileSync(
+        join(tmpRoot, 'src/app/app.html'),
+        `<ng-window id="win" title="Sample Ivy"><ng-label id="lbl">Ready</ng-label></ng-window>`,
+      );
+      writeFileSync(
+        join(tmpRoot, 'src/app/app.css'),
+        `.badge { background: #1e293b; color: #f8fafc; padding: 8px; border-radius: 6px; }`,
+      );
+      writeFileSync(
+        join(tmpRoot, 'dist/sample-app/browser/polyfills-TEST.js'),
+        `globalThis.__POLYFILL_LOADED__ = true;`,
+      );
+      writeFileSync(
+        join(tmpRoot, 'dist/sample-app/browser/main-TEST.js'),
+        `console.log('compiled-ivy-main');`,
+      );
+
+      const res = compileBundle({ cwd: tmpRoot, projectName: 'sample-app', rebuildIcons: false });
+      expect(res.entryBundleFile).toBe(join(tmpRoot, 'dist/sample-app/app.bundle.js'));
+
+      const appBundle = readFileSync(res.entryBundleFile!, 'utf8');
+      expect(appBundle).toContain('globalThis.__NG_NATIVE_APP_ID__ = "sample-app";');
+      expect(appBundle).toContain(
+        'globalThis.__NG_NATIVE__?.registerStyle("badge", "#1e293b", "#f8fafc", 8, 0, "radius=6");',
+      );
+      expect(appBundle).toContain('globalThis.__POLYFILL_LOADED__ = true;');
+      expect(appBundle).toContain("console.log('compiled-ivy-main');");
+
+      const runtimeCfg = JSON.parse(readFileSync(res.runtimeConfigFile, 'utf8')) as {
+        entryBundle?: string;
+      };
+      expect(runtimeCfg.entryBundle).toBe('app.bundle.js');
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
   });
 });

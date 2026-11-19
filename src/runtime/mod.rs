@@ -1,4 +1,5 @@
 pub mod bootstrap_js;
+pub mod host_bridge;
 mod js_bridge;
 pub mod js_engine;
 pub mod jsc_sys;
@@ -11,10 +12,12 @@ use crate::config::AngularNativeConfig;
 use crate::desktop::{DesktopServices, DesktopTheme};
 use crate::engine::{EngineError, NodeId, RenderEngine};
 use crate::platforms::PlatformBackend;
+pub use host_bridge::HostBridge;
 pub use js_engine::{AnyJsEngine, JsEngineBackend, JscEngine, QuickJsEngine};
 pub use parser::{Instruction, parse_instruction, parse_script};
 use reactivity::{AttrBinding, HandlerAction, TextBinding, VisibilityBinding};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 /// Embedded JS Bridge Runtime that executes compiled Angular instructions (`.ngb`),
 /// hosts a pluggable `JsEngineBackend` (`JavaScriptCore` JIT or `QuickJS`),
@@ -28,6 +31,7 @@ use std::collections::{HashMap, HashSet};
 pub struct JsRuntime {
     js_engine: AnyJsEngine,
     desktop: DesktopServices,
+    host_bridge: Arc<HostBridge>,
     variables: HashMap<String, NodeId>,
     node_vars: HashMap<NodeId, String>,
     primary_window: Option<NodeId>,
@@ -57,6 +61,8 @@ impl JsRuntime {
     /// Creates a `JsRuntime` binding a specific `AnyJsEngine` and configured `DesktopServices`.
     pub fn with_engine_and_desktop(mut js_engine: AnyJsEngine, desktop: DesktopServices) -> Self {
         js_engine.attach_http_engine(desktop.shared_http_engine());
+        let host_bridge = Arc::new(HostBridge::new(&desktop));
+        js_engine.attach_host_bridge(Arc::clone(&host_bridge));
         let escaped_app_id = desktop.app_id().replace('\\', "\\\\").replace('\'', "\\'");
         let _ = js_engine.eval_script(&format!(
             "globalThis.__NG_NATIVE_APP_ID__ = '{escaped_app_id}';"
@@ -64,6 +70,7 @@ impl JsRuntime {
         Self {
             js_engine,
             desktop,
+            host_bridge,
             variables: HashMap::new(),
             node_vars: HashMap::new(),
             primary_window: None,
@@ -99,6 +106,10 @@ impl JsRuntime {
 
     pub const fn desktop_mut(&mut self) -> &mut DesktopServices {
         &mut self.desktop
+    }
+
+    pub const fn host_bridge(&self) -> &Arc<HostBridge> {
+        &self.host_bridge
     }
 
     pub fn signal_value(&self, name: &str) -> Option<i64> {
@@ -186,6 +197,13 @@ impl JsRuntime {
         self.variables
             .get(name)
             .copied()
+            .or_else(|| {
+                if name == "win" {
+                    self.primary_window
+                } else {
+                    None
+                }
+            })
             .ok_or_else(|| EngineError::ScriptSyntaxError(format!("Unknown JS handle: {name}")))
     }
 
@@ -216,19 +234,36 @@ mod tests {
 
         let mut rt = JsRuntime::from_config(&cfg).unwrap();
         let mut engine = RenderEngine::new(HeadlessBackend::new());
-        let resolved_path = rt
+        assert_eq!(rt.desktop().app_id(), "invoice-studio");
+        assert!(rt.desktop().check_sqlite_allowed());
+        assert!(!rt.desktop().check_network_allowed());
+        assert!(!rt.desktop().check_filesystem_xdg_allowed());
+        if rt.js_engine().is_jit_enabled() {
+            let denied = rt.eval_js(
+                &mut engine,
+                "__NG_NATIVE__.fsResolvePath('config', 'prefs.json')",
+            );
+            let err_msg = format!("{:?}", denied.unwrap_err());
+            assert!(
+                err_msg.contains("Permission denied: filesystem_xdg"),
+                "unexpected error: {err_msg}"
+            );
+        }
+
+        cfg.permissions.filesystem_xdg = true;
+        let mut allowed_rt = JsRuntime::from_config(&cfg).unwrap();
+        let resolved_path = allowed_rt
             .eval_js(
                 &mut engine,
                 "__NG_NATIVE__.fsResolvePath('config', 'prefs.json')",
             )
             .unwrap();
-        assert_eq!(
-            resolved_path,
-            "/home/user/.config/invoice-studio/prefs.json"
+        assert!(
+            resolved_path
+                .replace('\\', "/")
+                .ends_with("/invoice-studio/prefs.json"),
+            "unexpected resolved XDG path: {resolved_path}"
         );
-        assert_eq!(rt.desktop().app_id(), "invoice-studio");
-        assert!(rt.desktop().check_sqlite_allowed());
-        assert!(!rt.desktop().check_network_allowed());
 
         cfg.js_engine = String::from("quickjs");
         let mut quickjs_rt = JsRuntime::from_config(&cfg).unwrap();
