@@ -8,16 +8,17 @@ on:
 
 jobs:
   build-and-test:
+    name: Linux GTK4 + Xvfb + Angular 22
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: 'pnpm'
@@ -62,3 +63,49 @@ jobs:
 
       - name: Run unit and integration tests (Headless + Xvfb GTK4 Display)
         run: xvfb-run -a cargo test --verbose
+
+      - name: Stage multi-OS distribution packages
+        run: cargo run -- --package-all
+
+  cross-os-matrix:
+    name: Native ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: Windows 11 (WinUI 3)
+          - os: macos-latest
+            label: macOS (AppKit Cocoa)
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies & compile native .ngb bundle
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build:native
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Run Clippy linter (${{ matrix.label }})
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Run Rust unit & integration tests (${{ matrix.label }})
+        run: cargo test --verbose
+
+      - name: Stage distribution packages (${{ matrix.label }})
+        run: cargo run -- --package-all

@@ -1,11 +1,12 @@
 use crate::engine::EngineError;
+#[cfg(unix)]
 use std::collections::HashMap;
 use std::fs;
+#[cfg(unix)]
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
-
 #[cfg(unix)]
 use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::{Path, PathBuf};
 
 /// Strongly-typed Hot Module Replacement (HMR) IPC message.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,7 +52,9 @@ pub struct HmrIpcServer {
     listener: UnixListener,
     #[cfg(unix)]
     clients: HashMap<ClientId, UnixStream>,
+    #[cfg(unix)]
     in_buffers: HashMap<ClientId, String>,
+    #[cfg(unix)]
     next_client_id: ClientId,
 }
 
@@ -99,10 +102,14 @@ impl HmrIpcServer {
 
     /// Polls for incoming client connections and full newline-delimited HMR messages without blocking.
     pub fn poll_messages(&mut self) -> Vec<(ClientId, HmrMessage)> {
-        let mut messages = Vec::new();
+        #[cfg(not(unix))]
+        {
+            Vec::new()
+        }
 
         #[cfg(unix)]
         {
+            let mut messages = Vec::new();
             while let Ok((stream, _)) = self.listener.accept() {
                 if stream.set_nonblocking(true).is_ok() {
                     let cid = self.next_client_id;
@@ -153,13 +160,14 @@ impl HmrIpcServer {
                 self.clients.remove(&cid);
                 self.in_buffers.remove(&cid);
             }
+            messages
         }
-
-        messages
     }
 
     /// Sends a JSON-framed response back to the specified client.
     pub fn send_response(&mut self, client_id: ClientId, response: &HmrResponse) {
+        #[cfg(not(unix))]
+        let _ = (client_id, response);
         #[cfg(unix)]
         if let Some(stream) = self.clients.get_mut(&client_id) {
             let mut payload = response.to_json();
@@ -193,6 +201,7 @@ impl HmrIpcClient {
         }
         #[cfg(not(unix))]
         {
+            let _ = path.as_ref();
             Err(EngineError::ConfigError(String::from(
                 "Unix domain sockets are not supported on this platform",
             )))
@@ -215,6 +224,7 @@ impl HmrIpcClient {
         self.send_message(&HmrMessage::Ping)
     }
 
+    #[allow(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
     fn send_message(&mut self, msg: &HmrMessage) -> Result<(), EngineError> {
         #[cfg(unix)]
         {
@@ -240,12 +250,14 @@ impl HmrIpcClient {
         }
         #[cfg(not(unix))]
         {
+            let _ = msg;
             Err(EngineError::ConfigError(String::from(
                 "Unsupported platform",
             )))
         }
     }
 
+    #[allow(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
     pub fn read_response(&mut self) -> Result<String, EngineError> {
         #[cfg(unix)]
         {

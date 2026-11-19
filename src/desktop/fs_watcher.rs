@@ -369,6 +369,7 @@ mod tests {
         assert!(
             cfg_path
                 .to_string_lossy()
+                .replace('\\', "/")
                 .contains("ng-native-test/preferences/settings.json")
         );
 

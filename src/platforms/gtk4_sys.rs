@@ -1,6 +1,8 @@
 #![allow(unsafe_code)]
 
-use std::ffi::{CStr, c_char, c_int, c_uint, c_ulong, c_void};
+#[cfg(target_os = "linux")]
+use std::ffi::CStr;
+use std::ffi::{c_char, c_int, c_uint, c_ulong, c_void};
 
 /// Opaque native GTK4 widget/object pointer encapsulated inside the FFI boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,9 +15,11 @@ unsafe extern "C" {
     fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
 }
 
+#[cfg(target_os = "linux")]
 const RTLD_LAZY: c_int = 1;
 pub const GTK_ORIENTATION_HORIZONTAL: c_int = 0;
 pub const GTK_ORIENTATION_VERTICAL: c_int = 1;
+#[cfg(target_os = "linux")]
 const GTK_STYLE_PROVIDER_PRIORITY_APPLICATION: c_uint = 600;
 
 pub type GtkClickCallback = unsafe extern "C" fn(*mut c_void, *mut c_void);

@@ -1,0 +1,148 @@
+name: Release Multi-OS Artifacts
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag version to build and publish (e.g. v0.2.0)'
+        required: true
+        default: 'v0.2.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-os-bundles:
+    name: Build ${{ matrix.archive_name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux
+            archive_name: ng-linux-counter-linux-x86_64-gtk4.tar.gz
+          - os: windows-latest
+            platform: windows
+            archive_name: ng-linux-counter-windows-x86_64-winui3.zip
+          - os: macos-latest
+            platform: macos
+            archive_name: ng-linux-counter-macos-arm64-appkit.tar.gz
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies & build Angular + Native .ngb bundle
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+
+      - name: Install Linux native libraries (Ubuntu)
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-1 \
+            libadwaita-1-0 \
+            libjavascriptcoregtk-6.0-1 \
+            libsoup-3.0-0 \
+            libsqlite3-0
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release engine binary & stage distribution packages
+        run: |
+          cargo build --release
+          cargo run --release -- --package-all
+
+      - name: Package Linux GTK4 distribution archive
+        if: matrix.platform == 'linux'
+        run: |
+          cp target/release/ng-native-engine dist/ng-linux-counter/ng-native-engine
+          chmod +x dist/ng-linux-counter/ng-native-engine
+          chmod +x dist/ng-linux-counter/packages/appimage/AppRun
+          mkdir -p release-out
+          tar -czf "release-out/${{ matrix.archive_name }}" -C dist ng-linux-counter
+
+      - name: Package Windows WinUI 3 distribution archive
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          Copy-Item "target/release/ng-native-engine.exe" "dist/ng-linux-counter/ng-native-engine.exe" -Force
+          Copy-Item "target/release/ng-native-engine.exe" "dist/ng-linux-counter/packages/windows/ng-native-engine.exe" -Force
+          Copy-Item "dist/ng-linux-counter/main.ngb" "dist/ng-linux-counter/packages/windows/main.ngb" -Force
+          New-Item -ItemType Directory -Force -Path "release-out" | Out-Null
+          Compress-Archive -Path "dist/ng-linux-counter/*" -DestinationPath "release-out/${{ matrix.archive_name }}" -Force
+
+      - name: Package macOS AppKit (.app bundle) distribution archive
+        if: matrix.platform == 'macos'
+        run: |
+          cp target/release/ng-native-engine dist/ng-linux-counter/ng-native-engine
+          cp target/release/ng-native-engine dist/ng-linux-counter/packages/macos/ng-linux-counter.app/Contents/MacOS/ng-native-engine
+          cp dist/ng-linux-counter/main.ngb dist/ng-linux-counter/packages/macos/ng-linux-counter.app/Contents/Resources/main.ngb
+          chmod +x dist/ng-linux-counter/ng-native-engine
+          chmod +x dist/ng-linux-counter/packages/macos/ng-linux-counter.app/Contents/MacOS/ng-native-engine
+          chmod +x dist/ng-linux-counter/packages/macos/ng-linux-counter.app/Contents/MacOS/run-appkit.sh
+          mkdir -p release-out
+          tar -czf "release-out/${{ matrix.archive_name }}" -C dist ng-linux-counter
+
+      - name: Upload OS release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          path: release-out/${{ matrix.archive_name }}
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: build-os-bundles
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all OS release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS.txt
+        run: |
+          cd artifacts
+          sha256sum ng-linux-counter-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Resolve release tag
+        id: resolve_tag
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "tag=${{ inputs.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.resolve_tag.outputs.tag }}
+          name: 'NgNative Engine ${{ steps.resolve_tag.outputs.tag }} (Linux GTK4 / Windows WinUI 3 / macOS AppKit)'
+          generate_release_notes: true
+          files: |
+            artifacts/ng-linux-counter-linux-x86_64-gtk4.tar.gz
+            artifacts/ng-linux-counter-windows-x86_64-winui3.zip
+            artifacts/ng-linux-counter-macos-arm64-appkit.tar.gz
+            artifacts/SHA256SUMS.txt

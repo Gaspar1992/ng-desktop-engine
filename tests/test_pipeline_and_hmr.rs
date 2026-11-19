@@ -3,6 +3,7 @@ mod common;
 use common::load_or_build_test_bundle;
 use ng_native_engine::config::AngularNativeConfig;
 use ng_native_engine::engine::{EngineError, RenderCommand, RenderEngine};
+#[cfg(unix)]
 use ng_native_engine::ipc::{HmrIpcClient, HmrIpcServer, HmrMessage, HmrResponse};
 use ng_native_engine::platforms::HeadlessBackend;
 use ng_native_engine::runtime::JsRuntime;
@@ -173,6 +174,7 @@ fn hot_reload_preserves_signal_state_and_updates_template_and_styles() {
     assert!(next_preview.contains("Pokédex HMR: 3"));
 }
 
+#[cfg(unix)]
 #[test]
 fn hmr_ipc_server_applies_live_bundle_reloads_and_eval_to_scene_graph() {
     let socket_path = format!("/tmp/ng-native-pipeline-hmr-{}.sock", std::process::id());
@@ -255,6 +257,7 @@ fn hmr_ipc_server_applies_live_bundle_reloads_and_eval_to_scene_graph() {
     assert!(after_eval_preview.contains("EvalOverIPC"));
 }
 
+#[cfg(unix)]
 #[test]
 fn hmr_ipc_server_handles_client_disconnect_and_malformed_payloads() {
     let socket_path = format!(

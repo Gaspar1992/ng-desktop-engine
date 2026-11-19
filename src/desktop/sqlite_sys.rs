@@ -12,11 +12,13 @@ unsafe extern "C" {
     fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
 }
 
+#[cfg(target_os = "linux")]
 const RTLD_LAZY: c_int = 1;
 const SQLITE_OK: c_int = 0;
 const SQLITE_ROW: c_int = 100;
 const SQLITE_DONE: c_int = 101;
 
+#[cfg(target_os = "linux")]
 type SqliteOpenFn = unsafe extern "C" fn(*const c_char, *mut *mut c_void) -> c_int;
 type SqliteCloseFn = unsafe extern "C" fn(*mut c_void) -> c_int;
 type SqlitePrepareFn = unsafe extern "C" fn(

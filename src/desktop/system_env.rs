@@ -1,6 +1,7 @@
 #![allow(unsafe_code)]
 
 use std::env;
+#[cfg(target_os = "linux")]
 use std::ffi::{CStr, c_char, c_int, c_void};
 use std::path::{Path, PathBuf};
 
@@ -11,6 +12,7 @@ unsafe extern "C" {
     fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
 }
 
+#[cfg(target_os = "linux")]
 const RTLD_LAZY: c_int = 1;
 
 /// Normalizes a POSIX/GLib locale string (e.g. `es_ES.UTF-8`) into a BCP-47 tag (`es-ES`).

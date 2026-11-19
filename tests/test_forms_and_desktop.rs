@@ -242,6 +242,7 @@ fn nivel3_compute_pool_xdg_fs_watcher_and_native_drop_target() {
     assert!(
         cfg_path
             .to_string_lossy()
+            .replace('\\', "/")
             .contains("exports/favorites.json")
     );
     assert!(

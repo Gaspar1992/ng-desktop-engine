@@ -1,0 +1,49 @@
+# Full KVM-Accelerated OS Containers for Native GUI Testing (Windows 11 WinUI 3 & macOS AppKit Cocoa)
+# Usage:
+#   docker compose -f docker/docker-compose.kvm-os.yml up -d windows11
+#   docker compose -f docker/docker-compose.kvm-os.yml up -d macos
+# Web Viewer (noVNC):
+#   Windows 11 -> http://localhost:8006
+#   macOS      -> http://localhost:8007
+
+services:
+  windows11:
+    image: dockurr/windows:latest
+    container_name: ng-native-win11-kvm
+    environment:
+      VERSION: '11'
+      RAM_SIZE: '4G'
+      CPU_CORES: '4'
+      DISK_SIZE: '64G'
+    devices:
+      - /dev/kvm
+      - /dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - '8006:8006' # Web noVNC desktop viewer
+      - '3389:3389/tcp' # Remote Desktop (RDP)
+      - '3389:3389/udp'
+    volumes:
+      - ..:/data/ng-native-engine
+    stop_grace_period: 2m
+
+  macos:
+    image: dockurr/macos:latest
+    container_name: ng-native-macos-kvm
+    environment:
+      VERSION: '15' # macOS Sequoia (15) / Sonoma (14)
+      RAM_SIZE: '4G'
+      CPU_CORES: '4'
+      DISK_SIZE: '64G'
+    devices:
+      - /dev/kvm
+      - /dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - '8007:8006' # Web noVNC desktop viewer
+      - '5900:5900/tcp' # VNC client
+    volumes:
+      - ..:/data/ng-native-engine
+    stop_grace_period: 2m

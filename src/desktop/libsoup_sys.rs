@@ -1,7 +1,9 @@
 #![allow(unsafe_code)]
 
 use std::collections::HashMap;
-use std::ffi::{CStr, CString, c_char, c_int, c_uint, c_void};
+#[cfg(target_os = "linux")]
+use std::ffi::c_int;
+use std::ffi::{CStr, CString, c_char, c_uint, c_void};
 
 #[cfg(target_os = "linux")]
 #[link(name = "dl")]
@@ -10,6 +12,7 @@ unsafe extern "C" {
     fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
 }
 
+#[cfg(target_os = "linux")]
 const RTLD_LAZY: c_int = 1;
 
 type HeadersForeachFn = unsafe extern "C" fn(*const c_char, *const c_char, *mut c_void);

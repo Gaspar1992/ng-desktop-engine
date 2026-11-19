@@ -1,0 +1,29 @@
+# Multi-Container Testing Image: Windows x86_64 Cross-Compilation (MinGW-w64) + Wine64 Execution
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    CARGO_TERM_COLOR=always \
+    CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc \
+    CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUNNER=wine64 \
+    WINEDEBUG=-all
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    curl \
+    gcc-mingw-w64-x86-64 \
+    git \
+    wine64 \
+    xvfb \
+    xauth \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust stable + Windows GNU target
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --component clippy,rustfmt \
+    && /root/.cargo/bin/rustup target add x86_64-pc-windows-gnu
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+WORKDIR /workspace
+COPY . .
+
+CMD ["sh", "-c", "cargo clippy --target x86_64-pc-windows-gnu --all-targets -- -D warnings && xvfb-run -a cargo test --target x86_64-pc-windows-gnu --verbose"]

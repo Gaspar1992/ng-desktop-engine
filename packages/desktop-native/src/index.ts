@@ -9,4 +9,4 @@ export {
 export { NativeDropTargetDirective, type NativeFileDropPayload } from './drop-target.directive';
 export { NativeFileSystemService, type NativeWatchedFileRef } from './fs-service';
 export { NativeNetworkService } from './network-service';
-export { type NativeLiveQueryRef, NativeSqliteService } from './sqlite-service';
+export { NativeSqliteService, type NativeLiveQueryRef } from './sqlite-service';

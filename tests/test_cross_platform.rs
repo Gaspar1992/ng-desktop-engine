@@ -3,7 +3,10 @@ use ng_native_engine::desktop::{
     DesktopServices, OsFileWatcherBackend, OsHttpPlatform, OsSqliteBackend, OsSystemEnvBackend,
 };
 use ng_native_engine::engine::{EventPayload, NativeEvent, RenderEngine};
-use ng_native_engine::packager::stage_linux_distribution;
+use ng_native_engine::packager::{
+    stage_all_distributions, stage_linux_distribution, stage_macos_distribution,
+    stage_windows_distribution,
+};
 use ng_native_engine::platforms::{
     AnyPlatformBackend, GtkLinuxBackend, HeadlessBackend, MacOsAppKitBackend, PlatformBackend,
     WinUiBackend,
@@ -98,7 +101,20 @@ fn phase6_linux_distribution_packager_and_winui_appkit_stateful_backends() {
     for path in &artifacts {
         assert!(
             fs::metadata(path).is_ok(),
-            "Missing staged artifact: {path}"
+            "Missing staged Linux artifact: {path}"
+        );
+    }
+
+    let win_artifacts = stage_windows_distribution(&cfg, "0.2.0").unwrap();
+    assert_eq!(win_artifacts.len(), 2);
+    let mac_artifacts = stage_macos_distribution(&cfg, "0.2.0").unwrap();
+    assert_eq!(mac_artifacts.len(), 2);
+    let all_artifacts = stage_all_distributions(&cfg, "0.2.0").unwrap();
+    assert_eq!(all_artifacts.len(), 8);
+    for path in &all_artifacts {
+        assert!(
+            fs::metadata(path).is_ok(),
+            "Missing staged multi-OS artifact: {path}"
         );
     }
 

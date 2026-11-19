@@ -2,7 +2,7 @@ use ng_native_engine::config::AngularNativeConfig;
 use ng_native_engine::desktop::PokedexController;
 use ng_native_engine::engine::{NodeId, RenderEngine};
 use ng_native_engine::ipc::{HmrIpcServer, HmrMessage, HmrResponse};
-use ng_native_engine::packager::stage_linux_distribution;
+use ng_native_engine::packager::{stage_all_distributions, stage_linux_distribution};
 use ng_native_engine::platforms::AnyPlatformBackend;
 use ng_native_engine::runtime::{JsEngineBackend, JsRuntime};
 use std::env;
@@ -142,8 +142,19 @@ fn main() {
         cfg.project_name, cfg.target_platform, bundle_path
     );
 
+    if env::args().any(|a| a == "--package-all") {
+        let artifacts = stage_all_distributions(&cfg, "0.2.0").unwrap();
+        println!(
+            "[NgNative Packager] Staged multi-OS distribution artifacts (Linux + Windows + macOS):"
+        );
+        for path in artifacts {
+            println!("  -> {path}");
+        }
+        return;
+    }
+
     if env::args().any(|a| a == "--package") {
-        let artifacts = stage_linux_distribution(&cfg, "0.1.0").unwrap();
+        let artifacts = stage_linux_distribution(&cfg, "0.2.0").unwrap();
         println!("[NgNative Packager] Staged Linux distribution artifacts:");
         for path in artifacts {
             println!("  -> {path}");

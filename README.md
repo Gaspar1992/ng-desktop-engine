@@ -134,9 +134,12 @@ ng-native-engine/
 │   └── builders-native/          # @ng-native/builders (Angular 22 Architect builder, schema, AST compilers, HMR & dev server)
 ├── docker/
 │   ├── Dockerfile.ubuntu-gtk4    # Ubuntu 24.04 container image (GTK4 + Libadwaita + JSC + libsoup3 + SQLite3 + Xvfb)
-│   └── Dockerfile.fedora-gtk4    # Fedora 41 container image (GTK4 + Libadwaita + WebKitGTK 6.0 + libsoup3 + SQLite3 + Xvfb)
+│   ├── Dockerfile.fedora-gtk4    # Fedora 41 container image (GTK4 + Libadwaita + WebKitGTK 6.0 + libsoup3 + SQLite3 + Xvfb)
+│   ├── Dockerfile.windows-wine   # Windows x86_64 cross-compile (MinGW-w64) + Wine64 test runner container
+│   ├── Dockerfile.macos-cross    # macOS (aarch64-apple-darwin & x86_64-apple-darwin) cross-target container
+│   └── docker-compose.kvm-os.yml # KVM-accelerated Windows 11 & macOS desktop VM containers (dockurr/windows & dockurr/macos)
 ├── scripts/
-│   └── test-containers.sh        # Multi-distro container test runner (Docker / Podman)
+│   └── test-containers.sh        # Multi-OS container test runner (ubuntu | fedora | windows | macos | all)
 ├── examples/
 │   └── counter-app/              # Pure Angular 22 Pokédex showcase application
 │       ├── public/               # Application favicon assets

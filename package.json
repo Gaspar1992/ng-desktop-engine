@@ -9,6 +9,7 @@
     "build": "ng build && node packages/builders-native/src/build-bundle.mjs",
     "build:native": "node packages/builders-native/src/build-bundle.mjs",
     "package:linux": "pnpm run build && cargo run -- --package",
+    "package:all": "pnpm run build && cargo run -- --package-all",
     "watch": "ng build --watch --configuration development",
     "watch:native": "node packages/builders-native/src/build-bundle.mjs --watch",
     "test": "ng test",

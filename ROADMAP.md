@@ -190,9 +190,11 @@ When `@angular/platform-browser` is removed, Angular's Ivy runtime still require
   - [x] Extracted `src/platforms/gtk4_controls.rs` from `gtk4_widgets.rs` (SRP) and completed all 27 widget mappings in `PlatformBackend::map_native_widget`.
   - [x] Synchronized `drop-target`, `scroll-to`, and `scroll-anchor` attributes + native event queues across `GtkLinuxBackend`, `WinUiBackend`, and `MacOsAppKitBackend` (`NativeSceneState`), and added explicit OS driver enums (`OsHttpPlatform`, `OsFileWatcherBackend`, `OsSqliteBackend`, `OsSystemEnvBackend`).
   - [x] Created `NativeDropTargetDirective` (`[ngNativeDropTarget]`, `fileDrop = output<string[]>()`) in `packages/desktop-native/src/drop-target.directive.ts` and wired `PokedexService` (`exportFavoritesToDisk`, `importFavoritesFromFile`, `filterCatalog`).
-- [x] **Multi-Container & Xvfb CI Testing Infrastructure:**
-  - [x] Added `docker/Dockerfile.ubuntu-gtk4` (Ubuntu 24.04), `docker/Dockerfile.fedora-gtk4` (Fedora 41), `scripts/test-containers.sh` (`pnpm run test:containers`), and `xvfb-run -a cargo test` in `.github/workflows/ci.yml`.
-  - [x] Expanded automated coverage to **102 passing tests** (40 Rust unit + 19 Rust integration + 43 Vitest) with zero warnings.
+- [x] **Multi-Container & Xvfb CI Testing Infrastructure + Automated Multi-OS GitHub Releases:**
+  - [x] Added `docker/Dockerfile.ubuntu-gtk4` (Ubuntu 24.04), `docker/Dockerfile.fedora-gtk4` (Fedora 41), `docker/Dockerfile.windows-wine` (Windows x86_64 `.exe` cross-compile + `wine64` execution), `docker/Dockerfile.macos-cross` (macOS Apple Silicon & Intel target checks), `docker/docker-compose.kvm-os.yml` (`dockurr/windows` & `dockurr/macos` KVM desktop VMs), and `scripts/test-containers.sh` (`pnpm run test:containers`).
+  - [x] Added multi-OS distribution staging (`stage_windows_distribution`, `stage_macos_distribution`, `stage_all_distributions`) in `src/packager/mod.rs` (`pnpm run package:all`).
+  - [x] Configured multi-OS CI matrix (`ubuntu-24.04`, `windows-latest`, `macos-latest`) in `.github/workflows/ci.yml` and automated GitHub Release generation (`ng-linux-counter-linux-x86_64-gtk4.tar.gz`, `ng-linux-counter-windows-x86_64-winui3.zip`, `ng-linux-counter-macos-arm64-appkit.tar.gz`, `SHA256SUMS.txt`) in `.github/workflows/release.yml`.
+  - [x] Expanded automated coverage to **102 passing tests** (40 Rust unit + 19 Rust integration + 43 Vitest) with zero warnings across Linux, Windows, and macOS targets.
 
 ---
 

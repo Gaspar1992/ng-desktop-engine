@@ -1,7 +1,9 @@
 #![allow(unsafe_code)]
 
 use crate::desktop::NativeHttpEngine;
-use std::ffi::{CStr, CString, c_char, c_int, c_uint, c_void};
+use std::ffi::{CStr, CString, c_char, c_void};
+#[cfg(target_os = "linux")]
+use std::ffi::{c_int, c_uint};
 use std::sync::{Arc, Mutex};
 
 #[cfg(target_os = "linux")]
@@ -11,6 +13,7 @@ unsafe extern "C" {
     fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
 }
 
+#[cfg(target_os = "linux")]
 const RTLD_LAZY: c_int = 1;
 const G_TYPE_STRING: usize = 16 << 2;
 
