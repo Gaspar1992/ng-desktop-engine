@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   build-os-bundles:
-    name: Build ${{ matrix.archive_name }}
+    name: Build ${{ matrix.platform }} (.deb / .exe / .dmg + Engine + Packages)
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -24,13 +24,10 @@ jobs:
         include:
           - os: ubuntu-24.04
             platform: linux
-            archive_name: ng-linux-counter-linux-x86_64-gtk4.tar.gz
           - os: windows-latest
             platform: windows
-            archive_name: ng-linux-counter-windows-x86_64-winui3.zip
           - os: macos-latest
             platform: macos
-            archive_name: ng-linux-counter-macos-arm64-appkit.tar.gz
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -54,6 +51,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
+            dpkg-dev \
             libgtk-4-1 \
             libadwaita-1-0 \
             libjavascriptcoregtk-6.0-1 \
@@ -68,51 +66,98 @@ jobs:
           cargo build --release
           cargo run --release -- --package-all
 
-      - name: Package Linux GTK4 distribution archive
+      - name: Package Linux (.deb installer + Engine tarball + Angular .tgz packages)
         if: matrix.platform == 'linux'
         run: |
+          VER="0.2.0"
+          mkdir -p release-out
+
+          # 1. Build real installable Debian package: pokedex-demo_0.2.0_amd64.deb
+          DEB_ROOT="dist/ng-linux-counter/packages/deb"
+          mkdir -p "${DEB_ROOT}/usr/bin"
+          mkdir -p "${DEB_ROOT}/usr/share/ng-linux-counter"
+          mkdir -p "${DEB_ROOT}/usr/share/icons"
+          cp target/release/ng-native-engine "${DEB_ROOT}/usr/bin/ng-linux-counter"
+          chmod 0755 "${DEB_ROOT}/usr/bin/ng-linux-counter"
+          cp dist/ng-linux-counter/main.ngb "${DEB_ROOT}/usr/share/ng-linux-counter/main.ngb"
+          if [ -d "dist/ng-linux-counter/icons/hicolor" ]; then
+            cp -r dist/ng-linux-counter/icons/hicolor "${DEB_ROOT}/usr/share/icons/"
+          fi
+          chmod 0755 "${DEB_ROOT}/DEBIAN"
+          chmod 0644 "${DEB_ROOT}/DEBIAN/control"
+          dpkg-deb --build --root-owner-group "${DEB_ROOT}" "release-out/pokedex-demo_${VER}_amd64.deb"
+
+          # 2. Build standalone Linux Engine archive: ng-desktop-engine-linux-x86_64.tar.gz
           cp target/release/ng-native-engine dist/ng-linux-counter/ng-native-engine
           chmod +x dist/ng-linux-counter/ng-native-engine
-          chmod +x dist/ng-linux-counter/packages/appimage/AppRun
-          mkdir -p release-out
-          tar -czf "release-out/${{ matrix.archive_name }}" -C dist ng-linux-counter
+          tar -czf "release-out/ng-desktop-engine-linux-x86_64.tar.gz" -C target/release ng-native-engine
 
-      - name: Package Windows WinUI 3 distribution archive
+          # 3. Pack individual Angular 22+ libraries (@ng-native/*) as .tgz tarballs
+          for pkg in platform-native forms-native router-native http-native desktop-native builders-native; do
+            (cd "packages/${pkg}" && npm pack --pack-destination "../../release-out")
+          done
+          ls -lh release-out/
+
+      - name: Package Windows (Standalone .exe executable + Engine .zip)
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          Copy-Item "target/release/ng-native-engine.exe" "dist/ng-linux-counter/ng-native-engine.exe" -Force
+          $VER = "0.2.0"
+          New-Item -ItemType Directory -Force -Path "release-out" | Out-Null
+
+          # 1. Standalone self-contained Windows executable: pokedex-demo-0.2.0-windows-x64.exe
+          Copy-Item "target/release/ng-native-engine.exe" "release-out/pokedex-demo-${VER}-windows-x64.exe" -Force
+
+          # 2. Engine + WinUI 3 MSIX package archive: ng-desktop-engine-windows-x86_64.zip
           Copy-Item "target/release/ng-native-engine.exe" "dist/ng-linux-counter/packages/windows/ng-native-engine.exe" -Force
           Copy-Item "dist/ng-linux-counter/main.ngb" "dist/ng-linux-counter/packages/windows/main.ngb" -Force
-          New-Item -ItemType Directory -Force -Path "release-out" | Out-Null
-          Compress-Archive -Path "dist/ng-linux-counter/*" -DestinationPath "release-out/${{ matrix.archive_name }}" -Force
+          Compress-Archive -Path "dist/ng-linux-counter/packages/windows/*" -DestinationPath "release-out/ng-desktop-engine-windows-x86_64.zip" -Force
+          Get-ChildItem release-out
 
-      - name: Package macOS AppKit (.app bundle) distribution archive
+      - name: Package macOS (.dmg Disk Image + Engine tarball)
         if: matrix.platform == 'macos'
         run: |
-          cp target/release/ng-native-engine dist/ng-linux-counter/ng-native-engine
-          cp target/release/ng-native-engine dist/ng-linux-counter/packages/macos/ng-linux-counter.app/Contents/MacOS/ng-native-engine
-          cp dist/ng-linux-counter/main.ngb dist/ng-linux-counter/packages/macos/ng-linux-counter.app/Contents/Resources/main.ngb
-          chmod +x dist/ng-linux-counter/ng-native-engine
-          chmod +x dist/ng-linux-counter/packages/macos/ng-linux-counter.app/Contents/MacOS/ng-native-engine
-          chmod +x dist/ng-linux-counter/packages/macos/ng-linux-counter.app/Contents/MacOS/run-appkit.sh
+          VER="0.2.0"
           mkdir -p release-out
-          tar -czf "release-out/${{ matrix.archive_name }}" -C dist ng-linux-counter
 
-      - name: Upload OS release bundle
+          # 1. Populate macOS .app bundle and build real .dmg disk image: pokedex-demo-0.2.0-macos-arm64.dmg
+          APP_DIR="dist/ng-linux-counter/packages/macos/ng-linux-counter.app"
+          cp target/release/ng-native-engine "${APP_DIR}/Contents/MacOS/ng-native-engine"
+          cp dist/ng-linux-counter/main.ngb "${APP_DIR}/Contents/Resources/main.ngb"
+          chmod +x "${APP_DIR}/Contents/MacOS/ng-native-engine"
+          chmod +x "${APP_DIR}/Contents/MacOS/run-appkit.sh"
+          hdiutil create \
+            -volname "Pokedex Nacional" \
+            -srcfolder "dist/ng-linux-counter/packages/macos" \
+            -ov \
+            -format UDZO \
+            "release-out/pokedex-demo-${VER}-macos-arm64.dmg"
+
+          # 2. Standalone macOS Engine archive: ng-desktop-engine-macos-arm64.tar.gz
+          tar -czf "release-out/ng-desktop-engine-macos-arm64.tar.gz" -C target/release ng-native-engine
+          ls -lh release-out/
+
+      - name: Upload OS release artifacts
         uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.platform }}
-          path: release-out/${{ matrix.archive_name }}
+          path: release-out/*
           if-no-files-found: error
 
   publish-release:
-    name: Publish GitHub Release
+    name: Publish Separated Engine & Pokédex Demo Releases
     needs: build-os-bundles
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 50
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
 
       - name: Download all OS release artifacts
         uses: actions/download-artifact@v8
@@ -120,29 +165,57 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Generate SHA256SUMS.txt
-        run: |
-          cd artifacts
-          sha256sum ng-linux-counter-* > SHA256SUMS.txt
-          cat SHA256SUMS.txt
-
-      - name: Resolve release tag
-        id: resolve_tag
+      - name: Resolve version & generate structured release notes + checksums
+        id: meta
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "tag=${{ inputs.tag_name }}" >> "$GITHUB_OUTPUT"
+            RAW_TAG="${{ inputs.tag_name }}"
           else
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            RAW_TAG="${GITHUB_REF_NAME}"
           fi
+          VER="${RAW_TAG#pokedex-demo-}"
+          VER="${VER#v}"
+          ENGINE_TAG="v${VER}"
+          DEMO_TAG="pokedex-demo-v${VER}"
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "engine_tag=${ENGINE_TAG}" >> "$GITHUB_OUTPUT"
+          echo "demo_tag=${DEMO_TAG}" >> "$GITHUB_OUTPUT"
 
-      - name: Create or update GitHub Release
+          node scripts/generate-release-notes.mjs --kind=engine --version="${VER}" --out=ENGINE_RELEASE_NOTES.md
+          node scripts/generate-release-notes.mjs --kind=demo --version="${VER}" --out=DEMO_RELEASE_NOTES.md
+
+          cd artifacts
+          sha256sum ng-desktop-engine-* ng-native-*.tgz > SHA256SUMS-engine.txt
+          sha256sum pokedex-demo* > SHA256SUMS-demo.txt
+          cat SHA256SUMS-engine.txt
+          cat SHA256SUMS-demo.txt
+
+      - name: Publish 1/2 — NgDesktop Engine & Angular 22+ Packages Release (${{ steps.meta.outputs.engine_tag }})
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ steps.resolve_tag.outputs.tag }}
-          name: 'NgNative Engine ${{ steps.resolve_tag.outputs.tag }} (Linux GTK4 / Windows WinUI 3 / macOS AppKit)'
-          generate_release_notes: true
+          tag_name: ${{ steps.meta.outputs.engine_tag }}
+          name: 'NgDesktop Engine & Angular 22+ Packages v${{ steps.meta.outputs.version }}'
+          body_path: ENGINE_RELEASE_NOTES.md
           files: |
-            artifacts/ng-linux-counter-linux-x86_64-gtk4.tar.gz
-            artifacts/ng-linux-counter-windows-x86_64-winui3.zip
-            artifacts/ng-linux-counter-macos-arm64-appkit.tar.gz
-            artifacts/SHA256SUMS.txt
+            artifacts/ng-native-platform-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-native-forms-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-native-router-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-native-http-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-native-desktop-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-native-builders-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-desktop-engine-linux-x86_64.tar.gz
+            artifacts/ng-desktop-engine-windows-x86_64.zip
+            artifacts/ng-desktop-engine-macos-arm64.tar.gz
+            artifacts/SHA256SUMS-engine.txt
+
+      - name: Publish 2/2 — Pokédex Nacional Showcase Demo Release (${{ steps.meta.outputs.demo_tag }})
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.meta.outputs.demo_tag }}
+          name: 'Pokédex Nacional Desktop Showcase Demo v${{ steps.meta.outputs.version }} (.deb / .exe / .dmg)'
+          body_path: DEMO_RELEASE_NOTES.md
+          files: |
+            artifacts/pokedex-demo_${{ steps.meta.outputs.version }}_amd64.deb
+            artifacts/pokedex-demo-${{ steps.meta.outputs.version }}-windows-x64.exe
+            artifacts/pokedex-demo-${{ steps.meta.outputs.version }}-macos-arm64.dmg
+            artifacts/SHA256SUMS-demo.txt

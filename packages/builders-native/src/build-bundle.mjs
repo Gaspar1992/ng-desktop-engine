@@ -219,6 +219,10 @@ export function compileBundle({ rebuildIcons = true } = {}) {
 
   const bundleFile = resolve(outDir, 'main.ngb');
   writeFileSync(bundleFile, bundle, 'utf8');
+  const standaloneFallback = resolve(rootDir, 'src/standalone_pokedex.ngb');
+  if (existsSync(standaloneFallback)) {
+    writeFileSync(standaloneFallback, bundle, 'utf8');
+  }
   console.log(`[Angular Native Compiler] Compiled ${projectName} -> ${bundleFile}`);
 
   const socketPath = resolve(outDir, 'hmr.sock');

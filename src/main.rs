@@ -50,18 +50,44 @@ fn handle_hmr_messages(
     reloaded
 }
 
+const STANDALONE_POKEDEX_NGB: &str = include_str!("standalone_pokedex.ngb");
+
 fn ensure_bundle_compiled(bundle_path: &str) -> String {
-    if !Path::new(bundle_path).exists() {
+    if let Ok(script) = fs::read_to_string(bundle_path) {
+        return script;
+    }
+
+    // Check installed system / bundle locations (.deb /usr/share, macOS .app Resources, adjacent to .exe)
+    if let Ok(exe_path) = env::current_exe()
+        && let Some(exe_dir) = exe_path.parent()
+    {
+        for candidate in [
+            exe_dir.join("main.ngb"),
+            exe_dir.join("../Resources/main.ngb"),
+            exe_dir.join("../share/ng-linux-counter/main.ngb"),
+        ] {
+            if let Ok(script) = fs::read_to_string(&candidate) {
+                return script;
+            }
+        }
+    }
+    if let Ok(script) = fs::read_to_string("/usr/share/ng-linux-counter/main.ngb") {
+        return script;
+    }
+
+    if Path::new("packages/builders-native/src/build-bundle.mjs").exists() {
         println!(
-            "[NgNative CLI] Bundle not found at '{bundle_path}'. Auto-compiling via build-bundle.mjs..."
+            "[NgDesktop CLI] Bundle not found at '{bundle_path}'. Auto-compiling via build-bundle.mjs..."
         );
         let _ = Command::new("node")
             .arg("packages/builders-native/src/build-bundle.mjs")
             .status();
+        if let Ok(script) = fs::read_to_string(bundle_path) {
+            return script;
+        }
     }
-    fs::read_to_string(bundle_path).unwrap_or_else(|_| {
-        panic!("Bundle not found at '{bundle_path}'. Run `pnpm run build` first.")
-    })
+
+    String::from(STANDALONE_POKEDEX_NGB)
 }
 
 struct InteractiveContext<'a> {
@@ -131,8 +157,9 @@ fn run_interactive_loop(
 }
 
 fn main() {
-    // 1. Read `angular.json` to configure the project & target platform
-    let cfg = AngularNativeConfig::from_file("angular.json").unwrap();
+    // 1. Read `angular.json` to configure the project & target platform (or use standalone config for .deb/.exe/.dmg)
+    let cfg = AngularNativeConfig::from_file("angular.json")
+        .unwrap_or_else(|_| AngularNativeConfig::default_standalone("ng-linux-counter"));
     let bundle_path = format!("{}/main.ngb", cfg.output_path);
     let bootstrap_script = ensure_bundle_compiled(&bundle_path);
     let last_mtime = bundle_modified_time(&bundle_path);

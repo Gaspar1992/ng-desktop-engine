@@ -18,16 +18,29 @@ pub struct WindowIconAsset {
     pub resolutions: Vec<IconResolution>,
 }
 
+const EMBEDDED_FAVICON_ICO: &[u8] = include_bytes!("../../examples/counter-app/public/favicon.ico");
+
 impl WindowIconAsset {
-    /// Parses an `.ico` binary container from disk and extracts all embedded resolutions.
+    /// Parses an `.ico` binary container from disk (falling back to the embedded Pokédex icon
+    /// when running as a standalone `.deb`, `.exe`, or `.dmg` outside the workspace)
+    /// and extracts all embedded resolutions.
     pub fn from_ico_file(
         app_id: impl Into<String>,
         path: impl AsRef<Path>,
     ) -> Result<Self, EngineError> {
         let path_ref = path.as_ref();
-        let bytes = fs::read(path_ref).map_err(|e| {
-            EngineError::ConfigError(format!("Failed to read icon '{}': {e}", path_ref.display()))
-        })?;
+        let bytes = match fs::read(path_ref) {
+            Ok(data) => data,
+            Err(_) if path_ref.to_string_lossy().ends_with("favicon.ico") => {
+                EMBEDDED_FAVICON_ICO.to_vec()
+            }
+            Err(e) => {
+                return Err(EngineError::ConfigError(format!(
+                    "Failed to read icon '{}': {e}",
+                    path_ref.display()
+                )));
+            }
+        };
         let resolutions = Self::parse_ico_bytes(&bytes)?;
         Ok(Self {
             app_id: app_id.into(),

@@ -39,6 +39,23 @@ fn resolve_default_js_engine(os: &str) -> String {
 }
 
 impl AngularNativeConfig {
+    /// Creates a standalone configuration for self-contained `.deb`, `.exe`, and `.dmg` builds
+    /// launched outside the development workspace.
+    pub fn default_standalone(project_name: &str) -> Self {
+        let os = String::from(default_host_os());
+        let target_platform = resolve_target_platform(&os);
+        let js_engine = resolve_default_js_engine(&os);
+        Self {
+            project_name: String::from(project_name),
+            os,
+            arch: String::from(std::env::consts::ARCH),
+            cpu: String::from("native"),
+            target_platform,
+            js_engine,
+            output_path: format!("dist/{project_name}"),
+        }
+    }
+
     /// Reads and resolves native build settings from an `angular.json` file, supporting
     /// minimal `os` / `arch` / `cpu` options alongside explicit `targetPlatform` / `outputPath`.
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, EngineError> {
