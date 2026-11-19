@@ -7,7 +7,7 @@
   "types": "./src/index.ts",
   "builders": "./builders.json",
   "bin": {
-    "ng-desktop": "./bin/ng-desktop.mjs"
+    "ng-desktop": "bin/ng-desktop.mjs"
   },
   "schematics": "./schematics/collection.json",
   "peerDependencies": {

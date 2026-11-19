@@ -18,7 +18,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = resolve(__dirname, '..');
 const DIST_PACKAGES_DIR = resolve(ROOT_DIR, 'dist/packages');
 const TMP_TSC_DIR = resolve(ROOT_DIR, 'out-tsc/packages');
-const REPO_URL = 'https://github.com/Gaspar1992/ng-desktop-engine.git';
+const REPO_URL = 'git+https://github.com/Gaspar1992/ng-desktop-engine.git';
 const HOMEPAGE_URL = 'https://github.com/Gaspar1992/ng-desktop-engine';
 const BUGS_URL = 'https://github.com/Gaspar1992/ng-desktop-engine/issues';
 
@@ -203,7 +203,6 @@ function buildSinglePackage(pkgConfig, builtPackages) {
     },
     publishConfig: {
       access: 'public',
-      provenance: true,
     },
     type: 'module',
     sideEffects: false,
