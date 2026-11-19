@@ -1,5 +1,5 @@
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
-import { provideHttpClient, withFetch, withXsrfConfiguration } from '@ng-native/http';
+import { provideHttpClient, withFetch, withXsrfConfiguration } from '@ng-desktop/http';
 
 export const appConfig: ApplicationConfig = {
   providers: [

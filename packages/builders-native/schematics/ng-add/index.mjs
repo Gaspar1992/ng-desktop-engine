@@ -1,5 +1,5 @@
 /**
- * Pure schematic tree helper usable by `ng add @ng-native/builders` or direct unit verification.
+ * Pure schematic tree helper usable by `ng add @ng-desktop/builders` or direct unit verification.
  */
 export function applyNgAddToTree(tree, options = {}) {
   const targetPlatform = options.targetPlatform || 'linux-gtk4';
@@ -9,9 +9,9 @@ export function applyNgAddToTree(tree, options = {}) {
     const pkgRaw = tree.read('/package.json')?.toString('utf8') ?? '{}';
     const pkg = JSON.parse(pkgRaw);
     pkg.dependencies ??= {};
-    pkg.dependencies['@ng-native/platform'] ??= '>=0.3.0';
+    pkg.dependencies['@ng-desktop/platform'] ??= '>=0.3.0';
     pkg.devDependencies ??= {};
-    pkg.devDependencies['@ng-native/builders'] ??= '>=0.3.0';
+    pkg.devDependencies['@ng-desktop/builders'] ??= '>=0.3.0';
     tree.overwrite('/package.json', `${JSON.stringify(pkg, null, 2)}\n`);
   }
 
@@ -28,7 +28,7 @@ export function applyNgAddToTree(tree, options = {}) {
     if (projectName && raw.projects?.[projectName]) {
       raw.projects[projectName].architect ??= {};
       raw.projects[projectName].architect.native ??= {
-        builder: '@ng-native/builders:application',
+        builder: '@ng-desktop/builders:application',
         options: builderOptions,
       };
       tree.overwrite('/angular.json', `${JSON.stringify(raw, null, 2)}\n`);
@@ -42,7 +42,7 @@ export function applyNgAddToTree(tree, options = {}) {
     const projectJson = JSON.parse(tree.read(fallbackPath).toString('utf8'));
     projectJson.targets ??= {};
     projectJson.targets.native ??= {
-      executor: '@ng-native/builders:application',
+      executor: '@ng-desktop/builders:application',
       options: builderOptions,
     };
     tree.overwrite(fallbackPath, `${JSON.stringify(projectJson, null, 2)}\n`);

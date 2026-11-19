@@ -1,7 +1,7 @@
 /// Standard `globalThis.__NG_NATIVE__` + Web/Host globals (`console`, `queueMicrotask`, `setTimeout`, `fetch`)
 /// injected into every JS engine context.
-/// `@ng-native/platform` (`NativeRenderer2`), `@ng-native/forms`, `@ng-native/http`, and
-/// `@ng-native/desktop` call this object to queue frame-batched scene/desktop commands,
+/// `@ng-desktop/platform` (`NativeRenderer2`), `@ng-desktop/forms`, `@ng-desktop/http`, and
+/// `@ng-desktop/desktop` call this object to queue frame-batched scene/desktop commands,
 /// configure OS-native HTTP transports, and register live JS event listener closures.
 pub const NG_NATIVE_BOOTSTRAP_JS: &str = r#"
 globalThis.__NG_NATIVE__ = (() => {

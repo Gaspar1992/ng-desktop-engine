@@ -14,7 +14,7 @@ import {
   NativeNetworkService,
   NativeSqliteService,
   provideNativeDesktop,
-} from '@ng-native/desktop';
+} from '@ng-desktop/desktop';
 import {
   createNativeHttpResource,
   NATIVE_HTTP_CONFIG,
@@ -27,12 +27,12 @@ import {
   withNoXsrfProtection,
   withParallelBatching,
   withXsrfConfiguration,
-} from '@ng-native/http';
+} from '@ng-desktop/http';
 import {
   ensureNgNativeBridge,
   NativeHttpRequestOptions,
   NativeTitleService,
-} from '@ng-native/platform';
+} from '@ng-desktop/platform';
 import {
   NativePlatformLocation,
   NativeStackRouteReuseStrategy,
@@ -40,10 +40,10 @@ import {
   provideNativeRouter,
   withNativeRouteReuse,
   withNativeTitleStrategy,
-} from '@ng-native/router';
+} from '@ng-desktop/router';
 import { firstValueFrom } from 'rxjs';
 
-describe('Phase 5 — @ng-native/router, @ng-native/http & @ng-native/desktop', () => {
+describe('Phase 5 — @ng-desktop/router, @ng-desktop/http & @ng-desktop/desktop', () => {
   beforeEach(() => {
     const bridge = ensureNgNativeBridge();
     bridge.__drainQueue();

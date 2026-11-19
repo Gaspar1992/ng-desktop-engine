@@ -15,12 +15,12 @@
     "target": "ES2022",
     "module": "preserve",
     "paths": {
-      "@ng-native/platform": ["./packages/platform-native/src/index.ts"],
-      "@ng-native/forms": ["./packages/forms-native/src/index.ts"],
-      "@ng-native/router": ["./packages/router-native/src/index.ts"],
-      "@ng-native/http": ["./packages/http-native/src/index.ts"],
-      "@ng-native/desktop": ["./packages/desktop-native/src/index.ts"],
-      "@ng-native/builders": ["./packages/builders-native/src/index.ts"]
+      "@ng-desktop/platform": ["./packages/platform-native/src/index.ts"],
+      "@ng-desktop/forms": ["./packages/forms-native/src/index.ts"],
+      "@ng-desktop/router": ["./packages/router-native/src/index.ts"],
+      "@ng-desktop/http": ["./packages/http-native/src/index.ts"],
+      "@ng-desktop/desktop": ["./packages/desktop-native/src/index.ts"],
+      "@ng-desktop/builders": ["./packages/builders-native/src/index.ts"]
     }
   },
   "angularCompilerOptions": {

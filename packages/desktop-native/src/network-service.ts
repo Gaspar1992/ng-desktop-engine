@@ -1,5 +1,5 @@
 import { computed, Injectable, Signal, signal, WritableSignal } from '@angular/core';
-import { ensureNgNativeBridge, NativeConnectivity } from '@ng-native/platform';
+import { ensureNgNativeBridge, NativeConnectivity } from '@ng-desktop/platform';
 
 /**
  * Reactive OS Network Monitor backed by `GNetworkMonitor` (Linux GIO), `NWPathMonitor` (macOS),

@@ -8,7 +8,7 @@
 - [ ] `src/platforms/` (Linux GTK4, Windows WinUI 3, macOS AppKit, Headless)
 - [ ] `src/runtime/` (JSC / QuickJS Bridges, `.ngb` Parser, Reactivity, HMR)
 - [ ] `src/desktop/` (HTTP/2, SQLite3, XDG/`inotify` Watcher, Compute Pool, System Env)
-- [ ] `packages/@ng-native/*` (`platform`, `forms`, `router`, `http`, `desktop`, `builders`)
+- [ ] `packages/*` (`@ng-desktop/{platform,forms,router,http,desktop,builders}`)
 - [ ] `examples/counter-app` (Pokédex Showcase Demo)
 - [ ] `.github/`, `docker/`, `scripts/`, or documentation
 
@@ -17,7 +17,7 @@
 - [ ] Core engine changes contain **zero `unsafe` code** (`#![deny(unsafe_code)]`), and any OS FFI uses [`src/ffi_dl.rs`](./src/ffi_dl.rs) inside an isolated `*_sys.rs` module.
 - [ ] New functions and modules adhere to SRP (`<= 100` lines; zero Clippy `pedantic` / `nursery` warnings).
 - [ ] Any new widget tag, attribute, or OS service maintains **cross-platform parity** across `GtkLinuxBackend`, `WinUiBackend`, `MacOsAppKitBackend`, and `HeadlessBackend`.
-- [ ] `@ng-native/*` packages preserve `peerDependencies: ">=22.0.0"` Angular compatibility.
+- [ ] `@ng-desktop/*` packages preserve `peerDependencies: ">=22.0.0"` Angular compatibility.
 - [ ] Unit and/or integration tests were added for new behavior (`cargo test` and Vitest).
 
 ## Verification Results

@@ -164,7 +164,11 @@ function inspectTypeScriptAst(filename, code, addEvidence) {
   visitAst(parsed.program, (node) => {
     if (node.type === 'ImportDeclaration') {
       const modName = node.source?.value;
-      if (modName === '@ng-native/http' || modName === '@angular/common/http') {
+      if (
+        modName === '@ng-desktop/http' ||
+        modName === '@ng-native/http' ||
+        modName === '@angular/common/http'
+      ) {
         addEvidence('network', filename, `import from '${modName}'`);
       }
       for (const spec of node.specifiers || []) {

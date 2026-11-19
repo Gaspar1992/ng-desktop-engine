@@ -4,14 +4,14 @@ import {
   NativeBooleanValueAccessor,
   NativeNumberValueAccessor,
   NativeTextValueAccessor,
-} from '@ng-native/forms';
+} from '@ng-desktop/forms';
 import {
   ensureNgNativeBridge,
   NativeElementNode,
   NativeRendererFactory2,
-} from '@ng-native/platform';
+} from '@ng-desktop/platform';
 
-describe('@ng-native/forms — ControlValueAccessor Directives', () => {
+describe('@ng-desktop/forms — ControlValueAccessor Directives', () => {
   let renderer: Renderer2;
 
   beforeEach(() => {

@@ -1,5 +1,5 @@
 {
-  "name": "@ng-native/platform",
+  "name": "@ng-desktop/platform",
   "version": "0.3.0",
   "type": "module",
   "main": "./src/index.ts",

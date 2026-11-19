@@ -10,9 +10,9 @@ body:
       options:
         - Rust Core Engine / Arena / Scene Graph
         - Platform Backends (GTK4 / WinUI 3 / AppKit)
-        - Desktop OS Services (@ng-native/desktop)
-        - Angular Integration (@ng-native/platform, forms, router, http)
-        - Compiler & CLI Toolchain (@ng-native/builders)
+        - Desktop OS Services (@ng-desktop/desktop)
+        - Angular Integration (@ng-desktop/platform, forms, router, http)
+        - Compiler & CLI Toolchain (@ng-desktop/builders)
         - Multi-OS Packaging / CI / Documentation
     validations:
       required: true

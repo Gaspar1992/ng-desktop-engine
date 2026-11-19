@@ -115,11 +115,11 @@ jobs:
           chmod +x dist/ng-linux-counter/ng-native-engine
           tar -czf "release-out/ng-desktop-engine-linux-x86_64.tar.gz" -C target/release ng-native-engine
 
-          # 3. Stage & pack platform npm binary package (@ng-native/engine-linux-x64-gnu)
+          # 3. Stage & pack platform npm binary package (@ng-desktop/engine-linux-x64-gnu)
           node scripts/build-engine-packages.mjs --target=linux-x64 --binary=target/release/ng-native-engine --version="${VER}"
           (cd "dist/engine-packages/engine-linux-x64-gnu" && npm pack --pack-destination "../../../release-out")
 
-          # 4. Pack individual compiled APF Angular 22+ libraries (@ng-native/*) as .tgz tarballs
+          # 4. Pack individual compiled APF Angular 22+ libraries (@ng-desktop/*) as .tgz tarballs
           for pkg in platform-native forms-native router-native http-native desktop-native builders-native; do
             (cd "dist/packages/${pkg}" && npm pack --pack-destination "../../../release-out")
           done
@@ -135,7 +135,7 @@ jobs:
           # 1. Standalone self-contained Windows executable: pokedex-demo-<ver>-windows-x64.exe
           Copy-Item "target/release/ng-native-engine.exe" "release-out/pokedex-demo-${VER}-windows-x64.exe" -Force
 
-          # 2. Stage & pack platform npm binary package (@ng-native/engine-win32-x64-msvc)
+          # 2. Stage & pack platform npm binary package (@ng-desktop/engine-win32-x64-msvc)
           node scripts/build-engine-packages.mjs --target=win32-x64 --binary=target/release/ng-native-engine.exe --version="${VER}"
           Push-Location "dist/engine-packages/engine-win32-x64-msvc"
           npm pack --pack-destination "../../../release-out"
@@ -170,7 +170,7 @@ jobs:
             -format UDZO \
             "release-out/pokedex-demo-${VER}-macos-arm64.dmg"
 
-          # 2. Stage & pack platform npm binary package (@ng-native/engine-darwin-arm64)
+          # 2. Stage & pack platform npm binary package (@ng-desktop/engine-darwin-arm64)
           node scripts/build-engine-packages.mjs --target=darwin-arm64 --binary=target/release/ng-native-engine --version="${VER}"
           (cd "dist/engine-packages/engine-darwin-arm64" && npm pack --pack-destination "../../../release-out")
 
@@ -226,7 +226,7 @@ jobs:
           node scripts/generate-release-notes.mjs --kind=demo --version="${VER}" --out=DEMO_RELEASE_NOTES.md
 
           cd artifacts
-          sha256sum ng-desktop-engine-* ng-native-*.tgz > SHA256SUMS-engine.txt
+          sha256sum ng-desktop-engine-*.tar.gz ng-desktop-engine-*.zip ng-desktop-*.tgz > SHA256SUMS-engine.txt
           sha256sum pokedex-demo* > SHA256SUMS-demo.txt
           cat SHA256SUMS-engine.txt
           cat SHA256SUMS-demo.txt
@@ -238,15 +238,15 @@ jobs:
           name: 'NgDesktop Engine & Angular 22+ Packages v${{ steps.meta.outputs.version }}'
           body_path: ENGINE_RELEASE_NOTES.md
           files: |
-            artifacts/ng-native-platform-${{ steps.meta.outputs.version }}.tgz
-            artifacts/ng-native-forms-${{ steps.meta.outputs.version }}.tgz
-            artifacts/ng-native-router-${{ steps.meta.outputs.version }}.tgz
-            artifacts/ng-native-http-${{ steps.meta.outputs.version }}.tgz
-            artifacts/ng-native-desktop-${{ steps.meta.outputs.version }}.tgz
-            artifacts/ng-native-builders-${{ steps.meta.outputs.version }}.tgz
-            artifacts/ng-native-engine-linux-x64-gnu-${{ steps.meta.outputs.version }}.tgz
-            artifacts/ng-native-engine-win32-x64-msvc-${{ steps.meta.outputs.version }}.tgz
-            artifacts/ng-native-engine-darwin-arm64-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-desktop-platform-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-desktop-forms-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-desktop-router-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-desktop-http-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-desktop-desktop-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-desktop-builders-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-desktop-engine-linux-x64-gnu-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-desktop-engine-win32-x64-msvc-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-desktop-engine-darwin-arm64-${{ steps.meta.outputs.version }}.tgz
             artifacts/ng-desktop-engine-linux-x86_64.tar.gz
             artifacts/ng-desktop-engine-windows-x86_64.zip
             artifacts/ng-desktop-engine-macos-arm64.tar.gz
@@ -265,7 +265,7 @@ jobs:
             artifacts/SHA256SUMS-demo.txt
 
   publish-npm:
-    name: Publish @ng-native/* & Prebuilt Engine Packages to npm
+    name: Publish @ng-desktop/* & Prebuilt Engine Packages to npm
     needs: publish-release
     runs-on: ubuntu-24.04
     permissions:
@@ -289,14 +289,14 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           shopt -s nullglob
-          ENGINE_TARBALLS=(artifacts/ng-native-engine-*.tgz)
+          ENGINE_TARBALLS=(artifacts/ng-desktop-engine-*.tgz)
           LIB_TARBALLS=(
-            artifacts/ng-native-platform-*.tgz
-            artifacts/ng-native-forms-*.tgz
-            artifacts/ng-native-router-*.tgz
-            artifacts/ng-native-http-*.tgz
-            artifacts/ng-native-desktop-*.tgz
-            artifacts/ng-native-builders-*.tgz
+            artifacts/ng-desktop-platform-*.tgz
+            artifacts/ng-desktop-forms-*.tgz
+            artifacts/ng-desktop-router-*.tgz
+            artifacts/ng-desktop-http-*.tgz
+            artifacts/ng-desktop-desktop-*.tgz
+            artifacts/ng-desktop-builders-*.tgz
           )
           test "${#ENGINE_TARBALLS[@]}" -gt 0
           test "${#LIB_TARBALLS[@]}" -eq 6

@@ -22,7 +22,7 @@ export class App {
   protected readonly pokemonId = signal(0);
 
   /**
-   * Executes a live `PokéAPI v2` request via Angular `HttpClient` -> `@ng-native/http` -> Rust OS HTTP stack.
+   * Executes a live `PokéAPI v2` request via Angular `HttpClient` -> `@ng-desktop/http` -> Rust OS HTTP stack.
    */
   fetchPokemonHttp(idOrName: string | number): Observable<unknown> | null {
     return (

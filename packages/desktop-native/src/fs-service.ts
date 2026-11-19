@@ -1,5 +1,5 @@
 import { Injectable, Signal, signal, WritableSignal } from '@angular/core';
-import { ensureNgNativeBridge, type NativeXdgDirKind } from '@ng-native/platform';
+import { ensureNgNativeBridge, type NativeXdgDirKind } from '@ng-desktop/platform';
 
 export interface NativeWatchedFileRef<T> {
   readonly path: string;

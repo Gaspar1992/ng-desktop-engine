@@ -1,4 +1,4 @@
-import { ENGINE_BINARY_PACKAGES, resolveEngineBinaryPath } from '@ng-native/builders';
+import { ENGINE_BINARY_PACKAGES, resolveEngineBinaryPath } from '@ng-desktop/builders';
 
 describe('Phase 12 — Prebuilt Engine Binary Resolution (resolveEngineBinaryPath)', () => {
   it('prioritizes explicit NG_DESKTOP_ENGINE_BIN / NG_NATIVE_ENGINE_BIN environment overrides', () => {
@@ -13,7 +13,7 @@ describe('Phase 12 — Prebuilt Engine Binary Resolution (resolveEngineBinaryPat
       command: '/opt/custom/ng-native-engine',
       args: [],
       source: 'env',
-      packageName: '@ng-native/engine-linux-x64-gnu',
+      packageName: '@ng-desktop/engine-linux-x64-gnu',
       targetKey: 'linux-x64',
     });
   });
@@ -24,16 +24,16 @@ describe('Phase 12 — Prebuilt Engine Binary Resolution (resolveEngineBinaryPat
       platform: 'win32',
       arch: 'x64',
       resolvePkgPath: (pkg) =>
-        pkg === '@ng-native/engine-win32-x64-msvc'
-          ? '/app/node_modules/@ng-native/engine-win32-x64-msvc/package.json'
+        pkg === '@ng-desktop/engine-win32-x64-msvc'
+          ? '/app/node_modules/@ng-desktop/engine-win32-x64-msvc/package.json'
           : null,
       fileExists: (p) =>
-        p.endsWith('node_modules/@ng-native/engine-win32-x64-msvc/bin/ng-native-engine.exe'),
+        p.endsWith('node_modules/@ng-desktop/engine-win32-x64-msvc/bin/ng-native-engine.exe'),
     });
 
     expect(winRes.mode).toBe('binary');
     expect(winRes.source).toBe('optional-package');
-    expect(winRes.packageName).toBe('@ng-native/engine-win32-x64-msvc');
+    expect(winRes.packageName).toBe('@ng-desktop/engine-win32-x64-msvc');
     expect(winRes.command).toContain('ng-native-engine.exe');
 
     expect(Object.keys(ENGINE_BINARY_PACKAGES)).toEqual([
@@ -70,6 +70,6 @@ describe('Phase 12 — Prebuilt Engine Binary Resolution (resolveEngineBinaryPat
     expect(fallback.command).toBe('cargo');
     expect(fallback.args).toEqual(['run', '--']);
     expect(fallback.source).toBe('cargo-fallback');
-    expect(fallback.packageName).toBe('@ng-native/engine-linux-arm64-gnu');
+    expect(fallback.packageName).toBe('@ng-desktop/engine-linux-arm64-gnu');
   });
 });

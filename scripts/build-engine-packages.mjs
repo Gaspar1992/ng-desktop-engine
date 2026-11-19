@@ -69,7 +69,7 @@ function stageEnginePackage(targetKey, meta, version, binarySourcePath) {
     '',
     `Prebuilt Rust native rendering runtime binary (\`${meta.binaryName}\`) for **\`${targetKey}\`**.`,
     '',
-    'Installed automatically via `optionalDependencies` when you install `@ng-native/builders`.',
+    'Installed automatically via `optionalDependencies` when you install `@ng-desktop/builders`.',
     '',
   ].join('\n');
   writeFileSync(resolve(outDir, 'README.md'), readme, 'utf8');

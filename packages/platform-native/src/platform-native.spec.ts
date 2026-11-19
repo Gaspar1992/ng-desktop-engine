@@ -11,11 +11,11 @@ import {
   NativeSystemErrorHandler,
   NativeTitleService,
   provideNativePlatform,
-} from '@ng-native/platform';
+} from '@ng-desktop/platform';
 
 class TestRootComponent {}
 
-describe('@ng-native/platform — NativeRenderer2 & Bridge', () => {
+describe('@ng-desktop/platform — NativeRenderer2 & Bridge', () => {
   beforeEach(() => {
     const bridge = ensureNgNativeBridge();
     bridge.__drainQueue();

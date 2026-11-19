@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { ensureNgNativeBridge, type NativeComputeMatch } from '@ng-native/platform';
+import { ensureNgNativeBridge, type NativeComputeMatch } from '@ng-desktop/platform';
 
 export interface NativeScoredItem<T> {
   item: T;

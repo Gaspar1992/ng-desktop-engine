@@ -24,7 +24,7 @@ import {
   makeEnvironmentProviders,
   Provider,
 } from '@angular/core';
-import { ensureNgNativeBridge, NativeHttpCallKind, NativeHttpConfig } from '@ng-native/platform';
+import { ensureNgNativeBridge, NativeHttpCallKind, NativeHttpConfig } from '@ng-desktop/platform';
 import { Observable } from 'rxjs';
 
 export {
@@ -102,7 +102,7 @@ function applyXsrfProviders(providers: unknown[] | undefined, config: NativeHttp
 
 /**
  * Translates Angular `HttpFeature` configurations (`withFetch`, `withXsrfConfiguration`,
- * `withNoXsrfProtection`, `withInterceptors`, `withJsonpSupport`, and `@ng-native/http` features)
+ * `withNoXsrfProtection`, `withInterceptors`, `withJsonpSupport`, and `@ng-desktop/http` features)
  * into a Rust-compatible `NativeHttpConfig`.
  */
 export function resolveNativeHttpConfig(

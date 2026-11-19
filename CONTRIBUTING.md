@@ -1,6 +1,6 @@
 # Contributing to NgDesktop Engine (`ng-desktop-engine`)
 
-Thank you for your interest in contributing to **NgDesktop Engine**, the Rust-powered native desktop rendering engine and Angular 22+ package suite (`@ng-native/*`)!
+Thank you for your interest in contributing to **NgDesktop Engine**, the Rust-powered native desktop rendering engine and Angular 22+ package suite (`@ng-desktop/*`)!
 
 ---
 
@@ -16,7 +16,7 @@ This monorepo combines two tightly coupled layers:
   - `src/ffi_dl.rs`: Centralized `DynLib` dynamic symbol loader.
   - `src/packager/`: Multi-OS packaging (`.deb`, AppImage, Flatpak, Windows WinUI 3 MSIX manifest, macOS `.app` / `.dmg`).
 - **Angular 22+ Packages ([`packages/`](./packages)) & Pokédex Demo ([`examples/counter-app/`](./examples/counter-app)):**
-  - `@ng-native/platform`, `@ng-native/forms`, `@ng-native/router`, `@ng-native/http`, `@ng-native/desktop`, `@ng-native/builders`.
+  - `@ng-desktop/platform`, `@ng-desktop/forms`, `@ng-desktop/router`, `@ng-desktop/http`, `@ng-desktop/desktop`, `@ng-desktop/builders`.
 
 ---
 
@@ -70,7 +70,7 @@ Every pull request must uphold the following architectural rules:
      cargo clippy --target x86_64-apple-darwin --all-targets -- -D warnings
      ```
 4. **Angular `>=22.0.0` Compatibility:**
-   - Keep `peerDependencies` across `@ng-native/*` set to `">=22.0.0"` (never hard-pin a minor release) so external Angular 22+ applications can upgrade seamlessly.
+   - Keep `peerDependencies` across `@ng-desktop/*` set to `">=22.0.0"` (never hard-pin a minor release) so external Angular 22+ applications can upgrade seamlessly.
 5. **Preserve Existing Frame Invariants:**
    - Ensure any compiler changes continue to pass [`tests/test_pipeline_and_hmr.rs`](./tests/test_pipeline_and_hmr.rs) and all Vitest suites.
 
@@ -100,7 +100,7 @@ This repository follows [Conventional Commits](https://www.conventionalcommits.o
 
 When a major milestone is complete, pushing a version tag (`vX.Y.Z`) triggers [`.github/workflows/release.yml`](./.github/workflows/release.yml) and [`scripts/generate-release-notes.mjs`](./scripts/generate-release-notes.mjs) to publish two linked GitHub Releases:
 
-1. **`vX.Y.Z` (Engine + Individual `@ng-native/*` Packages):** Rust binaries + standalone `.tgz` tarballs for `@ng-native/{platform,forms,router,http,desktop,builders}` with Angular-style architecture diagrams and categorized changelogs.
+1. **`vX.Y.Z` (Engine + Individual `@ng-desktop/*` Packages):** Rust binaries + standalone `.tgz` tarballs for `@ng-desktop/{platform,forms,router,http,desktop,builders}` and `@ng-desktop/engine-*` with Angular-style architecture diagrams and categorized changelogs.
 2. **`pokedex-demo-vX.Y.Z` (Showcase Application):** Installable `.deb` (Linux), standalone `.exe` (Windows), and `.dmg` (macOS) executables built from the showcase app.
 
 All contributors agree to abide by our [Code of Conduct](./CODE_OF_CONDUCT.md) and license their contributions under the [MIT License](./LICENSE).

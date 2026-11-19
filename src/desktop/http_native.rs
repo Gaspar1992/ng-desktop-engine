@@ -135,7 +135,7 @@ impl Default for NativeHttpConfig {
     }
 }
 
-/// Native HTTP request dispatched by `@ng-native/http` or internal desktop services.
+/// Native HTTP request dispatched by `@ng-desktop/http` or internal desktop services.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NativeHttpRequest {
     pub method: String,
@@ -164,7 +164,7 @@ impl NativeHttpRequest {
     }
 }
 
-/// Native HTTP response returned to `@ng-native/http` (`HttpClient`).
+/// Native HTTP response returned to `@ng-desktop/http` (`HttpClient`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NativeHttpResponse {
     pub status: u16,

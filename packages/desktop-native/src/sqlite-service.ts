@@ -1,5 +1,5 @@
 import { computed, Injectable, Signal, signal } from '@angular/core';
-import { ensureNgNativeBridge } from '@ng-native/platform';
+import { ensureNgNativeBridge } from '@ng-desktop/platform';
 
 export interface NativeLiveQueryRef<T> {
   readonly rows: Signal<T[]>;

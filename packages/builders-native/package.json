@@ -1,5 +1,5 @@
 {
-  "name": "@ng-native/builders",
+  "name": "@ng-desktop/builders",
   "version": "0.3.0",
   "description": "Angular 22+ CLI & Nx Architect builder, AST permission analyzer, CLI, and schematics",
   "type": "module",

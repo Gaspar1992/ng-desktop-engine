@@ -70,7 +70,7 @@ pub struct FileDialogRequest {
     pub suggested_path: String,
 }
 
-/// Cross-platform Desktop OS & Native HTTP service hub for Phase 5 (`@ng-native/desktop` & `@ng-native/http`).
+/// Cross-platform Desktop OS & Native HTTP service hub for Phase 5 (`@ng-desktop/desktop` & `@ng-desktop/http`).
 pub struct DesktopServices {
     app_id: String,
     permissions: AppPermissions,

@@ -4,7 +4,7 @@ import { writeFileSync } from 'node:fs';
 
 /**
  * Generates structured, Angular-monorepo-style release notes for:
- *   1. `--kind=engine` (`v*` tags): Core Rust Engine (`ng-desktop-engine`) + Individual Angular 22+ Packages (`@ng-native/*`) + Demo impact summary.
+ *   1. `--kind=engine` (`v*` tags): Core Rust Engine (`ng-desktop-engine`) + Individual Angular 22+ Packages (`@ng-desktop/*`) + Demo impact summary.
  *   2. `--kind=demo` (`pokedex-demo-v*` tags): Dedicated Pokédex Nacional Desktop Showcase release with `.deb`, `.exe`, and `.dmg` native installers.
  */
 
@@ -83,7 +83,7 @@ function buildEngineReleaseNotes(version, commits) {
   const groups = categorizeCommits(commits);
   return `# 🚀 NgDesktop Engine & Angular 22+ Packages — \`v${version}\`
 
-> **Release Scope:** Core Rust Native Rendering Engine (\`ng-desktop-engine\`) + Modular Angular 22+ Packages (\`@ng-native/*\`).
+> **Release Scope:** Core Rust Native Rendering Engine (\`ng-desktop-engine\`) + Modular Angular 22+ Packages (\`@ng-desktop/*\`).
 > Looking for the ready-to-run **Pokédex Nacional** desktop installers (\`.deb\`, \`.exe\`, \`.dmg\`)? See the companion showcase release **[Pokédex Demo \`pokedex-demo-v${version}\`](https://github.com/Gaspar1992/ng-desktop-engine/releases/tag/pokedex-demo-v${version})**.
 
 ---
@@ -93,45 +93,45 @@ function buildEngineReleaseNotes(version, commits) {
 \`ng-desktop-engine\` replaces the browser DOM and WebView (\`@angular/platform-browser\`) with a memory-safe **Rust scene graph** and a modular suite of **Angular 22+ packages** (\`peerDependencies: ">=22.0.0"\`):
 
 \`\`\`
-┌────────────────────────────────────────────────────────────────────────────┐
-│                   Angular 22+ Application (Signals, DI, Pipes)             │
-├──────────────────┬──────────────────┬──────────────────┬───────────────────┤
-│ @ng-native/forms │@ng-native/router │ @ng-native/http  │@ng-native/desktop │
-├──────────────────┴──────────────────┴──────────────────┴───────────────────┤
-│             @ng-native/platform (NativeRenderer2 & Host Bridge)            │
-├────────────────────────────────────────────────────────────────────────────┤
-│       @ng-native/builders (oxc-parser TS AST + Angular Template AST)       │
-└─────────────────────────────────────┬──────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                  Angular 22+ Application (Signals, DI, Pipes)                   │
+├───────────────────┬────────────────────┬──────────────────┬─────────────────────┤
+│ @ng-desktop/forms │ @ng-desktop/router │ @ng-desktop/http │ @ng-desktop/desktop │
+├───────────────────┴────────────────────┴──────────────────┴─────────────────────┤
+│              @ng-desktop/platform (NativeRenderer2 & Host Bridge)               │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│         @ng-desktop/builders (oxc-parser TS AST + Angular Template AST)         │
+└─────────────────────────────────────┬───────────────────────────────────────────┘
                                       │ Frame-Batched .ngb / FFI Calls
-┌─────────────────────────────────────▼──────────────────────────────────────┐
-│            ng-desktop-engine (Rust 1.100 — Generational Arena)             │
-├────────────────────────┬─────────────────────────┬─────────────────────────┤
-│   Linux GTK4/Adwaita   │    Windows WinUI 3      │   macOS AppKit/Cocoa    │
-│ libgtk-4 + libsoup-3.0 │   Microsoft.UI.Xaml     │   NSWindow / NSView     │
-│ libsqlite3 + inotify   │ winsqlite3 + WinHTTP    │ libsqlite3 + URLSession │
-└────────────────────────┴─────────────────────────┴─────────────────────────┘
+┌─────────────────────────────────────▼───────────────────────────────────────────┐
+│               ng-desktop-engine (Rust 1.100 — Generational Arena)               │
+├──────────────────────────┬──────────────────────────┬───────────────────────────┤
+│    Linux GTK4/Adwaita    │     Windows WinUI 3      │    macOS AppKit/Cocoa     │
+│  libgtk-4 + libsoup-3.0  │    Microsoft.UI.Xaml     │     NSWindow / NSView     │
+│   libsqlite3 + inotify   │   winsqlite3 + WinHTTP   │  libsqlite3 + URLSession  │
+└──────────────────────────┴──────────────────────────┴───────────────────────────┘
 \`\`\`
 
 ---
 
-## 📦 Angular 22+ Packages Breakdown (\`@ng-native/*\`)
+## 📦 Angular 22+ Packages Breakdown (\`@ng-desktop/*\`)
 
 Following the official Angular monorepo publishing model, each package is versioned and distributed as an independent tarball (\`peerDependencies: { "@angular/core": ">=22.0.0" }\`):
 
 | Package | Tarball Asset | Responsibilities & Key APIs |
 | :--- | :--- | :--- |
-| **\`@ng-native/platform\`** | \`ng-native-platform-${version}.tgz\` | Custom \`NativeRenderer2\`, \`NativeElementNode\`, \`provideNativeImageLoader\` (\`IMAGE_LOADER\` disk cache), \`NativeTitleService\` (\`Title\`), \`NativeViewportScroller\` (\`ViewportScroller\`), \`provideSystemLocale\` (\`LOCALE_ID\` + \`DATE_PIPE_DEFAULT_TIMEZONE\`), \`NativeKeyEventsPlugin\` (\`EVENT_MANAGER_PLUGINS\`), and \`NativeSystemErrorHandler\` (\`ErrorHandler\`). |
-| **\`@ng-native/forms\`** | \`ng-native-forms-${version}.tgz\` | Native \`ControlValueAccessor\` directives (\`NativeTextValueAccessor\`, \`NativeBooleanValueAccessor\`, \`NativeNumberValueAccessor\`) bridging \`FormsModule\`, \`ReactiveFormsModule\`, and Signal Forms to \`<ng-entry>\`, \`<ng-search-entry>\`, \`<ng-password-entry>\`, \`<ng-text-view>\`, \`<ng-spin-button>\`, \`<ng-switch>\`, \`<ng-checkbox>\`, \`<ng-slider>\`, and \`<ng-select>\`. |
-| **\`@ng-native/router\`** | \`ng-native-router-${version}.tgz\` | DOM-free \`NativePlatformLocation\` navigation stack, \`NativeTitleStrategy\` (\`TitleStrategy\` updating OS window titlebars automatically on route navigation), and \`NativeStackRouteReuseStrategy\` (\`RouteReuseStrategy\` keeping master-detail views alive in \`<ng-stack>\`). |
-| **\`@ng-native/http\`** | \`ng-native-http-${version}.tgz\` | OS-native \`NativeHttpBackend\` (\`HttpBackend\`) driving \`libsoup-3.0\` (Linux HTTP/2), \`URLSession\` (macOS), and \`WinHTTP\` (Windows), plus \`provideHttpClient\` features (\`withFetch\`, \`withInterceptors\`, \`withXsrfConfiguration\`, \`withHttpCaching\`, \`withParallelBatching\`) and reactive \`createNativeHttpResource()\`. |
-| **\`@ng-native/desktop\`** | \`ng-native-desktop-${version}.tgz\` | \`NativeDesktopService\` (dark/light theme Signal, clipboard, notifications, file dialogs), \`NativeSqliteService\` (\`libsqlite3\` FFI with reactive \`liveQuery<T>()\` Signals), \`NativeNetworkService\` (\`GNetworkMonitor\` online/metered Signals), \`NativeComputeService\` (multithreaded Rust fuzzy search & 64-bit FNV-1a hashing), \`NativeFileSystemService\` (XDG dirs + atomic JSON I/O + \`inotify\` reactive file watcher), and \`NativeDropTargetDirective\` (\`[ngNativeDropTarget]\`). |
-| **\`@ng-native/builders\`** | \`ng-native-builders-${version}.tgz\` | Angular 22+ CLI & Nx builder, \`oxc-parser\` AST metadata & permission analyzer (\`permissions.manifest.json\`), \`@angular/compiler\` template compiler, \`ng-desktop\` CLI, \`ng add\` schematics, prebuilt \`@ng-native/engine-*\` resolution, and Unix Socket HMR IPC. |
+| **\`@ng-desktop/platform\`** | \`ng-desktop-platform-${version}.tgz\` | Custom \`NativeRenderer2\`, \`NativeElementNode\`, \`provideNativeImageLoader\` (\`IMAGE_LOADER\` disk cache), \`NativeTitleService\` (\`Title\`), \`NativeViewportScroller\` (\`ViewportScroller\`), \`provideSystemLocale\` (\`LOCALE_ID\` + \`DATE_PIPE_DEFAULT_TIMEZONE\`), \`NativeKeyEventsPlugin\` (\`EVENT_MANAGER_PLUGINS\`), and \`NativeSystemErrorHandler\` (\`ErrorHandler\`). |
+| **\`@ng-desktop/forms\`** | \`ng-desktop-forms-${version}.tgz\` | Native \`ControlValueAccessor\` directives (\`NativeTextValueAccessor\`, \`NativeBooleanValueAccessor\`, \`NativeNumberValueAccessor\`) bridging \`FormsModule\`, \`ReactiveFormsModule\`, and Signal Forms to \`<ng-entry>\`, \`<ng-search-entry>\`, \`<ng-password-entry>\`, \`<ng-text-view>\`, \`<ng-spin-button>\`, \`<ng-switch>\`, \`<ng-checkbox>\`, \`<ng-slider>\`, and \`<ng-select>\`. |
+| **\`@ng-desktop/router\`** | \`ng-desktop-router-${version}.tgz\` | DOM-free \`NativePlatformLocation\` navigation stack, \`NativeTitleStrategy\` (\`TitleStrategy\` updating OS window titlebars automatically on route navigation), and \`NativeStackRouteReuseStrategy\` (\`RouteReuseStrategy\` keeping master-detail views alive in \`<ng-stack>\`). |
+| **\`@ng-desktop/http\`** | \`ng-desktop-http-${version}.tgz\` | OS-native \`NativeHttpBackend\` (\`HttpBackend\`) driving \`libsoup-3.0\` (Linux HTTP/2), \`URLSession\` (macOS), and \`WinHTTP\` (Windows), plus \`provideHttpClient\` features (\`withFetch\`, \`withInterceptors\`, \`withXsrfConfiguration\`, \`withHttpCaching\`, \`withParallelBatching\`) and reactive \`createNativeHttpResource()\`. |
+| **\`@ng-desktop/desktop\`** | \`ng-desktop-desktop-${version}.tgz\` | \`NativeDesktopService\` (dark/light theme Signal, clipboard, notifications, file dialogs), \`NativeSqliteService\` (\`libsqlite3\` FFI with reactive \`liveQuery<T>()\` Signals), \`NativeNetworkService\` (\`GNetworkMonitor\` online/metered Signals), \`NativeComputeService\` (multithreaded Rust fuzzy search & 64-bit FNV-1a hashing), \`NativeFileSystemService\` (XDG dirs + atomic JSON I/O + \`inotify\` reactive file watcher), and \`NativeDropTargetDirective\` (\`[ngNativeDropTarget]\`). |
+| **\`@ng-desktop/builders\`** | \`ng-desktop-builders-${version}.tgz\` | Angular 22+ CLI & Nx builder, \`oxc-parser\` AST metadata & permission analyzer (\`permissions.manifest.json\`), \`@angular/compiler\` template compiler, \`ng-desktop\` CLI, \`ng add\` schematics, prebuilt \`@ng-desktop/engine-*\` resolution, and Unix Socket HMR IPC. |
 
 ### Prebuilt Host Engine Binary Packages (\`optionalDependencies\`)
 
-- \`ng-native-engine-linux-x64-gnu-${version}.tgz\`
-- \`ng-native-engine-win32-x64-msvc-${version}.tgz\`
-- \`ng-native-engine-darwin-arm64-${version}.tgz\`
+- \`ng-desktop-engine-linux-x64-gnu-${version}.tgz\`
+- \`ng-desktop-engine-win32-x64-msvc-${version}.tgz\`
+- \`ng-desktop-engine-darwin-arm64-${version}.tgz\`
 
 ---
 
@@ -149,9 +149,9 @@ Following the official Angular monorepo publishing model, each package is versio
 
 ## 🎮 Impact on the Pokédex Showcase Demo (\`examples/counter-app\`)
 
-Every improvement in \`ng-desktop-engine\` and \`@ng-native/*\` directly powers the **Pokédex Nacional** desktop showcase:
-1. **HTTP/2 Batching & \`createNativeHttpResource\` (\`@ng-native/http\`):** Loads Pokémon details and 18-card batches concurrently over persistent \`libsoup-3.0\` TLS sockets with local sprite caching.
-2. **Embedded SQLite3 Favorites (\`@ng-native/desktop\`):** Persists trainer favorites and notes via \`NativeSqliteService.liveQuery()\`, updating the UI immediately on \`INSERT\`/\`DELETE\`.
+Every improvement in \`ng-desktop-engine\` and \`@ng-desktop/*\` directly powers the **Pokédex Nacional** desktop showcase:
+1. **HTTP/2 Batching & \`createNativeHttpResource\` (\`@ng-desktop/http\`):** Loads Pokémon details and 18-card batches concurrently over persistent \`libsoup-3.0\` TLS sockets with local sprite caching.
+2. **Embedded SQLite3 Favorites (\`@ng-desktop/desktop\`):** Persists trainer favorites and notes via \`NativeSqliteService.liveQuery()\`, updating the UI immediately on \`INSERT\`/\`DELETE\`.
 3. **Multithreaded Fuzzy Search (\`NativeComputeService\`):** Filters the catalog off the UI thread using Rust's \`std::thread::scope\` worker pool.
 4. **XDG Backup Export/Import & Live File Watcher (\`NativeFileSystemService\`):** Atomically exports and imports favorites JSON files inside XDG data directories with \`inotify\` change detection.
 5. **Standalone Native Installers:** Packaged directly as installable **\`.deb\`** (Linux), **\`.exe\`** (Windows), and **\`.dmg\`** (macOS) executables.
@@ -163,16 +163,16 @@ Every improvement in \`ng-desktop-engine\` and \`@ng-native/*\` directly powers 
 ### Engine & Runtime (\`src/engine\`, \`src/runtime\`, \`src/ipc\`)
 ${groups.engine.join('\n') || '- Core scene graph and runtime maintenance'}
 
-### Platform Backends (\`src/platforms\`, \`@ng-native/platform\`)
+### Platform Backends (\`src/platforms\`, \`@ng-desktop/platform\`)
 ${groups.platforms.join('\n') || '- Cross-platform GTK4, WinUI 3, and AppKit parity'}
 
-### Desktop OS Services (\`src/desktop\`, \`@ng-native/desktop\`)
+### Desktop OS Services (\`src/desktop\`, \`@ng-desktop/desktop\`)
 ${groups.desktop.join('\n') || '- SQLite3, inotify, and multithreaded compute pool'}
 
-### Native HTTP/2 (\`src/desktop/http_native.rs\`, \`@ng-native/http\`)
+### Native HTTP/2 (\`src/desktop/http_native.rs\`, \`@ng-desktop/http\`)
 ${groups.http.join('\n') || '- Native HTTP/2 transport and resource signals'}
 
-### Compiler & CLI Builders (\`@ng-native/builders\`)
+### Compiler & CLI Builders (\`@ng-desktop/builders\`)
 ${groups.builders.join('\n') || '- AST template, metadata, and style compilers'}
 
 ### Pokédex Showcase Demo (\`examples/counter-app\`)
@@ -187,7 +187,7 @@ function buildDemoReleaseNotes(version) {
   return `# 🎮 Pokédex Nacional — Native Desktop Showcase Demo (\`pokedex-demo-v${version}\`)
 
 > **Built with Angular 22.2.6 + \`ng-desktop-engine\` \`v${version}\` (100% Native OS Widgets — Zero WebView / Zero Electron).**
-> For the underlying Rust engine binaries and individual \`@ng-native/*\` Angular library tarballs, see the **[NgDesktop Engine \`v${version}\` Release](https://github.com/Gaspar1992/ng-desktop-engine/releases/tag/v${version})**.
+> For the underlying Rust engine binaries and individual \`@ng-desktop/*\` Angular library tarballs, see the **[NgDesktop Engine \`v${version}\` Release](https://github.com/Gaspar1992/ng-desktop-engine/releases/tag/v${version})**.
 
 ---
 
@@ -207,9 +207,9 @@ function buildDemoReleaseNotes(version) {
 
 1. **Master-Detail Split Layout & Adaptive Chrome (\`Phase 8–10\`):**
    - Uses native \`<ng-header-bar>\` (\`AdwHeaderBar\` / \`TitleBar\` / \`NSToolbar\`), \`<ng-clamp>\` (\`AdwClamp\`), \`<ng-paned>\` resizable master-detail split view, \`<ng-flow>\` responsive Pokémon grid, \`<ng-expander>\` collapsible stats sections, and \`<ng-level-bar>\` base-stat meters (\`HP\`, \`Attack\`, \`Defense\`, \`Sp. Atk\`, \`Sp. Def\`, \`Speed\`).
-2. **Native HTTP/2 PokéAPI Client & Disk Sprite Cache (\`@ng-native/http\`):**
+2. **Native HTTP/2 PokéAPI Client & Disk Sprite Cache (\`@ng-desktop/http\`):**
    - Fetches live Pokémon data and official artwork over persistent \`libsoup-3.0\` HTTP/2 connections and caches PNG sprites in \`/tmp/ng_native_pokedex/\` for instant rendering in \`<ng-image>\` (\`GtkPicture\` / \`Image\` / \`NSImageView\`).
-3. **Reactive SQLite3 Trainer Favorites (\`@ng-native/desktop\`):**
+3. **Reactive SQLite3 Trainer Favorites (\`@ng-desktop/desktop\`):**
    - Uses \`NativeSqliteService.liveQuery()\` bound to \`libsqlite3.so.0\` (WAL mode) to store favorite Pokémon and trainer notes with zero-latency Signal updates.
 4. **Multithreaded Rust Fuzzy Search (\`NativeComputeService\`):**
    - Searches Pokémon by name or National Dex number across worker threads via \`NativeComputePool::fuzzy_filter\`.

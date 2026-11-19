@@ -12,7 +12,7 @@ import {
   RouterStateSnapshot,
   TitleStrategy,
 } from '@angular/router';
-import { NativeTitleService } from '@ng-native/platform';
+import { NativeTitleService } from '@ng-desktop/platform';
 
 export const NATIVE_TITLE_PREFIX = new InjectionToken<string>('NATIVE_TITLE_PREFIX', {
   providedIn: 'root',

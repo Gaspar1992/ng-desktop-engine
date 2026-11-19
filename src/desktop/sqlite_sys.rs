@@ -237,7 +237,7 @@ impl OsSqliteBackend {
 }
 
 /// Native `SQLite3` database engine dynamically bound to `libsqlite3.so.0` (Linux/macOS/Windows)
-/// with automatic WAL journaling and JSON serialization for reactive `@ng-native/desktop` queries.
+/// with automatic WAL journaling and JSON serialization for reactive `@ng-desktop/desktop` queries.
 pub struct NativeSqliteDatabase {
     backend: OsSqliteBackend,
     ffi: Option<SqliteFfi>,
