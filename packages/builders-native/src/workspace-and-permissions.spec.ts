@@ -1,9 +1,11 @@
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import vm from 'node:vm';
 import {
   analyzeSourcePermissions,
   compileBundle,
+  discoverServerRoutes,
   executeNativeBuilder,
   resolveWorkspaceProject,
 } from '@ng-desktop/builders';
@@ -255,6 +257,109 @@ export class App {}`,
         entryBundle?: string;
       };
       expect(runtimeCfg.entryBundle).toBe('app.bundle.js');
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('discovers Analog-style server routes, compiles server.bundle.js, and detects context permissions', async () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), 'ng-desktop-server-routes-'));
+    try {
+      mkdirSync(join(tmpRoot, 'src/app'), { recursive: true });
+      mkdirSync(join(tmpRoot, 'src/server/routes/api/favorites'), { recursive: true });
+      mkdirSync(join(tmpRoot, 'src/server/routes/api/pokemon'), { recursive: true });
+      mkdirSync(join(tmpRoot, 'src/server/routes/api/files'), { recursive: true });
+
+      writeFileSync(
+        join(tmpRoot, 'angular.json'),
+        JSON.stringify({
+          projects: {
+            'pokedex-app': {
+              projectType: 'application',
+              root: '.',
+              sourceRoot: 'src',
+              architect: {
+                native: {
+                  builder: '@ng-desktop/builders:application',
+                  options: {
+                    outputPath: 'dist/pokedex-app',
+                  },
+                },
+              },
+            },
+          },
+        }),
+      );
+      writeFileSync(
+        join(tmpRoot, 'src/app/app.ts'),
+        `import { Component } from '@angular/core';
+@Component({ selector: 'app-root', templateUrl: './app.html', styleUrl: './app.css' })
+export class App {}`,
+      );
+      writeFileSync(
+        join(tmpRoot, 'src/app/app.html'),
+        `<ng-window id="win" title="Server Test"></ng-window>`,
+      );
+      writeFileSync(join(tmpRoot, 'src/app/app.css'), `.panel { padding: 8px; }`);
+
+      writeFileSync(
+        join(tmpRoot, 'src/server/routes/api/favorites/index.get.ts'),
+        `import { defineNativeEventHandler } from '@ng-desktop/server';
+export default defineNativeEventHandler((event) => {
+  event.context.db.execute('CREATE TABLE IF NOT EXISTS fav (id TEXT PRIMARY KEY);');
+  return { items: event.context.db.query('SELECT * FROM fav;') };
+});`,
+      );
+      writeFileSync(
+        join(tmpRoot, 'src/server/routes/api/pokemon/[id].get.ts'),
+        `import { defineNativeEventHandler, getRouterParam } from '@ng-desktop/server';
+export default defineNativeEventHandler(async (event) => {
+  const id = getRouterParam(event, 'id');
+  const upstream = await event.context.http.get('https://pokeapi.co/api/v2/pokemon/' + id);
+  const path = event.context.fs.resolvePath('cache', id + '.json');
+  return { id, status: upstream.status, hash: event.context.compute.hash(String(id)), path };
+});`,
+      );
+      writeFileSync(
+        join(tmpRoot, 'src/server/routes/api/files/[...path].post.ts'),
+        `import { defineNativeEventHandler, getRouterParam } from '@ng-desktop/server';
+export default defineNativeEventHandler((event) => ({
+  file: getRouterParam(event, 'path'),
+}));`,
+      );
+
+      const routes = discoverServerRoutes(join(tmpRoot, 'src'));
+      expect(routes.map((r) => `${r.method} ${r.pattern}`)).toEqual([
+        'GET /api/favorites',
+        'GET /api/pokemon/:id',
+        'POST /api/files/*path',
+      ]);
+
+      const res = compileBundle({ cwd: tmpRoot, projectName: 'pokedex-app', rebuildIcons: false });
+      expect(res.serverBundleFile).toBe(join(tmpRoot, 'dist/pokedex-app/server.bundle.js'));
+      expect(res.permissions.capabilities.sqlite).toBe(true);
+      expect(res.permissions.capabilities.filesystem.xdg).toBe(true);
+      expect(res.permissions.capabilities.computeThreads).toBe(true);
+      expect(res.permissions.capabilities.network).toBe(true);
+
+      const runtimeCfg = JSON.parse(readFileSync(res.runtimeConfigFile, 'utf8')) as {
+        serverBundle?: string;
+      };
+      expect(runtimeCfg.serverBundle).toBe('server.bundle.js');
+
+      const bundleCode = readFileSync(res.serverBundleFile!, 'utf8');
+      const sandbox: Record<string, unknown> = { console, URL, URLSearchParams };
+      sandbox['globalThis'] = sandbox;
+      vm.runInNewContext(bundleCode, sandbox);
+      const router = sandbox['__NG_NATIVE_SERVER_ROUTER__'] as {
+        handle: (req: { method: string; url: string }) => Promise<{ status: number; body: string }>;
+      };
+      const fileRes = await router.handle({
+        method: 'POST',
+        url: '/api/files/exports/team.json',
+      });
+      expect(fileRes.status).toBe(200);
+      expect(JSON.parse(fileRes.body)).toEqual({ file: 'exports/team.json' });
     } finally {
       rmSync(tmpRoot, { recursive: true, force: true });
     }

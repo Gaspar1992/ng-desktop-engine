@@ -68,3 +68,9 @@ export {
   type TemplateAstNode,
   type TemplateIdState,
 } from './template-compiler.mjs';
+export {
+  compileServerBundle,
+  discoverServerRoutes,
+  type CompileServerBundleOptions,
+  type DiscoveredServerRoute,
+} from './server-compiler.mjs';

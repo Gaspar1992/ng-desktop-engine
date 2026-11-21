@@ -20,7 +20,8 @@
       "@ng-desktop/router": ["./packages/router-native/src/index.ts"],
       "@ng-desktop/http": ["./packages/http-native/src/index.ts"],
       "@ng-desktop/desktop": ["./packages/desktop-native/src/index.ts"],
-      "@ng-desktop/builders": ["./packages/builders-native/src/index.ts"]
+      "@ng-desktop/builders": ["./packages/builders-native/src/index.ts"],
+      "@ng-desktop/server": ["./packages/server-native/src/index.ts"]
     }
   },
   "angularCompilerOptions": {

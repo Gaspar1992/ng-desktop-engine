@@ -13,6 +13,7 @@
     "packages/router-native/src/**/*.ts",
     "packages/http-native/src/**/*.ts",
     "packages/desktop-native/src/**/*.ts",
-    "packages/builders-native/src/**/*.ts"
+    "packages/builders-native/src/**/*.ts",
+    "packages/server-native/src/**/*.ts"
   ]
 }
