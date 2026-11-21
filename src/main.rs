@@ -4,11 +4,12 @@ use ng_native_engine::engine::{NodeId, RenderEngine};
 use ng_native_engine::ipc::{HmrIpcServer, HmrMessage, HmrResponse};
 use ng_native_engine::packager::{stage_all_distributions, stage_linux_distribution};
 use ng_native_engine::platforms::AnyPlatformBackend;
-use ng_native_engine::runtime::{JsEngineBackend, JsRuntime};
+use ng_native_engine::runtime::{JsEngineBackend, JsRuntime, NativeServerWorker};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, SystemTime};
 
@@ -52,20 +53,28 @@ fn handle_hmr_messages(
 
 const STANDALONE_POKEDEX_NGB: &str = include_str!("standalone_pokedex.ngb");
 
-fn resolve_app_bundle_path(cfg: &AngularNativeConfig) -> Option<PathBuf> {
-    let mut candidates = vec![PathBuf::from(format!("{}/app.bundle.js", cfg.output_path))];
+fn resolve_bundle_candidate_path(cfg: &AngularNativeConfig, filename: &str) -> Option<PathBuf> {
+    let mut candidates = vec![PathBuf::from(format!("{}/{filename}", cfg.output_path))];
     if let Ok(exe_path) = env::current_exe()
         && let Some(exe_dir) = exe_path.parent()
     {
-        candidates.push(exe_dir.join("app.bundle.js"));
-        candidates.push(exe_dir.join("../Resources/app.bundle.js"));
-        candidates.push(exe_dir.join(format!("../share/{}/app.bundle.js", cfg.project_name)));
+        candidates.push(exe_dir.join(filename));
+        candidates.push(exe_dir.join(format!("../Resources/{filename}")));
+        candidates.push(exe_dir.join(format!("../share/{}/{filename}", cfg.project_name)));
     }
     candidates.push(PathBuf::from(format!(
-        "/usr/share/{}/app.bundle.js",
+        "/usr/share/{}/{filename}",
         cfg.project_name
     )));
     candidates.into_iter().find(|p| p.is_file())
+}
+
+fn resolve_app_bundle_path(cfg: &AngularNativeConfig) -> Option<PathBuf> {
+    resolve_bundle_candidate_path(cfg, "app.bundle.js")
+}
+
+fn resolve_server_bundle_path(cfg: &AngularNativeConfig) -> Option<PathBuf> {
+    resolve_bundle_candidate_path(cfg, "server.bundle.js")
 }
 
 fn ensure_bundle_compiled(cfg: &AngularNativeConfig, bundle_path: &str) -> String {
@@ -111,12 +120,33 @@ fn ensure_bundle_compiled(cfg: &AngularNativeConfig, bundle_path: &str) -> Strin
     String::from(STANDALONE_POKEDEX_NGB)
 }
 
+type ServerWatchState = Option<(Arc<NativeServerWorker>, String, Option<SystemTime>)>;
+
 struct InteractiveContext<'a> {
     cfg: &'a AngularNativeConfig,
     bundle_path: &'a str,
     is_js_bundle: bool,
     last_mtime: Option<SystemTime>,
+    server_state: ServerWatchState,
     win_id: NodeId,
+}
+
+fn poll_server_hot_reload(server_state: &mut ServerWatchState) {
+    let Some((worker, path, last_mtime)) = server_state.as_mut() else {
+        return;
+    };
+    let current_mtime = bundle_modified_time(path);
+    if current_mtime.is_some()
+        && current_mtime != *last_mtime
+        && let Ok(updated_server_js) = fs::read_to_string(path.as_str())
+        && !updated_server_js.trim().is_empty()
+    {
+        *last_mtime = current_mtime;
+        match worker.reload(&updated_server_js) {
+            Ok(()) => println!("[Hot Reload] Reloaded isolated server backend '{path}'"),
+            Err(err) => eprintln!("[Hot Reload Error] Server backend reload failed: {err}"),
+        }
+    }
 }
 
 fn run_interactive_loop(
@@ -201,6 +231,7 @@ fn run_interactive_loop(
             }
         }
 
+        poll_server_hot_reload(&mut ctx.server_state);
         thread::sleep(Duration::from_millis(16));
     }
 
@@ -265,6 +296,21 @@ fn main() {
         js_runtime.js_engine().is_jit_enabled()
     );
 
+    let server_state: ServerWatchState = if js_runtime.js_engine().is_jit_enabled()
+        && let Some(server_path) = resolve_server_bundle_path(&cfg)
+    {
+        let server_path_str = server_path.to_string_lossy().into_owned();
+        let server_source = fs::read_to_string(&server_path).unwrap();
+        let server_mtime = bundle_modified_time(&server_path_str);
+        let worker = js_runtime
+            .attach_server_bundle(&server_source, true)
+            .unwrap();
+        println!("[Native Server Worker] Isolated backend started from '{server_path_str}'\n");
+        Some((worker, server_path_str, server_mtime))
+    } else {
+        None
+    };
+
     let (bundle_path, is_js_bundle, last_mtime) = if let Some(js_path) =
         resolve_app_bundle_path(&cfg)
         && js_runtime.js_engine().is_jit_enabled()
@@ -323,6 +369,7 @@ fn main() {
                 bundle_path: &bundle_path,
                 is_js_bundle,
                 last_mtime,
+                server_state,
                 win_id,
             },
             engine,

@@ -13,11 +13,19 @@ import { extractComponentMetadata } from './ast-metadata-extractor.mjs';
 import { pushHmrReload } from './hmr-client.mjs';
 import { buildMultiResolutionIcons } from './icon-compiler.mjs';
 import { analyzeProjectPermissions } from './permission-analyzer.mjs';
+import { compileServerBundle, discoverServerRoutes } from './server-compiler.mjs';
 import { emitStyleInstruction, parseStylesCss } from './style-compiler.mjs';
 import { parseTemplateHtml } from './template-compiler.mjs';
 import { resolveWorkspaceProject } from './workspace-resolver.mjs';
 
-export { extractComponentMetadata, parseStylesCss, parseTemplateHtml, pushHmrReload };
+export {
+  compileServerBundle,
+  discoverServerRoutes,
+  extractComponentMetadata,
+  parseStylesCss,
+  parseTemplateHtml,
+  pushHmrReload,
+};
 
 function extractCliFlagValue(argv, flag) {
   const prefix = `${flag}=`;
@@ -279,6 +287,12 @@ export function compileBundle({
   writeFileSync(bundleFile, bundle, 'utf8');
 
   const entryBundleFile = emitAppJsBundleIfPresent(outDir, projectName, allStyleRules, iconMeta);
+  const serverBundleFile = compileServerBundle({
+    workspaceRoot: rootDir,
+    sourceRootAbs,
+    outDir,
+    projectName,
+  });
 
   const permissions = analyzeProjectPermissions(sourceRootAbs, nativeOptions.permissions);
   const permissionsFile = resolve(outDir, 'permissions.manifest.json');
@@ -293,6 +307,7 @@ export function compileBundle({
     outputPath: resolvedOutputPath,
     iconSearchDir: `${resolvedOutputPath}/icons`,
     ...(entryBundleFile ? { entryBundle: 'app.bundle.js' } : {}),
+    ...(serverBundleFile ? { serverBundle: 'server.bundle.js' } : {}),
     permissions,
   };
   const runtimeConfigFile = resolve(outDir, 'ng-desktop.runtime.json');
@@ -303,6 +318,9 @@ export function compileBundle({
   );
   if (entryBundleFile) {
     console.log(`[Angular Native Compiler] Bundled Ivy JS runtime entry -> ${entryBundleFile}`);
+  }
+  if (serverBundleFile) {
+    console.log(`[Angular Native Compiler] Bundled Analog server routes -> ${serverBundleFile}`);
   }
 
   const socketPath = resolve(outDir, 'hmr.sock');
@@ -320,6 +338,7 @@ export function compileBundle({
     sourceRoot: sourceRootAbs,
     bundleFile,
     ...(entryBundleFile ? { entryBundleFile } : {}),
+    ...(serverBundleFile ? { serverBundleFile } : {}),
     permissionsFile,
     runtimeConfigFile,
     permissions,

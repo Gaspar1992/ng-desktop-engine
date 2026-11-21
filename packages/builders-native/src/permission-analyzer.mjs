@@ -139,6 +139,13 @@ const CALL_NAME_CAPS = new Map([
   ['computeHash', 'compute-threads'],
 ]);
 
+const SERVER_CONTEXT_CAPS = new Map([
+  ['db', 'sqlite'],
+  ['fs', 'filesystem:xdg'],
+  ['compute', 'compute-threads'],
+  ['http', 'network'],
+]);
+
 function visitAst(node, visitor) {
   if (!node || typeof node !== 'object') return;
   if (Array.isArray(node)) {
@@ -206,6 +213,19 @@ function inspectTypeScriptAst(filename, code, addEvidence) {
       node.callee.name === 'WebSocket'
     ) {
       addEvidence('network', filename, `new WebSocket()`);
+      return;
+    }
+
+    if (node.type === 'MemberExpression' && node.property?.type === 'Identifier') {
+      const cap = SERVER_CONTEXT_CAPS.get(node.property.name);
+      const isContextObj =
+        (node.object?.type === 'Identifier' && node.object.name === 'context') ||
+        (node.object?.type === 'MemberExpression' &&
+          node.object.property?.type === 'Identifier' &&
+          node.object.property.name === 'context');
+      if (cap && isContextObj) {
+        addEvidence(cap, filename, `context.${node.property.name}`);
+      }
       return;
     }
 

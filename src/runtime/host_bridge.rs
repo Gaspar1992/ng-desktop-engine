@@ -15,6 +15,8 @@ use crate::desktop::http_native::NativeHttpEngine;
 use crate::desktop::sqlite_sys::NativeSqliteDatabase;
 use crate::desktop::system_env::NativeSystemEnv;
 
+use super::server_worker::{NativeServerWorker, is_local_api_url};
+
 /// Asynchronous completion payload emitted by a background host operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostAsyncCompletion {
@@ -32,6 +34,7 @@ pub struct HostBridge {
     compute: NativeComputePool,
     system_env: Mutex<NativeSystemEnv>,
     async_completions: Arc<Mutex<Vec<HostAsyncCompletion>>>,
+    server_worker: Mutex<Option<Arc<NativeServerWorker>>>,
 }
 
 impl HostBridge {
@@ -47,8 +50,22 @@ impl HostBridge {
             compute: NativeComputePool::new(),
             system_env: Mutex::new(NativeSystemEnv::detect_for_app(&app_id)),
             async_completions: Arc::new(Mutex::new(Vec::new())),
+            server_worker: Mutex::new(None),
             app_id,
         }
+    }
+
+    /// Attaches an isolated backend `NativeServerWorker` to handle local `/api/*` requests.
+    pub fn attach_server_worker(&self, worker: Arc<NativeServerWorker>) {
+        if let Ok(mut guard) = self.server_worker.lock() {
+            *guard = Some(worker);
+        }
+    }
+
+    /// Returns `true` when an isolated backend `NativeServerWorker` is attached.
+    #[must_use]
+    pub fn has_server_worker(&self) -> bool {
+        self.server_worker.lock().is_ok_and(|guard| guard.is_some())
     }
 
     /// Dispatches a JSON service invocation from JS and returns a JSON response string.
@@ -57,6 +74,7 @@ impl HostBridge {
         let action = extract_json_string(req_json, "action").unwrap_or_default();
         match action.as_str() {
             "httpAsync" => self.handle_http_async(req_json),
+            "httpSync" => self.handle_http_sync(req_json),
             "httpBatchAsync" => self.handle_http_batch_async(req_json),
             "downloadImageAsync" => self.handle_download_image_async(req_json),
             "sqliteExecute" | "sqliteQuery" | "sqliteOpen" => self.handle_sqlite(&action, req_json),
@@ -104,10 +122,43 @@ impl HostBridge {
             .any(|c| matches!(c, Component::ParentDir))
     }
 
+    fn handle_http_sync(&self, req_json: &str) -> String {
+        if !self.has_permission(self.permissions.network) {
+            return String::from(
+                r#"{"status":403,"statusText":"Forbidden","body":"Permission denied: network","headers":{},"transport":"host-denied","callKind":"json","cached":false}"#,
+            );
+        }
+        let payload =
+            extract_json_raw_value(req_json, "request").unwrap_or_else(|| req_json.to_string());
+        self.http_engine.lock().map_or_else(
+            |_| String::from(r#"{"status":500,"statusText":"Host Mutex Poisoned","body":""}"#),
+            |mut guard| guard.execute_bridge_json(&payload),
+        )
+    }
+
     fn handle_http_async(&self, req_json: &str) -> String {
         let Some(callback_id) = extract_json_u64(req_json, "callbackId") else {
             return Self::err_json("Missing callbackId for httpAsync");
         };
+        let payload =
+            extract_json_raw_value(req_json, "request").unwrap_or_else(|| req_json.to_string());
+        let target_url = extract_json_string(&payload, "url")
+            .or_else(|| extract_json_string(req_json, "url"))
+            .unwrap_or_default();
+
+        if is_local_api_url(&target_url)
+            && let Ok(guard) = self.server_worker.lock()
+            && let Some(worker) = guard.as_ref().cloned()
+        {
+            drop(guard);
+            if let Err(err) =
+                worker.dispatch_async(payload, callback_id, Arc::clone(&self.async_completions))
+            {
+                return Self::err_json(&err);
+            }
+            return String::from(r#"{"ok":true,"queued":true,"localServer":true}"#);
+        }
+
         if !self.has_permission(self.permissions.network) {
             Self::push_completion(
                 &self.async_completions,
@@ -117,8 +168,6 @@ impl HostBridge {
             return String::from(r#"{"ok":true,"queued":true,"denied":true}"#);
         }
 
-        let payload =
-            extract_json_raw_value(req_json, "request").unwrap_or_else(|| req_json.to_string());
         let engine = Arc::clone(&self.http_engine);
         let completions = Arc::clone(&self.async_completions);
         thread::spawn(move || {

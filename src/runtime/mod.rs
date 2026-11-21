@@ -7,6 +7,7 @@ pub mod parser;
 pub mod quickjs_engine;
 mod reactivity;
 mod scene_exec;
+pub mod server_worker;
 
 use crate::config::AngularNativeConfig;
 use crate::desktop::{DesktopServices, DesktopTheme};
@@ -16,6 +17,7 @@ pub use host_bridge::HostBridge;
 pub use js_engine::{AnyJsEngine, JsEngineBackend, JscEngine, QuickJsEngine};
 pub use parser::{Instruction, parse_instruction, parse_script};
 use reactivity::{AttrBinding, HandlerAction, TextBinding, VisibilityBinding};
+pub use server_worker::{NativeServerWorker, is_local_api_url};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -110,6 +112,22 @@ impl JsRuntime {
 
     pub const fn host_bridge(&self) -> &Arc<HostBridge> {
         &self.host_bridge
+    }
+
+    /// Starts an isolated `JavaScriptCore` backend worker from `bundle_js` and attaches it
+    /// to this runtime's `HostBridge` so local `/api/*` HTTP calls execute in-memory.
+    pub fn attach_server_bundle(
+        &self,
+        bundle_js: &str,
+        persistent_sqlite: bool,
+    ) -> Result<Arc<NativeServerWorker>, String> {
+        let worker = Arc::new(NativeServerWorker::start(
+            &self.desktop,
+            bundle_js,
+            persistent_sqlite,
+        )?);
+        self.host_bridge.attach_server_worker(Arc::clone(&worker));
+        Ok(worker)
     }
 
     pub fn signal_value(&self, name: &str) -> Option<i64> {
