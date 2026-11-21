@@ -7,5 +7,5 @@
     "types": []
   },
   "include": ["examples/counter-app/src/**/*.ts"],
-  "exclude": ["examples/counter-app/src/**/*.spec.ts"]
+  "exclude": ["examples/counter-app/src/**/*.spec.ts", "examples/counter-app/src/server/**/*.ts"]
 }

@@ -578,6 +578,56 @@ impl WidgetKind {
             | Self::Anchor { .. } => Err(EngineError::InvalidParent(parent_id)),
         }
     }
+
+    #[must_use]
+    pub const fn tag_name(&self) -> &'static str {
+        match self {
+            Self::Window { .. } => "ng-window",
+            Self::HeaderBar { .. } => "ng-header-bar",
+            Self::Scroll { .. } => "ng-scroll",
+            Self::Box { .. } => "ng-box",
+            Self::Grid { .. } => "ng-grid",
+            Self::Separator { .. } => "ng-separator",
+            Self::Button { .. } => "ng-button",
+            Self::Label { .. } => "ng-label",
+            Self::Entry { .. } => "ng-entry",
+            Self::Switch { .. } => "ng-switch",
+            Self::CheckButton { .. } => "ng-checkbox",
+            Self::Slider { .. } => "ng-slider",
+            Self::DropDown { .. } => "ng-select",
+            Self::Image { .. } => "ng-image",
+            Self::LevelBar { .. } => "ng-level-bar",
+            Self::FlowBox { .. } => "ng-flow",
+            Self::Spinner { .. } => "ng-spinner",
+            Self::ProgressBar { .. } => "ng-progress-bar",
+            Self::Paned { .. } => "ng-paned",
+            Self::Stack { .. } => "ng-stack",
+            Self::Expander { .. } => "ng-expander",
+            Self::TextView { .. } => "ng-text-view",
+            Self::PasswordEntry { .. } => "ng-password-entry",
+            Self::SpinButton { .. } => "ng-spin-button",
+            Self::SearchEntry { .. } => "ng-search-entry",
+            Self::Clamp { .. } => "ng-clamp",
+            Self::Anchor { .. } => "ng-anchor",
+        }
+    }
+
+    #[must_use]
+    pub fn primary_text(&self) -> Option<&str> {
+        match self {
+            Self::Window { title, .. } | Self::HeaderBar { title, .. } => Some(title.as_str()),
+            Self::Label { text }
+            | Self::Entry { text, .. }
+            | Self::SearchEntry { text, .. }
+            | Self::PasswordEntry { text, .. }
+            | Self::TextView { text, .. } => Some(text.as_str()),
+            Self::Button { label }
+            | Self::CheckButton { label, .. }
+            | Self::Expander { label, .. } => Some(label.as_str()),
+            Self::Image { src, .. } => Some(src.as_str()),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]

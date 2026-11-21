@@ -553,13 +553,13 @@ mod tests {
     fn identifies_local_api_urls_without_matching_external_origins() {
         assert!(is_local_api_url("/api/favorites"));
         assert!(is_local_api_url("/api?limit=20"));
-        assert!(is_local_api_url("http://localhost/api/pokemon/25"));
+        assert!(is_local_api_url("http://localhost/api/items/25"));
         assert!(is_local_api_url("https://localhost/api/team"));
         assert!(is_local_api_url("local://api/catalog"));
 
-        assert!(!is_local_api_url("https://pokeapi.co/api/v2/pokemon/1"));
-        assert!(!is_local_api_url("http://127.0.0.1:8080/api/pokemon"));
-        assert!(!is_local_api_url("/apiv2/pokemon"));
+        assert!(!is_local_api_url("https://api.example.test/v2/items/1"));
+        assert!(!is_local_api_url("http://127.0.0.1:8080/api/items"));
+        assert!(!is_local_api_url("/apiv2/items"));
         assert!(!is_local_api_url("/assets/logo.png"));
     }
 }

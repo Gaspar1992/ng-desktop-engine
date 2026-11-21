@@ -19,6 +19,7 @@
     "test": "ng test",
     "test:pack": "node scripts/test-external-pack.mjs",
     "test:rust": "cargo test",
+    "test:e2e": "pnpm run build && cargo test --test test_e2e_harness -- --nocapture",
     "test:containers": "bash scripts/test-containers.sh",
     "lint": "oxlint . && eslint .",
     "lint:ox": "oxlint .",

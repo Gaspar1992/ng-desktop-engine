@@ -8,4 +8,5 @@ import { Component, CUSTOM_ELEMENTS_SCHEMA, input } from '@angular/core';
 })
 export class TypeBadge {
   readonly type = input<string>('');
+  readonly badgeClass = input<string>('badge-normal');
 }

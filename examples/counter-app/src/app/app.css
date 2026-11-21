@@ -119,6 +119,14 @@
   font-weight: 700;
 }
 
+.badge-normal {
+  background: #475569;
+  color: #ffffff;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
 .specs-panel {
   background: #30a7d7;
   color: #ffffff;

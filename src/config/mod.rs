@@ -165,6 +165,9 @@ impl AngularNativeConfig {
             output_override.as_deref(),
             target_override.as_deref(),
         );
+        if output_override.is_some() && cfg.permissions == AppPermissions::minimal() {
+            cfg.merge_adjacent_manifests(None);
+        }
         cfg
     }
 

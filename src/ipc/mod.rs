@@ -1,3 +1,5 @@
+pub mod test_harness;
+
 use crate::engine::EngineError;
 #[cfg(unix)]
 use std::collections::HashMap;

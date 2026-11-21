@@ -1,6 +1,7 @@
 use super::RenderEngine;
 use super::node::{EngineError, NodeId};
 use super::widget::WidgetKind;
+use crate::desktop::http_codec::escape_json;
 use crate::platforms::PlatformBackend;
 use std::fmt::Write;
 
@@ -424,5 +425,138 @@ impl<B: PlatformBackend> RenderEngine<B> {
             }
         }
         format!("{{{}}}", details.join(" "))
+    }
+
+    pub fn snapshot_tree_json(&self, root_id: NodeId) -> Result<String, EngineError> {
+        let mut out = String::with_capacity(512);
+        self.write_snapshot_node(root_id, &mut out)?;
+        Ok(out)
+    }
+
+    pub fn query_nodes_json(
+        &self,
+        root_id: NodeId,
+        id_or_testid: Option<&str>,
+        tag: Option<&str>,
+        text_contains: Option<&str>,
+    ) -> Result<String, EngineError> {
+        let _ = self.arena.get(root_id)?;
+        let mut matches = Vec::new();
+        self.collect_query_matches(root_id, id_or_testid, tag, text_contains, &mut matches);
+        Ok(format!("[{}]", matches.join(",")))
+    }
+
+    #[must_use]
+    pub fn find_node_by_attr(&self, root_id: NodeId, target: &str) -> Option<NodeId> {
+        let widget = self.arena.get(root_id).ok()?;
+        if let Some(attrs) = self.attributes.get(&root_id)
+            && (attrs.get("id").map(String::as_str) == Some(target)
+                || attrs.get("data-testid").map(String::as_str) == Some(target))
+        {
+            return Some(root_id);
+        }
+        for child_id in widget.child_ids() {
+            if let Some(found) = self.find_node_by_attr(child_id, target) {
+                return Some(found);
+            }
+        }
+        None
+    }
+
+    fn write_snapshot_node(&self, id: NodeId, out: &mut String) -> Result<(), EngineError> {
+        let widget = self.arena.get(id)?;
+        let attrs = self.attributes.get(&id);
+        let visible = attrs.and_then(|a| a.get("visible")).map(String::as_str) != Some("false");
+        let _ = write!(
+            out,
+            r#"{{"node":"{}:{}","tag":"{}","text":"#,
+            id.index,
+            id.generation,
+            widget.tag_name()
+        );
+        if let Some(text) = widget.primary_text() {
+            let _ = write!(out, "\"{}\"", escape_json(text));
+        } else {
+            out.push_str("null");
+        }
+        let _ = write!(out, ",\"visible\":{visible},\"classes\":[");
+        for (idx, cls) in self.styles.node_classes(id).iter().enumerate() {
+            if idx > 0 {
+                out.push(',');
+            }
+            let _ = write!(out, "\"{}\"", escape_json(cls));
+        }
+        out.push_str("],\"attrs\":{");
+        if let Some(attr_map) = attrs {
+            let mut pairs: Vec<(&String, &String)> = attr_map.iter().collect();
+            pairs.sort_by(|a, b| a.0.cmp(b.0));
+            for (idx, (k, v)) in pairs.iter().enumerate() {
+                if idx > 0 {
+                    out.push(',');
+                }
+                let _ = write!(out, "\"{}\":\"{}\"", escape_json(k), escape_json(v));
+            }
+        }
+        out.push_str("},\"children\":[");
+        let mut first_child = true;
+        for child_id in widget.child_ids() {
+            if self.arena.get(child_id).is_ok() {
+                if !first_child {
+                    out.push(',');
+                }
+                first_child = false;
+                self.write_snapshot_node(child_id, out)?;
+            }
+        }
+        out.push_str("]}");
+        Ok(())
+    }
+
+    fn collect_query_matches(
+        &self,
+        id: NodeId,
+        id_or_testid: Option<&str>,
+        tag: Option<&str>,
+        text_contains: Option<&str>,
+        out: &mut Vec<String>,
+    ) {
+        let Ok(widget) = self.arena.get(id) else {
+            return;
+        };
+        let attrs = self.attributes.get(&id);
+        let attr_id = attrs.and_then(|a| a.get("id")).map(String::as_str);
+        let attr_testid = attrs.and_then(|a| a.get("data-testid")).map(String::as_str);
+        let text_opt = widget.primary_text();
+        let matches_id = id_or_testid
+            .is_none_or(|needle| attr_id == Some(needle) || attr_testid == Some(needle));
+        let matches_tag = tag.is_none_or(|expected| widget.tag_name() == expected);
+        let matches_text =
+            text_contains.is_none_or(|needle| text_opt.is_some_and(|txt| txt.contains(needle)));
+
+        if matches_id && matches_tag && matches_text {
+            let visible = attrs.and_then(|a| a.get("visible")).map(String::as_str) != Some("false");
+            let id_json = attr_id.map_or_else(
+                || String::from("null"),
+                |val| format!("\"{}\"", escape_json(val)),
+            );
+            let testid_json = attr_testid.map_or_else(
+                || String::from("null"),
+                |val| format!("\"{}\"", escape_json(val)),
+            );
+            let text_json = text_opt.map_or_else(
+                || String::from("null"),
+                |val| format!("\"{}\"", escape_json(val)),
+            );
+            out.push(format!(
+                r#"{{"node":"{}:{}","tag":"{}","id":{id_json},"testId":{testid_json},"text":{text_json},"visible":{visible}}}"#,
+                id.index,
+                id.generation,
+                widget.tag_name(),
+            ));
+        }
+
+        for child_id in widget.child_ids() {
+            self.collect_query_matches(child_id, id_or_testid, tag, text_contains, out);
+        }
     }
 }
