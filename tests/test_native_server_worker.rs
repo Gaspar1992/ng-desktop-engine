@@ -78,7 +78,7 @@ fn pump_until_preview(
     win_id: ng_native_engine::engine::NodeId,
     expected: &str,
 ) -> String {
-    for _ in 0..40 {
+    for _ in 0..160 {
         let _ = rt.tick(engine).unwrap();
         let preview = engine.render_window_preview(win_id).unwrap();
         if preview.contains(expected) {
@@ -99,7 +99,9 @@ import {
   setResponseStatus,
 } from '@ng-desktop/server';
 
-const ensureSchema = (event: { context: { db: { execute: (sql: string) => boolean } } }) => {
+const ensureSchema = (event: {
+  context: { db: { execute: (sql: string, params?: readonly (string | number | boolean | null)[]) => boolean } };
+}) => {
   event.context.db.execute('CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, text TEXT);');
 };
 
@@ -110,9 +112,9 @@ registerNativeServerApp([
     handler: defineNativeEventHandler((event) => {
       ensureSchema(event);
       const body = readBody<{ id: number; text: string }>(event);
-      const safeText = String(body.text || '').replaceAll('\'', '\'\'');
       event.context.db.execute(
-        `INSERT OR REPLACE INTO notes (id, text) VALUES (${Number(body.id)}, '${safeText}');`,
+        'INSERT OR REPLACE INTO notes (id, text) VALUES (?, ?);',
+        [Number(body.id), String(body.text || '')],
       );
       setResponseStatus(event, 201, 'Created');
       return { saved: true, id: body.id };
@@ -132,12 +134,22 @@ registerNativeServerApp([
     handler: defineNativeEventHandler((event) => {
       ensureSchema(event);
       const id = getRouterParam(event, 'id');
-      const rows = event.context.db.query(`SELECT id, text FROM notes WHERE id = ${Number(id)};`);
+      const rows = event.context.db.query('SELECT id, text FROM notes WHERE id = ?;', [Number(id)]);
       if (rows.length === 0) {
         throw createError({ statusCode: 404, message: 'Note not found' });
       }
       return rows[0];
     }),
+  },
+  {
+    method: 'GET',
+    pattern: '/api/delayed',
+    handler: defineNativeEventHandler(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve({ settledAfterMs: 500 }), 500);
+        }),
+    ),
   },
   {
     method: 'GET',
@@ -182,19 +194,21 @@ fn routes_local_api_calls_to_isolated_server_worker_sqlite_and_hmr() {
         __NG_NATIVE__.httpRequestAsync(
           "POST",
           "/api/notes",
-          JSON.stringify({ id: 7, text: "persisted-in-worker" })
+          JSON.stringify({ id: 7, text: "O'Reilly; persisted-in-worker" })
         ).then((postRes) => {
           return Promise.all([
             Promise.resolve(postRes),
             __NG_NATIVE__.httpRequestAsync("GET", "/api/notes"),
             __NG_NATIVE__.httpRequestAsync("GET", "/api/notes/999"),
             __NG_NATIVE__.httpRequestAsync("GET", "/api/external"),
+            __NG_NATIVE__.httpRequestAsync("GET", "/api/delayed"),
           ]);
-        }).then(([postRes, listRes, missingRes, extRes]) => {
+        }).then(([postRes, listRes, missingRes, extRes, delayedRes]) => {
           const parsed = JSON.parse(listRes.body);
+          const delayed = JSON.parse(delayedRes.body);
           __NG_NATIVE__.setText(
             "lbl_notes",
-            `post=${postRes.status};note=${parsed.items[0].text}`
+            `post=${postRes.status};idType=${typeof parsed.items[0].id};note=${parsed.items[0].text};delay=${delayedRes.status}:${delayed.settledAfterMs}`
           );
           __NG_NATIVE__.setText(
             "lbl_err",
@@ -205,9 +219,9 @@ fn routes_local_api_calls_to_isolated_server_worker_sqlite_and_hmr() {
     rt.eval_js(&mut engine, ui_script).unwrap();
     let win = rt.resolve_primary_window().unwrap();
 
-    let preview = pump_until_preview(&mut rt, &mut engine, win, "note=persisted-in-worker");
+    let preview = pump_until_preview(&mut rt, &mut engine, win, "delay=200:500");
     assert!(
-        preview.contains("post=201;note=persisted-in-worker"),
+        preview.contains("post=201;idType=number;note=O'Reilly; persisted-in-worker;delay=200:500"),
         "preview:\n{preview}"
     );
     assert!(
@@ -380,7 +394,7 @@ fn real_angular_22_httpclient_calls_local_native_server_backend() {
     let mut engine = RenderEngine::new(HeadlessBackend::new());
     rt.eval_js(&mut engine, &frontend_js).unwrap();
 
-    for _ in 0..40 {
+    for _ in 0..160 {
         if let Ok(win) = rt.resolve_primary_window() {
             let preview = engine.render_window_preview(win).unwrap();
             if preview.contains("Hello from isolated server worker") {

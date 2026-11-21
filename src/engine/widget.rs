@@ -190,7 +190,7 @@ impl WidgetKind {
             "ng-level-bar" | "gtk-level-bar" => Ok(Self::LevelBar {
                 value: 0.0,
                 min: 0.0,
-                max: 255.0,
+                max: 100.0,
             }),
             "ng-flow" | "ng-flow-box" | "gtk-flow-box" => Ok(Self::FlowBox {
                 row_spacing: 0,
@@ -811,7 +811,7 @@ mod tests {
 
         let mut spin = WidgetKind::from_tag("ng-spin-button").unwrap();
         spin.set_attribute("min", "0");
-        spin.set_attribute("max", "1025");
+        spin.set_attribute("max", "500");
         spin.set_attribute("step", "5");
         spin.set_attribute("value", "25");
         assert!(matches!(
@@ -819,7 +819,7 @@ mod tests {
             WidgetKind::SpinButton {
                 value: 25,
                 min: 0,
-                max: 1025,
+                max: 500,
                 step: 5,
             }
         ));

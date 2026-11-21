@@ -1,28 +1,32 @@
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::config::AppPermissions;
 use crate::desktop::http_codec::escape_json;
 use crate::desktop::{DesktopServices, NativeHttpEngine};
 
-use super::host_bridge::{HostAsyncCompletion, HostBridge};
+use super::host_bridge::{HostAsyncCompletion, HostBridge, ServerResolveSlot};
 use super::jsc_sys::JscSys;
 
 const NG_NATIVE_SERVER_BOOTSTRAP_JS: &str = r"
 (() => {
   const logs = [];
+  const pushLog = (level, args) => {
+    if (logs.length >= 500) logs.shift();
+    logs.push([level, args.join(' ')]);
+  };
   let timers = new Map();
   let nextTimerId = 1;
   const startTime = Date.now();
 
   globalThis.console = {
-    log: (...args) => logs.push(['LOG', args.join(' ')]),
-    info: (...args) => logs.push(['INFO', args.join(' ')]),
-    warn: (...args) => logs.push(['WARN', args.join(' ')]),
-    debug: (...args) => logs.push(['DEBUG', args.join(' ')]),
-    error: (...args) => logs.push(['ERROR', args.join(' ')]),
+    log: (...args) => pushLog('LOG', args),
+    info: (...args) => pushLog('INFO', args),
+    warn: (...args) => pushLog('WARN', args),
+    debug: (...args) => pushLog('DEBUG', args),
+    error: (...args) => pushLog('ERROR', args),
   };
 
   if (typeof globalThis.performance === 'undefined') {
@@ -58,6 +62,16 @@ const NG_NATIVE_SERVER_BOOTSTRAP_JS: &str = r"
     return timers.size;
   };
 
+  globalThis.__nextServerTimerDelayMs = (nowMs = Date.now()) => {
+    if (timers.size === 0) return -1;
+    const now = typeof nowMs === 'number' && Number.isFinite(nowMs) ? nowMs : Date.now();
+    let earliest = Infinity;
+    for (const entry of timers.values()) {
+      if (entry.dueAt < earliest) earliest = entry.dueAt;
+    }
+    return Math.max(0, Math.ceil(earliest - now));
+  };
+
   const callService = (payload) => {
     if (typeof globalThis.__NG_NATIVE_HOST_SERVICE__ !== 'function') {
       return { ok: false, error: 'HostService unavailable in server worker' };
@@ -72,13 +86,21 @@ const NG_NATIVE_SERVER_BOOTSTRAP_JS: &str = r"
       if (!res.ok) throw new Error(res.error || 'sqliteOpen failed');
       return String(res.path || path);
     },
-    sqliteExecute(sql) {
-      const res = callService({ action: 'sqliteExecute', sql: String(sql ?? '') });
+    sqliteExecute(sql, params) {
+      const res = callService({
+        action: 'sqliteExecute',
+        sql: String(sql ?? ''),
+        ...(Array.isArray(params) ? { params } : {}),
+      });
       if (!res.ok) throw new Error(res.error || 'sqliteExecute failed');
       return true;
     },
-    sqliteQuery(sql) {
-      const res = callService({ action: 'sqliteQuery', sql: String(sql ?? '') });
+    sqliteQuery(sql, params) {
+      const res = callService({
+        action: 'sqliteQuery',
+        sql: String(sql ?? ''),
+        ...(Array.isArray(params) ? { params } : {}),
+      });
       if (!res.ok) throw new Error(res.error || 'sqliteQuery failed');
       return Array.isArray(res.rows) ? res.rows : [];
     },
@@ -170,12 +192,14 @@ const NG_NATIVE_SERVER_BOOTSTRAP_JS: &str = r"
     };
   }
 
-  globalThis.__NG_SERVER_LAST_RESULT__ = '';
-  globalThis.__NG_NATIVE_SERVER_DISPATCH__ = (req) => {
-    globalThis.__NG_SERVER_LAST_RESULT__ = '';
+  const sendResolved = (requestId, payload) => {
+    callService({ action: 'serverResolve', requestId, response: payload });
+  };
+
+  globalThis.__NG_NATIVE_SERVER_DISPATCH__ = (requestId, req) => {
     const router = globalThis.__NG_NATIVE_SERVER_ROUTER__;
     if (!router || typeof router.handle !== 'function') {
-      globalThis.__NG_SERVER_LAST_RESULT__ = JSON.stringify({
+      sendResolved(requestId, {
         status: 503,
         statusText: 'Service Unavailable',
         body: JSON.stringify({ error: 'No native server router registered', statusCode: 503 }),
@@ -189,7 +213,7 @@ const NG_NATIVE_SERVER_BOOTSTRAP_JS: &str = r"
 
     Promise.resolve(router.handle(req))
       .then((res) => {
-        globalThis.__NG_SERVER_LAST_RESULT__ = JSON.stringify({
+        sendResolved(requestId, {
           status: typeof res?.status === 'number' ? res.status : 200,
           statusText: String(res?.statusText || 'OK'),
           body: String(res?.body ?? ''),
@@ -200,7 +224,7 @@ const NG_NATIVE_SERVER_BOOTSTRAP_JS: &str = r"
         });
       })
       .catch((err) => {
-        globalThis.__NG_SERVER_LAST_RESULT__ = JSON.stringify({
+        sendResolved(requestId, {
           status: 500,
           statusText: 'Internal Server Error',
           body: JSON.stringify({
@@ -361,6 +385,8 @@ impl NativeServerWorker {
             Arc::clone(&boot.http_engine),
         );
         let worker_bridge = Arc::new(HostBridge::new(&worker_desktop));
+        let resolve_slot: ServerResolveSlot = Arc::new((Mutex::new(None), Condvar::new()));
+        worker_bridge.attach_server_resolve(Arc::clone(&resolve_slot));
         if boot.persistent_sqlite && boot.permissions.sqlite && boot.permissions.filesystem_xdg {
             let _ = worker_bridge.handle_service_call(r#"{"action":"sqliteOpen","path":"app.db"}"#);
         }
@@ -389,10 +415,15 @@ impl NativeServerWorker {
         }
         let _ = ready_tx.send(Ok(()));
 
-        Self::process_commands(&jsc, rx);
+        Self::process_commands(&jsc, &resolve_slot, rx);
     }
 
-    fn process_commands(jsc: &JscSys, rx: &Receiver<WorkerCommand>) {
+    fn process_commands(
+        jsc: &JscSys,
+        resolve_slot: &ServerResolveSlot,
+        rx: &Receiver<WorkerCommand>,
+    ) {
+        let mut next_request_id: u64 = 1;
         while let Ok(cmd) = rx.recv() {
             match cmd {
                 WorkerCommand::Dispatch {
@@ -400,7 +431,10 @@ impl NativeServerWorker {
                     callback_id,
                     completions,
                 } => {
-                    let payload_json = Self::execute_dispatch(jsc, &req_json);
+                    let request_id = next_request_id;
+                    next_request_id = next_request_id.wrapping_add(1);
+                    let payload_json =
+                        Self::execute_dispatch(jsc, resolve_slot, request_id, &req_json);
                     if let Ok(mut queue) = completions.lock() {
                         queue.push(HostAsyncCompletion {
                             callback_id,
@@ -417,8 +451,31 @@ impl NativeServerWorker {
         }
     }
 
-    fn execute_dispatch(jsc: &JscSys, req_json: &str) -> String {
-        let dispatch_script = format!("globalThis.__NG_NATIVE_SERVER_DISPATCH__({req_json});");
+    fn current_epoch_ms() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0_u64, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
+    }
+
+    fn take_resolved_payload(slot: &ServerResolveSlot, request_id: u64) -> Option<String> {
+        let mut guard = slot.0.lock().ok()?;
+        if guard.as_ref().is_some_and(|(rid, _)| *rid == request_id) {
+            return guard.take().map(|(_, payload)| payload);
+        }
+        None
+    }
+
+    fn execute_dispatch(
+        jsc: &JscSys,
+        resolve_slot: &ServerResolveSlot,
+        request_id: u64,
+        req_json: &str,
+    ) -> String {
+        if let Ok(mut guard) = resolve_slot.0.lock() {
+            *guard = None;
+        }
+        let dispatch_script =
+            format!("globalThis.__NG_NATIVE_SERVER_DISPATCH__({request_id}, {req_json});");
         if let Err(err) = jsc.eval(&dispatch_script) {
             return format!(
                 r#"{{"status":500,"statusText":"Server Dispatch Error","body":"{}","headers":{{"content-type":"application/json"}},"transport":"native-server","callKind":"json","cached":false}}"#,
@@ -426,31 +483,47 @@ impl NativeServerWorker {
             );
         }
 
-        for _ in 0..200 {
-            if let Ok(result) = jsc.eval("globalThis.__NG_SERVER_LAST_RESULT__ || ''")
-                && !result.is_empty()
-                && result != "undefined"
-            {
-                return result;
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            if let Some(payload) = Self::take_resolved_payload(resolve_slot, request_id) {
+                return payload;
             }
-            let now_ms = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_or(0_u64, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
-            let pending = jsc
-                .eval(&format!("globalThis.__tickServerTimers({now_ms})"))
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            let now_ms = Self::current_epoch_ms();
+            let delay_ms = jsc
+                .eval(&format!("globalThis.__nextServerTimerDelayMs({now_ms})"))
                 .ok()
-                .and_then(|s| s.parse::<usize>().ok())
-                .unwrap_or(0);
-            if pending == 0 {
-                if let Ok(result) = jsc.eval("globalThis.__NG_SERVER_LAST_RESULT__ || ''")
-                    && !result.is_empty()
-                    && result != "undefined"
-                {
-                    return result;
+                .and_then(|s| s.trim().parse::<i64>().ok())
+                .unwrap_or(-1);
+            if delay_ms < 0 {
+                if let Some(payload) = Self::take_resolved_payload(resolve_slot, request_id) {
+                    return payload;
                 }
                 break;
             }
-            thread::sleep(Duration::from_millis(2));
+            if delay_ms > 0
+                && let Ok(guard) = resolve_slot.0.lock()
+            {
+                let wait_dur =
+                    Duration::from_millis(u64::try_from(delay_ms).unwrap_or(0)).min(remaining);
+                let (mut after_wait, _) = resolve_slot
+                    .1
+                    .wait_timeout(guard, wait_dur)
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if after_wait
+                    .as_ref()
+                    .is_some_and(|(rid, _)| *rid == request_id)
+                {
+                    if let Some((_, payload)) = after_wait.take() {
+                        return payload;
+                    }
+                }
+            }
+            let tick_now = Self::current_epoch_ms();
+            let _ = jsc.eval(&format!("globalThis.__tickServerTimers({tick_now})"));
         }
 
         String::from(

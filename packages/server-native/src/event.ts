@@ -29,10 +29,15 @@ export interface NativeServerHttpResponse {
   cached?: boolean;
 }
 
+export type NativeServerSqlParam = string | number | boolean | null;
+
 export interface NativeServerDbContext {
   open(path: string): string;
-  execute(sql: string): boolean;
-  query<T extends Record<string, string> = Record<string, string>>(sql: string): T[];
+  execute(sql: string, params?: readonly NativeServerSqlParam[]): boolean;
+  query<T extends Record<string, unknown> = Record<string, unknown>>(
+    sql: string,
+    params?: readonly NativeServerSqlParam[],
+  ): T[];
 }
 
 export interface NativeServerFsContext {

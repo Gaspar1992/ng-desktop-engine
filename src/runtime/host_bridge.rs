@@ -1,7 +1,8 @@
+use std::collections::VecDeque;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
-use std::sync::{Arc, Mutex};
-use std::thread;
+use std::sync::{Arc, Condvar, Mutex};
+use std::thread::{self, JoinHandle};
 
 use crate::config::AppPermissions;
 use crate::desktop::DesktopServices;
@@ -12,10 +13,110 @@ use crate::desktop::http_codec::{
     extract_json_string_array, extract_json_u64,
 };
 use crate::desktop::http_native::NativeHttpEngine;
-use crate::desktop::sqlite_sys::NativeSqliteDatabase;
+use crate::desktop::sqlite_sys::{NativeSqliteDatabase, SqlParam, parse_json_params};
 use crate::desktop::system_env::NativeSystemEnv;
 
 use super::server_worker::{NativeServerWorker, is_local_api_url};
+
+const HOST_IO_WORKERS: usize = 6;
+
+pub(crate) type ServerResolveSlot = Arc<(Mutex<Option<(u64, String)>>, Condvar)>;
+
+type IoTask = Box<dyn FnOnce() + Send + 'static>;
+
+struct IoPoolState {
+    queue: VecDeque<IoTask>,
+    closed: bool,
+    started: bool,
+}
+
+struct IoWorkerPool {
+    shared: Arc<(Mutex<IoPoolState>, Condvar)>,
+    handles: Mutex<Vec<JoinHandle<()>>>,
+}
+
+impl IoWorkerPool {
+    fn new() -> Self {
+        Self {
+            shared: Arc::new((
+                Mutex::new(IoPoolState {
+                    queue: VecDeque::new(),
+                    closed: false,
+                    started: false,
+                }),
+                Condvar::new(),
+            )),
+            handles: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn submit(&self, task: impl FnOnce() + Send + 'static) {
+        let should_spawn = {
+            let (lock, cvar) = &*self.shared;
+            let Ok(mut guard) = lock.lock() else {
+                return;
+            };
+            guard.queue.push_back(Box::new(task));
+            let spawn_now = !guard.started;
+            guard.started = true;
+            cvar.notify_one();
+            spawn_now
+        };
+        if should_spawn
+            && let Ok(mut handles) = self.handles.lock()
+            && handles.is_empty()
+        {
+            for idx in 0..HOST_IO_WORKERS {
+                let shared = Arc::clone(&self.shared);
+                if let Ok(handle) = thread::Builder::new()
+                    .name(format!("ng-host-io-{idx}"))
+                    .spawn(move || Self::worker_loop(&shared))
+                {
+                    handles.push(handle);
+                }
+            }
+        }
+    }
+
+    fn worker_loop(shared: &Arc<(Mutex<IoPoolState>, Condvar)>) {
+        loop {
+            let task = {
+                let (lock, cvar) = &**shared;
+                let Ok(mut guard) = lock.lock() else {
+                    break;
+                };
+                while guard.queue.is_empty() && !guard.closed {
+                    let Ok(next) = cvar.wait(guard) else {
+                        return;
+                    };
+                    guard = next;
+                }
+                if let Some(t) = guard.queue.pop_front() {
+                    t
+                } else if guard.closed {
+                    break;
+                } else {
+                    continue;
+                }
+            };
+            task();
+        }
+    }
+}
+
+impl Drop for IoWorkerPool {
+    fn drop(&mut self) {
+        if let Ok(mut guard) = self.shared.0.lock() {
+            guard.closed = true;
+            self.shared.1.notify_all();
+        }
+        if let Ok(mut handles) = self.handles.lock() {
+            for handle in handles.drain(..) {
+                let _ = handle.join();
+            }
+        }
+    }
+}
 
 /// Asynchronous completion payload emitted by a background host operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,6 +136,8 @@ pub struct HostBridge {
     system_env: Mutex<NativeSystemEnv>,
     async_completions: Arc<Mutex<Vec<HostAsyncCompletion>>>,
     server_worker: Mutex<Option<Arc<NativeServerWorker>>>,
+    server_resolve: Mutex<Option<ServerResolveSlot>>,
+    io_pool: IoWorkerPool,
 }
 
 impl HostBridge {
@@ -51,6 +154,8 @@ impl HostBridge {
             system_env: Mutex::new(NativeSystemEnv::detect_for_app(&app_id)),
             async_completions: Arc::new(Mutex::new(Vec::new())),
             server_worker: Mutex::new(None),
+            server_resolve: Mutex::new(None),
+            io_pool: IoWorkerPool::new(),
             app_id,
         }
     }
@@ -59,6 +164,12 @@ impl HostBridge {
     pub fn attach_server_worker(&self, worker: Arc<NativeServerWorker>) {
         if let Ok(mut guard) = self.server_worker.lock() {
             *guard = Some(worker);
+        }
+    }
+
+    pub(crate) fn attach_server_resolve(&self, slot: ServerResolveSlot) {
+        if let Ok(mut guard) = self.server_resolve.lock() {
+            *guard = Some(slot);
         }
     }
 
@@ -77,6 +188,7 @@ impl HostBridge {
             "httpSync" => self.handle_http_sync(req_json),
             "httpBatchAsync" => self.handle_http_batch_async(req_json),
             "downloadImageAsync" => self.handle_download_image_async(req_json),
+            "serverResolve" => self.handle_server_resolve(req_json),
             "sqliteExecute" | "sqliteQuery" | "sqliteOpen" => self.handle_sqlite(&action, req_json),
             "fsResolvePath" | "fsReadText" | "fsWriteText" | "fsWatchFile"
             | "fsPollChangedFiles" => self.handle_filesystem(&action, req_json),
@@ -122,6 +234,26 @@ impl HostBridge {
             .any(|c| matches!(c, Component::ParentDir))
     }
 
+    fn handle_server_resolve(&self, req_json: &str) -> String {
+        let Some(request_id) = extract_json_u64(req_json, "requestId") else {
+            return Self::err_json("Missing requestId for serverResolve");
+        };
+        let Some(response_json) = extract_json_raw_value(req_json, "response") else {
+            return Self::err_json("Missing response payload for serverResolve");
+        };
+        let Ok(guard) = self.server_resolve.lock() else {
+            return Self::err_json("Server resolve lock poisoned");
+        };
+        let Some(slot) = guard.as_ref() else {
+            return Self::err_json("No server resolve slot attached");
+        };
+        if let Ok(mut pending) = slot.0.lock() {
+            *pending = Some((request_id, response_json));
+            slot.1.notify_one();
+        }
+        String::from(r#"{"ok":true}"#)
+    }
+
     fn handle_http_sync(&self, req_json: &str) -> String {
         if !self.has_permission(self.permissions.network) {
             return String::from(
@@ -130,10 +262,7 @@ impl HostBridge {
         }
         let payload =
             extract_json_raw_value(req_json, "request").unwrap_or_else(|| req_json.to_string());
-        self.http_engine.lock().map_or_else(
-            |_| String::from(r#"{"status":500,"statusText":"Host Mutex Poisoned","body":""}"#),
-            |mut guard| guard.execute_bridge_json(&payload),
-        )
+        NativeHttpEngine::execute_bridge_detached(&self.http_engine, &payload)
     }
 
     fn handle_http_async(&self, req_json: &str) -> String {
@@ -170,11 +299,8 @@ impl HostBridge {
 
         let engine = Arc::clone(&self.http_engine);
         let completions = Arc::clone(&self.async_completions);
-        thread::spawn(move || {
-            let result_json = engine.lock().map_or_else(
-                |_| r#"{"status":500,"statusText":"Host Mutex Poisoned","body":"","headers":{},"transport":"host-error","callKind":"json","cached":false}"#.to_string(),
-                |mut guard| guard.execute_bridge_json(&payload),
-            );
+        self.io_pool.submit(move || {
+            let result_json = NativeHttpEngine::execute_bridge_detached(&engine, &payload);
             Self::push_completion(&completions, callback_id, result_json);
         });
         String::from(r#"{"ok":true,"queued":true}"#)
@@ -198,11 +324,8 @@ impl HostBridge {
         };
         let engine = Arc::clone(&self.http_engine);
         let completions = Arc::clone(&self.async_completions);
-        thread::spawn(move || {
-            let result_json = engine.lock().map_or_else(
-                |_| String::from("[]"),
-                |mut guard| guard.execute_bridge_json(&requests_json),
-            );
+        self.io_pool.submit(move || {
+            let result_json = NativeHttpEngine::execute_bridge_detached(&engine, &requests_json);
             Self::push_completion(&completions, callback_id, result_json);
         });
         String::from(r#"{"ok":true,"queued":true}"#)
@@ -246,7 +369,7 @@ impl HostBridge {
             (cfg.max_parallel_connections, cfg.timeout_ms)
         });
         let completions = Arc::clone(&self.async_completions);
-        thread::spawn(move || {
+        self.io_pool.submit(move || {
             let trimmed = url.trim();
             let downloaded = if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
                 let pairs = [(trimmed.to_string(), dest)];
@@ -270,6 +393,11 @@ impl HostBridge {
         String::from(r#"{"ok":true,"cached":false,"queued":true}"#)
     }
 
+    fn parse_sqlite_params(req_json: &str) -> Result<Vec<SqlParam>, String> {
+        extract_json_raw_value(req_json, "params")
+            .map_or_else(|| Ok(Vec::new()), |raw| parse_json_params(&raw))
+    }
+
     fn handle_sqlite(&self, action: &str, req_json: &str) -> String {
         if !self.has_permission(self.permissions.sqlite) {
             return Self::err_json("Permission denied: sqlite");
@@ -277,22 +405,35 @@ impl HostBridge {
         match action {
             "sqliteExecute" => {
                 let sql = extract_json_string(req_json, "sql").unwrap_or_default();
+                let params = match Self::parse_sqlite_params(req_json) {
+                    Ok(p) => p,
+                    Err(e) => return Self::err_json(&e),
+                };
                 let Ok(mut db) = self.sqlite.lock() else {
                     return Self::err_json("SQLite mutex poisoned");
                 };
-                match db.execute(&sql) {
+                match db.execute_params(&sql, &params) {
                     Ok(()) => String::from(r#"{"ok":true}"#),
                     Err(e) => Self::err_json(&e),
                 }
             }
             "sqliteQuery" => {
                 let sql = extract_json_string(req_json, "sql").unwrap_or_default();
+                let params = match Self::parse_sqlite_params(req_json) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        return format!(
+                            r#"{{"ok":false,"rows":[],"error":"{}"}}"#,
+                            escape_json(&e)
+                        );
+                    }
+                };
                 let Ok(db) = self.sqlite.lock() else {
                     return String::from(
                         r#"{"ok":false,"rows":[],"error":"SQLite mutex poisoned"}"#,
                     );
                 };
-                match db.query_json(&sql) {
+                match db.query_json_params(&sql, &params) {
                     Ok(rows_json) => format!(r#"{{"ok":true,"rows":{rows_json}}}"#),
                     Err(e) => {
                         format!(r#"{{"ok":false,"rows":[],"error":"{}"}}"#, escape_json(&e))

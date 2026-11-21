@@ -106,6 +106,15 @@ function launchHostEngine(ws, engineArgs, { preferReleaseCargo = false, envExtra
     cwd: ws.workspaceRoot,
     env: { ...process.env, ...envExtra },
   });
+  if (run.error?.code === 'ENOENT') {
+    process.stderr.write(
+      resolvedEngine.mode === 'cargo'
+        ? `[ng-desktop] Native engine not found for ${resolvedEngine.targetKey}. ` +
+            `Install '${resolvedEngine.packageName ?? '@ng-desktop/engine-*'}' (no 'cargo' available), ` +
+            `or set NG_DESKTOP_ENGINE_BIN to the engine binary.\n`
+        : `[ng-desktop] Could not execute engine binary '${resolvedEngine.command}'.\n`,
+    );
+  }
   process.exitCode = run.status ?? 1;
 }
 

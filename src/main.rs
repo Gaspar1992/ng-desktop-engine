@@ -1,9 +1,8 @@
 use ng_native_engine::config::AngularNativeConfig;
-use ng_native_engine::desktop::PokedexController;
 use ng_native_engine::engine::{NodeId, RenderEngine};
 use ng_native_engine::ipc::{HmrIpcServer, HmrMessage, HmrResponse};
 use ng_native_engine::packager::{stage_all_distributions, stage_linux_distribution};
-use ng_native_engine::platforms::AnyPlatformBackend;
+use ng_native_engine::platforms::{AnyPlatformBackend, PlatformBackend};
 use ng_native_engine::runtime::{JsEngineBackend, JsRuntime, NativeServerWorker};
 use std::env;
 use std::fs;
@@ -22,8 +21,7 @@ fn handle_hmr_messages(
     engine: &mut RenderEngine<AnyPlatformBackend>,
     js_runtime: &mut JsRuntime,
     win_id: NodeId,
-) -> bool {
-    let mut reloaded = false;
+) {
     for (cid, msg) in server.poll_messages() {
         match msg {
             HmrMessage::Reload { script } => {
@@ -31,7 +29,6 @@ fn handle_hmr_messages(
                     eprintln!("[HMR IPC Error] Failed to reload bundle: {err:?}");
                     server.send_response(cid, &HmrResponse::Error(format!("{err:?}")));
                 } else {
-                    reloaded = true;
                     println!("\n[HMR IPC] Applied live update (signals preserved):");
                     println!("{}", engine.render_window_preview(win_id).unwrap());
                     server.send_response(cid, &HmrResponse::Ok { reloaded: true });
@@ -48,10 +45,7 @@ fn handle_hmr_messages(
             }
         }
     }
-    reloaded
 }
-
-const STANDALONE_POKEDEX_NGB: &str = include_str!("standalone_pokedex.ngb");
 
 fn resolve_bundle_candidate_path(cfg: &AngularNativeConfig, filename: &str) -> Option<PathBuf> {
     let mut candidates = vec![PathBuf::from(format!("{}/{filename}", cfg.output_path))];
@@ -77,9 +71,9 @@ fn resolve_server_bundle_path(cfg: &AngularNativeConfig) -> Option<PathBuf> {
     resolve_bundle_candidate_path(cfg, "server.bundle.js")
 }
 
-fn ensure_bundle_compiled(cfg: &AngularNativeConfig, bundle_path: &str) -> String {
+fn ensure_bundle_compiled(cfg: &AngularNativeConfig, bundle_path: &str) -> Result<String, String> {
     if let Ok(script) = fs::read_to_string(bundle_path) {
-        return script;
+        return Ok(script);
     }
 
     // Check installed system / bundle locations (.deb /usr/share, macOS .app Resources, adjacent to .exe)
@@ -92,12 +86,12 @@ fn ensure_bundle_compiled(cfg: &AngularNativeConfig, bundle_path: &str) -> Strin
             exe_dir.join(format!("../share/{}/main.ngb", cfg.project_name)),
         ] {
             if let Ok(script) = fs::read_to_string(&candidate) {
-                return script;
+                return Ok(script);
             }
         }
     }
     if let Ok(script) = fs::read_to_string(format!("/usr/share/{}/main.ngb", cfg.project_name)) {
-        return script;
+        return Ok(script);
     }
 
     if Path::new("packages/builders-native/src/build-bundle.mjs").exists() {
@@ -113,11 +107,13 @@ fn ensure_bundle_compiled(cfg: &AngularNativeConfig, bundle_path: &str) -> Strin
             ])
             .status();
         if let Ok(script) = fs::read_to_string(bundle_path) {
-            return script;
+            return Ok(script);
         }
     }
 
-    String::from(STANDALONE_POKEDEX_NGB)
+    Err(format!(
+        "No compiled Angular bundle found at '{bundle_path}'. Run 'ng-desktop build' or 'pnpm run build' first."
+    ))
 }
 
 type ServerWatchState = Option<(Arc<NativeServerWorker>, String, Option<SystemTime>)>;
@@ -156,27 +152,14 @@ fn run_interactive_loop(
     mut hmr_server: Option<HmrIpcServer>,
 ) {
     println!(
-        "\n[GTK4 Native Window Active] Opened native Linux window '{}'. Watching '{}' for Hot Reload...",
-        ctx.cfg.project_name, ctx.bundle_path
+        "\n[Native Window Active] Opened '{}' ({}). Watching '{}' for Hot Reload...",
+        ctx.cfg.project_name,
+        engine.backend().backend_name(),
+        ctx.bundle_path
     );
-    let mut pokedex = if ctx.is_js_bundle {
-        None
-    } else {
-        js_runtime
-            .resolve_var("pokemon_grid")
-            .ok()
-            .map(|_| PokedexController::new(&js_runtime))
-    };
-    if let Some(ctrl) = pokedex.as_mut() {
-        ctrl.show_list(&mut engine);
-        ctrl.start_initial_load(&mut engine);
-    }
 
     while engine.backend().open_window_count() > 0 {
         for ev in engine.backend().step_native_events(false) {
-            if let Some(ctrl) = pokedex.as_mut() {
-                ctrl.handle_event(&ev, &mut engine, &mut js_runtime);
-            }
             if let Err(err) = js_runtime.trigger_node_event_with_payload(
                 &mut engine,
                 ev.node,
@@ -187,22 +170,17 @@ fn run_interactive_loop(
             }
         }
 
-        if ctx.is_js_bundle {
-            if let Err(err) = js_runtime.tick(&mut engine) {
-                eprintln!("[JS Tick Error] {err:?}");
-            }
-        } else if let Some(ctrl) = pokedex.as_mut() {
-            ctrl.tick(&mut engine, &mut js_runtime);
+        if ctx.is_js_bundle
+            && let Err(err) = js_runtime.tick(&mut engine)
+        {
+            eprintln!("[JS Tick Error] {err:?}");
         }
         // Commands queued outside event dispatch (async results, view switches) must be
-        // flushed explicitly, otherwise they only reach GTK on the *next* user event.
+        // flushed explicitly, otherwise they only reach the native toolkit on the next event.
         engine.flush_frame();
 
-        if let Some(ref mut server) = hmr_server
-            && handle_hmr_messages(server, &mut engine, &mut js_runtime, ctx.win_id)
-            && let Some(ctrl) = pokedex.as_mut()
-        {
-            ctrl.refresh_after_reload(&mut engine, &js_runtime);
+        if let Some(ref mut server) = hmr_server {
+            handle_hmr_messages(server, &mut engine, &mut js_runtime, ctx.win_id);
         }
 
         let current_mtime = bundle_modified_time(ctx.bundle_path);
@@ -220,9 +198,6 @@ fn run_interactive_loop(
             if let Err(err) = update_res {
                 eprintln!("[Hot Reload Error] Failed to apply bundle update: {err:?}");
             } else {
-                if let Some(ctrl) = pokedex.as_mut() {
-                    ctrl.refresh_after_reload(&mut engine, &js_runtime);
-                }
                 println!(
                     "\n[Hot Reload] Applied live update from '{}' (signals preserved):",
                     ctx.bundle_path
@@ -329,7 +304,13 @@ fn main() {
         (path_str, true, mtime)
     } else {
         let ngb_path = format!("{}/main.ngb", cfg.output_path);
-        let bootstrap_script = ensure_bundle_compiled(&cfg, &ngb_path);
+        let bootstrap_script = match ensure_bundle_compiled(&cfg, &ngb_path) {
+            Ok(script) => script,
+            Err(err) => {
+                eprintln!("[NgDesktop Error] {err}");
+                std::process::exit(1);
+            }
+        };
         let mtime = bundle_modified_time(&ngb_path);
         js_runtime
             .eval_tick(&mut engine, &bootstrap_script)
