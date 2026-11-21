@@ -8,8 +8,6 @@ pub mod fs_watcher;
 pub mod http_codec;
 pub mod http_native;
 mod libsoup_sys;
-pub mod pokedex;
-pub mod pokedex_ui;
 pub mod sqlite_sys;
 pub mod system_env;
 
@@ -19,8 +17,6 @@ pub use http_native::{
     NativeHttpCallKind, NativeHttpConfig, NativeHttpEngine, NativeHttpRequest, NativeHttpResponse,
     OsHttpPlatform,
 };
-pub use pokedex::{PokemonIndexEntry, PokemonInfo};
-pub use pokedex_ui::PokedexController;
 pub use sqlite_sys::{NativeSqliteDatabase, OsSqliteBackend};
 pub use system_env::{NativeSystemEnv, OsSystemEnvBackend};
 

@@ -28,6 +28,7 @@ const PACKAGE_ORDER = [
   { dir: 'router-native', compiler: 'ngc' },
   { dir: 'http-native', compiler: 'ngc' },
   { dir: 'desktop-native', compiler: 'ngc' },
+  { dir: 'server-native', compiler: 'tsc' },
   { dir: 'builders-native', compiler: 'tsc' },
 ];
 
@@ -187,6 +188,11 @@ function buildSinglePackage(pkgConfig, builtPackages) {
     pkgConfig.dir === 'builders-native'
       ? ['fesm2022', 'bin', 'builders.json', 'schema', 'schematics', 'README.md', 'LICENSE']
       : ['fesm2022', 'README.md', 'LICENSE'];
+
+  // Source maps are not published (no .ts sources shipped). `files` negation is what npm
+  // actually honors at the package root; .npmignore is kept as explicit documentation.
+  filesList.push('!**/*.map');
+  writeFileSync(resolve(pkgOutDir, '.npmignore'), '*.map\n**/*.map\n', 'utf8');
 
   const apfPkg = {
     name: rawPkg.name,

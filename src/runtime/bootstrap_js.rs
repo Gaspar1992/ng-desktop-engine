@@ -63,15 +63,24 @@ globalThis.__NG_NATIVE__ = (() => {
     return id;
   };
 
+  const pushLog = (level, msg) => {
+    if (logs.length >= 500) logs.shift();
+    logs.push([level, msg]);
+  };
+  const pushSystemError = (msg) => {
+    if (systemErrors.length >= 200) systemErrors.shift();
+    systemErrors.push(msg);
+  };
+
   globalThis.console = {
-    log: (...args) => logs.push(['LOG', args.join(' ')]),
-    info: (...args) => logs.push(['INFO', args.join(' ')]),
-    warn: (...args) => logs.push(['WARN', args.join(' ')]),
-    debug: (...args) => logs.push(['DEBUG', args.join(' ')]),
+    log: (...args) => pushLog('LOG', args.join(' ')),
+    info: (...args) => pushLog('INFO', args.join(' ')),
+    warn: (...args) => pushLog('WARN', args.join(' ')),
+    debug: (...args) => pushLog('DEBUG', args.join(' ')),
     error: (...args) => {
       const msg = args.join(' ');
-      logs.push(['ERROR', msg]);
-      systemErrors.push(msg);
+      pushLog('ERROR', msg);
+      pushSystemError(msg);
       callHostService({ action: 'logError', message: msg });
     },
   };
@@ -570,7 +579,7 @@ globalThis.__NG_NATIVE__ = (() => {
     },
     logSystemError(message) {
       const text = String(message ?? '');
-      systemErrors.push(text);
+      pushSystemError(text);
       callHostService({ action: 'logError', message: text });
     },
     getSystemErrors() {

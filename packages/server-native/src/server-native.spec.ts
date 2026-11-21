@@ -134,13 +134,17 @@ describe('@ng-desktop/server — AnalogJS-style Native Server Router', () => {
   });
 
   it('registers router globally and delegates db/fs/compute/http calls to __NG_NATIVE_SERVER_HOST__', async () => {
-    const executedSql: string[] = [];
+    const executedSql: Array<{ sql: string; params?: readonly unknown[] }> = [];
+    const queriedSql: Array<{ sql: string; params?: readonly unknown[] }> = [];
     const mockHost: NativeServerHostBridge = {
-      sqliteExecute: (sql) => {
-        executedSql.push(sql);
+      sqliteExecute: (sql, params) => {
+        executedSql.push({ sql, params });
         return true;
       },
-      sqliteQuery: () => [{ id: '1', name: 'bulbasaur' }],
+      sqliteQuery: (sql, params) => {
+        queriedSql.push({ sql, params });
+        return [{ id: 1, name: 'bulbasaur' }];
+      },
       fsResolvePath: (kind, rel) => `/xdg/${kind}/${rel}`,
       fsReadText: () => '{"ok":true}',
       fsWriteText: () => true,
@@ -173,8 +177,8 @@ describe('@ng-desktop/server — AnalogJS-style Native Server Router', () => {
           method: 'GET',
           pattern: '/api/bootstrap',
           handler: defineNativeEventHandler(async (event) => {
-            event.context.db.execute('SELECT 1;');
-            const rows = event.context.db.query('SELECT * FROM catalog;');
+            event.context.db.execute('INSERT INTO catalog VALUES (?, ?);', [1, 'bulbasaur']);
+            const rows = event.context.db.query('SELECT * FROM catalog WHERE id = ?;', [1]);
             const filtered = event.context.compute.fuzzyFilter(['pikachu', 'bulbasaur'], 'bulb');
             const cachePath = event.context.fs.resolvePath('cache', 'catalog.json');
             const upstream = await event.context.http.get('https://pokeapi.co/api/v2/pokemon/1');
@@ -192,9 +196,12 @@ describe('@ng-desktop/server — AnalogJS-style Native Server Router', () => {
       expect(g.__NG_NATIVE_SERVER_ROUTER__).toBe(router);
       const res = await router.handle({ method: 'GET', url: '/api/bootstrap' });
       expect(res.status).toBe(200);
-      expect(executedSql).toEqual(['SELECT 1;']);
+      expect(executedSql).toEqual([
+        { sql: 'INSERT INTO catalog VALUES (?, ?);', params: [1, 'bulbasaur'] },
+      ]);
+      expect(queriedSql).toEqual([{ sql: 'SELECT * FROM catalog WHERE id = ?;', params: [1] }]);
       expect(JSON.parse(res.body)).toEqual({
-        rows: [{ id: '1', name: 'bulbasaur' }],
+        rows: [{ id: 1, name: 'bulbasaur' }],
         filtered: [{ index: 1, score: 100, value: 'bulbasaur' }],
         cachePath: '/xdg/cache/catalog.json',
         hash: 'h_3',

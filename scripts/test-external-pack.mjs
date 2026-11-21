@@ -23,6 +23,7 @@ const PACKAGE_DIRS = [
   'router-native',
   'http-native',
   'desktop-native',
+  'server-native',
   'builders-native',
 ];
 
@@ -73,6 +74,7 @@ async function main() {
       packedFiles.set(pkgDir, { tgzAbs, pkgJson });
 
       const contents = execFileSync('tar', ['-tzf', tgzAbs], { encoding: 'utf8' });
+      assertCondition(!contents.includes('.map'), `${pkgDir} unexpectedly contains .map files`);
       assertCondition(contents.includes('package/fesm2022/index.js'), `${pkgDir} missing index.js`);
       assertCondition(
         contents.includes('package/fesm2022/index.d.ts'),
@@ -100,6 +102,33 @@ async function main() {
     symlinkSync(resolve(ROOT_DIR, 'node_modules'), join(unpackDir, 'node_modules'), 'junction');
     execFileSync('tar', ['-xzf', buildersInfo.tgzAbs, '-C', unpackDir]);
     const unpackedBuildersRoot = join(unpackDir, 'package');
+    for (const rel of ['fesm2022/index.js', 'fesm2022/index.d.ts']) {
+      const content = readFileSync(join(unpackedBuildersRoot, rel), 'utf8');
+      assertCondition(
+        !content.includes('sourceMappingURL='),
+        `builders-native ${rel} still contains dangling sourceMappingURL comment`,
+      );
+    }
+
+    const serverUnpackDir = join(workDir, 'unpacked-server');
+    mkdirSync(serverUnpackDir, { recursive: true });
+    execFileSync('tar', ['-xzf', packedFiles.get('server-native').tgzAbs, '-C', serverUnpackDir]);
+    for (const rel of ['fesm2022/index.js', 'fesm2022/index.d.ts']) {
+      const content = readFileSync(join(serverUnpackDir, 'package', rel), 'utf8');
+      assertCondition(
+        !content.includes('sourceMappingURL='),
+        `server-native ${rel} still contains dangling sourceMappingURL comment`,
+      );
+    }
+    const serverMod = await import(
+      pathToFileURL(join(serverUnpackDir, 'package/fesm2022/index.js')).href
+    );
+    assertCondition(
+      typeof serverMod.defineNativeEventHandler === 'function' &&
+        typeof serverMod.createNativeServerRouter === 'function',
+      'Packed server-native missing expected runtime exports',
+    );
+
     const buildersMod = await import(
       pathToFileURL(join(unpackedBuildersRoot, 'fesm2022/index.js')).href
     );

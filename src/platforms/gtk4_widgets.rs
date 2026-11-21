@@ -143,7 +143,7 @@ impl Gtk4Sys {
     pub fn create_level_bar(&self) -> GtkHandle {
         unsafe {
             let bar = (self.gtk_level_bar_new)();
-            (self.gtk_level_bar_set_max_value)(bar, 255.0);
+            (self.gtk_level_bar_set_max_value)(bar, 100.0);
             GtkHandle(bar)
         }
     }
@@ -424,7 +424,7 @@ impl Gtk4Sys {
     }
 
     pub fn create_spin_button(&self) -> GtkHandle {
-        unsafe { GtkHandle((self.gtk_spin_button_new_with_range)(0.0, 1025.0, 1.0)) }
+        unsafe { GtkHandle((self.gtk_spin_button_new_with_range)(0.0, 100.0, 1.0)) }
     }
 
     pub fn set_spin_button_value(&self, sb: GtkHandle, val: f64) {

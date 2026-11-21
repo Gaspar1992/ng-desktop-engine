@@ -197,7 +197,7 @@ fn nivel1_native_sqlite_ffi_and_system_env() {
             .sqlite()
             .query_json("SELECT id, name FROM items ORDER BY id ASC;")
             .unwrap();
-        assert_eq!(json, r#"[{"id":"25","name":"Notebook"}]"#);
+        assert_eq!(json, r#"[{"id":25,"name":"Notebook"}]"#);
     }
 
     assert_ne!(desktop.system_env().locale(), "");

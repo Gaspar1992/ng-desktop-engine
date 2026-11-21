@@ -10,6 +10,7 @@ import {
   NativeServerMethod,
   NativeServerRequest,
   NativeServerResponse,
+  NativeServerSqlParam,
   NativeServerXdgKind,
 } from './event';
 
@@ -26,8 +27,11 @@ export interface NativeServerRouter {
 
 export interface NativeServerHostBridge {
   sqliteOpen?(path: string): string;
-  sqliteExecute(sql: string): boolean;
-  sqliteQuery(sql: string): Array<Record<string, string>>;
+  sqliteExecute(sql: string, params?: readonly NativeServerSqlParam[]): boolean;
+  sqliteQuery(
+    sql: string,
+    params?: readonly NativeServerSqlParam[],
+  ): Array<Record<string, unknown>>;
   fsResolvePath(kind: NativeServerXdgKind, relPath: string): string;
   fsReadText(path: string): string | null;
   fsWriteText(path: string, content: string): boolean;
@@ -201,8 +205,14 @@ function createFallbackHostBridge(): NativeServerHostBridge {
 }
 
 export function createHostServerContext(): Omit<NativeServerContext, 'params' | 'query'> {
-  const getHost = (): NativeServerHostBridge =>
-    globalThis.__NG_NATIVE_SERVER_HOST__ ?? createFallbackHostBridge();
+  let fallbackBridge: NativeServerHostBridge | undefined;
+  const getHost = (): NativeServerHostBridge => {
+    if (globalThis.__NG_NATIVE_SERVER_HOST__) {
+      return globalThis.__NG_NATIVE_SERVER_HOST__;
+    }
+    fallbackBridge ??= createFallbackHostBridge();
+    return fallbackBridge;
+  };
 
   const serializeHttpBody = (body: unknown): string | undefined => {
     if (body === undefined || body === null) return undefined;
@@ -215,9 +225,11 @@ export function createHostServerContext(): Omit<NativeServerContext, 'params' | 
         const host = getHost();
         return host.sqliteOpen ? host.sqliteOpen(path) : path;
       },
-      execute: (sql) => getHost().sqliteExecute(sql),
-      query: <T extends Record<string, string> = Record<string, string>>(sql: string) =>
-        getHost().sqliteQuery(sql) as T[],
+      execute: (sql, params) => getHost().sqliteExecute(sql, params),
+      query: <T extends Record<string, unknown> = Record<string, unknown>>(
+        sql: string,
+        params?: readonly NativeServerSqlParam[],
+      ) => getHost().sqliteQuery(sql, params) as T[],
     },
     fs: {
       resolvePath: (kind, relPath) => getHost().fsResolvePath(kind, relPath),

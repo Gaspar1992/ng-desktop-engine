@@ -21,6 +21,7 @@ export {
   type NativeServerMethod,
   type NativeServerRequest,
   type NativeServerResponse,
+  type NativeServerSqlParam,
   type NativeServerXdgKind,
 } from './event';
 export {

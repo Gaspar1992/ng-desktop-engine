@@ -4,12 +4,126 @@ use super::http_codec::escape_json;
 #[cfg(target_os = "linux")]
 use crate::ffi_dl::DynLib;
 use std::collections::HashMap;
-use std::ffi::{CStr, CString, c_char, c_int, c_void};
+use std::ffi::{CStr, CString, c_char, c_double, c_int, c_void};
+use std::fmt::Write as _;
 use std::ptr;
 
 const SQLITE_OK: c_int = 0;
 const SQLITE_ROW: c_int = 100;
 const SQLITE_DONE: c_int = 101;
+const SQLITE_INTEGER: c_int = 1;
+const SQLITE_FLOAT: c_int = 2;
+const SQLITE_NULL: c_int = 5;
+const SQLITE_TRANSIENT: isize = -1;
+
+/// Strongly-typed SQL bind parameter forwarded to `sqlite3_bind_*`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SqlParam {
+    Null,
+    Integer(i64),
+    Real(f64),
+    Text(String),
+}
+
+/// Parses a JSON array of primitive SQL bind values (`null`, `bool`, numbers, strings).
+pub fn parse_json_params(raw_array: &str) -> Result<Vec<SqlParam>, String> {
+    let trimmed = raw_array.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+    let Some(mut rest) = trimmed.strip_prefix('[') else {
+        return Err(String::from("SQL params must be a JSON array"));
+    };
+    let mut params = Vec::new();
+    let mut expect_value_or_end = true;
+    loop {
+        rest = rest.trim_start();
+        if let Some(after_end) = rest.strip_prefix(']') {
+            if !after_end.trim().is_empty() {
+                return Err(String::from("Trailing characters after SQL params array"));
+            }
+            return Ok(params);
+        }
+        if !expect_value_or_end {
+            let Some(after_comma) = rest.strip_prefix(',') else {
+                return Err(String::from("Expected ',' or ']' in SQL params array"));
+            };
+            rest = after_comma.trim_start();
+        }
+        expect_value_or_end = false;
+        if let Some(after) = rest.strip_prefix("null") {
+            params.push(SqlParam::Null);
+            rest = after;
+        } else if let Some(after) = rest.strip_prefix("true") {
+            params.push(SqlParam::Integer(1));
+            rest = after;
+        } else if let Some(after) = rest.strip_prefix("false") {
+            params.push(SqlParam::Integer(0));
+            rest = after;
+        } else if rest.starts_with('"') {
+            let (s, used) = parse_json_param_string(rest)?;
+            params.push(SqlParam::Text(s));
+            rest = &rest[used..];
+        } else {
+            let token_end = rest
+                .find(|c: char| c.is_ascii_whitespace() || matches!(c, ',' | ']'))
+                .unwrap_or(rest.len());
+            let token = &rest[..token_end];
+            if token.is_empty() {
+                return Err(String::from("Invalid SQL param token in JSON array"));
+            }
+            if token.contains('.') || token.contains('e') || token.contains('E') {
+                let f = token
+                    .parse::<f64>()
+                    .map_err(|_| format!("Invalid float SQL param '{token}'"))?;
+                params.push(SqlParam::Real(f));
+            } else if let Ok(i) = token.parse::<i64>() {
+                params.push(SqlParam::Integer(i));
+            } else {
+                let f = token
+                    .parse::<f64>()
+                    .map_err(|_| format!("Invalid numeric SQL param '{token}'"))?;
+                params.push(SqlParam::Real(f));
+            }
+            rest = &rest[token_end..];
+        }
+    }
+}
+
+fn parse_json_param_string(input: &str) -> Result<(String, usize), String> {
+    let rest = input
+        .strip_prefix('"')
+        .ok_or_else(|| String::from("Expected opening quote in SQL string param"))?;
+    let mut out = String::new();
+    let mut chars = rest.char_indices();
+    while let Some((idx, ch)) = chars.next() {
+        match ch {
+            '"' => return Ok((out, idx + 2)),
+            '\\' => match chars.next() {
+                Some((_, '"')) => out.push('"'),
+                Some((_, '\\')) => out.push('\\'),
+                Some((_, '/')) => out.push('/'),
+                Some((_, 'n')) => out.push('\n'),
+                Some((_, 'r')) => out.push('\r'),
+                Some((_, 't')) => out.push('\t'),
+                Some((_, 'b')) => out.push('\x08'),
+                Some((_, 'f')) => out.push('\x0c'),
+                Some((_, 'u')) => {
+                    let hex: String = chars.by_ref().take(4).map(|(_, c)| c).collect();
+                    if let Ok(code) = u32::from_str_radix(&hex, 16)
+                        && let Some(decoded) = char::from_u32(code)
+                    {
+                        out.push(decoded);
+                    }
+                }
+                Some((_, other)) => out.push(other),
+                None => return Err(String::from("Unterminated escape in SQL param string")),
+            },
+            c => out.push(c),
+        }
+    }
+    Err(String::from("Unterminated string in SQL params array"))
+}
 
 #[cfg(target_os = "linux")]
 type SqliteOpenFn = unsafe extern "C" fn(*const c_char, *mut *mut c_void) -> c_int;
@@ -24,7 +138,15 @@ type SqlitePrepareFn = unsafe extern "C" fn(
 type SqliteStepFn = unsafe extern "C" fn(*mut c_void) -> c_int;
 type SqliteColCountFn = unsafe extern "C" fn(*mut c_void) -> c_int;
 type SqliteColNameFn = unsafe extern "C" fn(*mut c_void, c_int) -> *const c_char;
+type SqliteColTypeFn = unsafe extern "C" fn(*mut c_void, c_int) -> c_int;
+type SqliteColInt64Fn = unsafe extern "C" fn(*mut c_void, c_int) -> i64;
+type SqliteColDoubleFn = unsafe extern "C" fn(*mut c_void, c_int) -> c_double;
 type SqliteColTextFn = unsafe extern "C" fn(*mut c_void, c_int) -> *const u8;
+type SqliteBindNullFn = unsafe extern "C" fn(*mut c_void, c_int) -> c_int;
+type SqliteBindInt64Fn = unsafe extern "C" fn(*mut c_void, c_int, i64) -> c_int;
+type SqliteBindDoubleFn = unsafe extern "C" fn(*mut c_void, c_int, c_double) -> c_int;
+type SqliteBindTextFn =
+    unsafe extern "C" fn(*mut c_void, c_int, *const c_char, c_int, isize) -> c_int;
 type SqliteFinalizeFn = unsafe extern "C" fn(*mut c_void) -> c_int;
 type SqliteErrmsgFn = unsafe extern "C" fn(*mut c_void) -> *const c_char;
 
@@ -35,7 +157,14 @@ struct SqliteFfi {
     sqlite3_step: SqliteStepFn,
     sqlite3_column_count: SqliteColCountFn,
     sqlite3_column_name: SqliteColNameFn,
+    sqlite3_column_type: SqliteColTypeFn,
+    sqlite3_column_int64: SqliteColInt64Fn,
+    sqlite3_column_double: SqliteColDoubleFn,
     sqlite3_column_text: SqliteColTextFn,
+    sqlite3_bind_null: SqliteBindNullFn,
+    sqlite3_bind_int64: SqliteBindInt64Fn,
+    sqlite3_bind_double: SqliteBindDoubleFn,
+    sqlite3_bind_text: SqliteBindTextFn,
     sqlite3_finalize: SqliteFinalizeFn,
     sqlite3_errmsg: SqliteErrmsgFn,
 }
@@ -53,7 +182,14 @@ impl SqliteFfi {
             let sqlite3_step: SqliteStepFn = load_sym(lib, c"sqlite3_step")?;
             let sqlite3_column_count: SqliteColCountFn = load_sym(lib, c"sqlite3_column_count")?;
             let sqlite3_column_name: SqliteColNameFn = load_sym(lib, c"sqlite3_column_name")?;
+            let sqlite3_column_type: SqliteColTypeFn = load_sym(lib, c"sqlite3_column_type")?;
+            let sqlite3_column_int64: SqliteColInt64Fn = load_sym(lib, c"sqlite3_column_int64")?;
+            let sqlite3_column_double: SqliteColDoubleFn = load_sym(lib, c"sqlite3_column_double")?;
             let sqlite3_column_text: SqliteColTextFn = load_sym(lib, c"sqlite3_column_text")?;
+            let sqlite3_bind_null: SqliteBindNullFn = load_sym(lib, c"sqlite3_bind_null")?;
+            let sqlite3_bind_int64: SqliteBindInt64Fn = load_sym(lib, c"sqlite3_bind_int64")?;
+            let sqlite3_bind_double: SqliteBindDoubleFn = load_sym(lib, c"sqlite3_bind_double")?;
+            let sqlite3_bind_text: SqliteBindTextFn = load_sym(lib, c"sqlite3_bind_text")?;
             let sqlite3_finalize: SqliteFinalizeFn = load_sym(lib, c"sqlite3_finalize")?;
             let sqlite3_errmsg: SqliteErrmsgFn = load_sym(lib, c"sqlite3_errmsg")?;
 
@@ -73,7 +209,14 @@ impl SqliteFfi {
                 sqlite3_step,
                 sqlite3_column_count,
                 sqlite3_column_name,
+                sqlite3_column_type,
+                sqlite3_column_int64,
+                sqlite3_column_double,
                 sqlite3_column_text,
+                sqlite3_bind_null,
+                sqlite3_bind_int64,
+                sqlite3_bind_double,
+                sqlite3_bind_text,
                 sqlite3_finalize,
                 sqlite3_errmsg,
             })
@@ -96,33 +239,117 @@ impl SqliteFfi {
         }
     }
 
-    fn execute(&self, sql: &str) -> Result<(), String> {
+    fn bind_stmt_params(&self, stmt: *mut c_void, params: &[SqlParam]) -> Result<(), String> {
+        for (idx, param) in params.iter().enumerate() {
+            let bind_idx = c_int::try_from(idx + 1).map_err(|_| String::from("Too many params"))?;
+            let rc = unsafe {
+                match param {
+                    SqlParam::Null => (self.sqlite3_bind_null)(stmt, bind_idx),
+                    SqlParam::Integer(v) => (self.sqlite3_bind_int64)(stmt, bind_idx, *v),
+                    SqlParam::Real(v) => (self.sqlite3_bind_double)(stmt, bind_idx, *v),
+                    SqlParam::Text(s) => {
+                        let len = c_int::try_from(s.len())
+                            .map_err(|_| String::from("String param too large"))?;
+                        (self.sqlite3_bind_text)(
+                            stmt,
+                            bind_idx,
+                            s.as_ptr().cast::<c_char>(),
+                            len,
+                            SQLITE_TRANSIENT,
+                        )
+                    }
+                }
+            };
+            if rc != SQLITE_OK {
+                return Err(self.last_error());
+            }
+        }
+        Ok(())
+    }
+
+    fn collect_column_names(&self, stmt: *mut c_void) -> Vec<String> {
+        let col_count = unsafe { (self.sqlite3_column_count)(stmt) };
+        let mut names = Vec::with_capacity(usize::try_from(col_count.max(0)).unwrap_or(0));
+        for col in 0..col_count {
+            let name = unsafe {
+                let ptr = (self.sqlite3_column_name)(stmt, col);
+                if ptr.is_null() {
+                    format!("col_{col}")
+                } else {
+                    CStr::from_ptr(ptr).to_string_lossy().into_owned()
+                }
+            };
+            names.push(name);
+        }
+        names
+    }
+
+    fn execute_params(&self, sql: &str, params: &[SqlParam]) -> Result<(), String> {
         let c_sql = CString::new(sql).map_err(|e| e.to_string())?;
-        let mut cursor = c_sql.as_ptr();
-        unsafe {
-            while !cursor.is_null() && *cursor != 0 {
-                let mut stmt: *mut c_void = ptr::null_mut();
-                let mut tail: *const c_char = ptr::null();
-                let rc =
-                    (self.sqlite3_prepare_v2)(self.db, cursor, -1, &raw mut stmt, &raw mut tail);
-                if rc != SQLITE_OK {
-                    let msg = self.last_error();
+        if params.is_empty() {
+            let mut cursor = c_sql.as_ptr();
+            unsafe {
+                while !cursor.is_null() && *cursor != 0 {
+                    let mut stmt: *mut c_void = ptr::null_mut();
+                    let mut tail: *const c_char = ptr::null();
+                    let rc = (self.sqlite3_prepare_v2)(
+                        self.db,
+                        cursor,
+                        -1,
+                        &raw mut stmt,
+                        &raw mut tail,
+                    );
+                    if rc != SQLITE_OK {
+                        let msg = self.last_error();
+                        if !stmt.is_null() {
+                            (self.sqlite3_finalize)(stmt);
+                        }
+                        return Err(msg);
+                    }
                     if !stmt.is_null() {
+                        let step_rc = (self.sqlite3_step)(stmt);
                         (self.sqlite3_finalize)(stmt);
+                        if step_rc != SQLITE_DONE && step_rc != SQLITE_ROW {
+                            return Err(self.last_error());
+                        }
                     }
-                    return Err(msg);
+                    if tail.is_null() || tail == cursor {
+                        break;
+                    }
+                    cursor = tail;
                 }
+            }
+            return Ok(());
+        }
+
+        let mut stmt: *mut c_void = ptr::null_mut();
+        let mut tail: *const c_char = ptr::null();
+        unsafe {
+            let rc = (self.sqlite3_prepare_v2)(
+                self.db,
+                c_sql.as_ptr(),
+                -1,
+                &raw mut stmt,
+                &raw mut tail,
+            );
+            if rc != SQLITE_OK {
+                let msg = self.last_error();
                 if !stmt.is_null() {
-                    let step_rc = (self.sqlite3_step)(stmt);
                     (self.sqlite3_finalize)(stmt);
-                    if step_rc != SQLITE_DONE && step_rc != SQLITE_ROW {
-                        return Err(self.last_error());
-                    }
                 }
-                if tail.is_null() || tail == cursor {
-                    break;
-                }
-                cursor = tail;
+                return Err(msg);
+            }
+            if stmt.is_null() {
+                return Ok(());
+            }
+            if let Err(err) = self.bind_stmt_params(stmt, params) {
+                (self.sqlite3_finalize)(stmt);
+                return Err(err);
+            }
+            let step_rc = (self.sqlite3_step)(stmt);
+            (self.sqlite3_finalize)(stmt);
+            if step_rc != SQLITE_DONE && step_rc != SQLITE_ROW {
+                return Err(self.last_error());
             }
         }
         Ok(())
@@ -151,7 +378,7 @@ impl SqliteFfi {
                 return Ok(Vec::new());
             }
 
-            let col_count = (self.sqlite3_column_count)(stmt);
+            let col_names = self.collect_column_names(stmt);
             let mut rows = Vec::new();
             loop {
                 let step_rc = (self.sqlite3_step)(stmt);
@@ -163,14 +390,9 @@ impl SqliteFfi {
                     (self.sqlite3_finalize)(stmt);
                     return Err(msg);
                 }
-                let mut row = HashMap::new();
-                for col in 0..col_count {
-                    let name_ptr = (self.sqlite3_column_name)(stmt, col);
-                    let col_name = if name_ptr.is_null() {
-                        format!("col_{col}")
-                    } else {
-                        CStr::from_ptr(name_ptr).to_string_lossy().into_owned()
-                    };
+                let mut row = HashMap::with_capacity(col_names.len());
+                for (idx, col_name) in col_names.iter().enumerate() {
+                    let col = c_int::try_from(idx).unwrap_or(0);
                     let text_ptr = (self.sqlite3_column_text)(stmt, col);
                     let col_val = if text_ptr.is_null() {
                         String::new()
@@ -179,12 +401,108 @@ impl SqliteFfi {
                             .to_string_lossy()
                             .into_owned()
                     };
-                    row.insert(col_name, col_val);
+                    row.insert(col_name.clone(), col_val);
                 }
                 rows.push(row);
             }
             (self.sqlite3_finalize)(stmt);
             Ok(rows)
+        }
+    }
+
+    fn write_json_column_value(&self, stmt: *mut c_void, col: c_int, out: &mut String) {
+        unsafe {
+            match (self.sqlite3_column_type)(stmt, col) {
+                SQLITE_NULL => out.push_str("null"),
+                SQLITE_INTEGER => {
+                    let val = (self.sqlite3_column_int64)(stmt, col);
+                    let _ = write!(out, "{val}");
+                }
+                SQLITE_FLOAT => {
+                    let val = (self.sqlite3_column_double)(stmt, col);
+                    if val.is_finite() {
+                        let _ = write!(out, "{val}");
+                    } else {
+                        out.push_str("null");
+                    }
+                }
+                _ => {
+                    let text_ptr = (self.sqlite3_column_text)(stmt, col);
+                    out.push('"');
+                    if !text_ptr.is_null() {
+                        let text = CStr::from_ptr(text_ptr.cast::<c_char>()).to_string_lossy();
+                        out.push_str(&escape_json(&text));
+                    }
+                    out.push('"');
+                }
+            }
+        }
+    }
+
+    fn query_json_params(&self, sql: &str, params: &[SqlParam]) -> Result<String, String> {
+        let c_sql = CString::new(sql).map_err(|e| e.to_string())?;
+        let mut stmt: *mut c_void = ptr::null_mut();
+        let mut tail: *const c_char = ptr::null();
+        unsafe {
+            let rc = (self.sqlite3_prepare_v2)(
+                self.db,
+                c_sql.as_ptr(),
+                -1,
+                &raw mut stmt,
+                &raw mut tail,
+            );
+            if rc != SQLITE_OK {
+                let msg = self.last_error();
+                if !stmt.is_null() {
+                    (self.sqlite3_finalize)(stmt);
+                }
+                return Err(msg);
+            }
+            if stmt.is_null() {
+                return Ok(String::from("[]"));
+            }
+            if let Err(err) = self.bind_stmt_params(stmt, params) {
+                (self.sqlite3_finalize)(stmt);
+                return Err(err);
+            }
+
+            let col_names = self.collect_column_names(stmt);
+            let mut sorted_cols: Vec<(c_int, &str)> = col_names
+                .iter()
+                .enumerate()
+                .map(|(i, name)| (c_int::try_from(i).unwrap_or(0), name.as_str()))
+                .collect();
+            sorted_cols.sort_by(|a, b| a.1.cmp(b.1));
+
+            let mut out = String::from("[");
+            let mut first_row = true;
+            loop {
+                let step_rc = (self.sqlite3_step)(stmt);
+                if step_rc == SQLITE_DONE {
+                    break;
+                }
+                if step_rc != SQLITE_ROW {
+                    let msg = self.last_error();
+                    (self.sqlite3_finalize)(stmt);
+                    return Err(msg);
+                }
+                if !first_row {
+                    out.push(',');
+                }
+                first_row = false;
+                out.push('{');
+                for (field_idx, &(col, col_name)) in sorted_cols.iter().enumerate() {
+                    if field_idx > 0 {
+                        out.push(',');
+                    }
+                    let _ = write!(out, "\"{}\":", escape_json(col_name));
+                    self.write_json_column_value(stmt, col, &mut out);
+                }
+                out.push('}');
+            }
+            (self.sqlite3_finalize)(stmt);
+            out.push(']');
+            Ok(out)
         }
     }
 }
@@ -258,7 +576,11 @@ impl NativeSqliteDatabase {
     pub fn open_path(path: &str) -> Self {
         let ffi = SqliteFfi::try_open(path);
         if let Some(ref handle) = ffi {
-            let _ = handle.execute("PRAGMA journal_mode=WAL;");
+            let _ = handle.execute_params("PRAGMA busy_timeout=5000;", &[]);
+            if path.trim() != ":memory:" {
+                let _ = handle
+                    .execute_params("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;", &[]);
+            }
         }
         Self {
             backend: OsSqliteBackend::current(),
@@ -276,8 +598,13 @@ impl NativeSqliteDatabase {
     }
 
     pub fn execute(&mut self, sql: &str) -> Result<(), String> {
+        self.execute_params(sql, &[])
+    }
+
+    /// Executes a SQL statement with bound `SqlParam` values (`?` placeholders).
+    pub fn execute_params(&mut self, sql: &str, params: &[SqlParam]) -> Result<(), String> {
         if let Some(ref ffi) = self.ffi {
-            return ffi.execute(sql);
+            return ffi.execute_params(sql, params);
         }
         // Minimal fallback for non-Linux targets lacking `libsqlite3.so.0`
         let upper = sql.trim().to_ascii_uppercase();
@@ -308,6 +635,14 @@ impl NativeSqliteDatabase {
     }
 
     pub fn query_json(&self, sql: &str) -> Result<String, String> {
+        self.query_json_params(sql, &[])
+    }
+
+    /// Queries SQL with bound `SqlParam` values and streams natively-typed JSON rows.
+    pub fn query_json_params(&self, sql: &str, params: &[SqlParam]) -> Result<String, String> {
+        if let Some(ref ffi) = self.ffi {
+            return ffi.query_json_params(sql, params);
+        }
         let rows = self.query(sql)?;
         let encoded_rows: Vec<String> = rows
             .into_iter()
@@ -356,7 +691,47 @@ mod tests {
             let json = db
                 .query_json("SELECT id, name, note FROM items ORDER BY id ASC;")
                 .unwrap();
-            assert_eq!(json, r#"[{"id":"25","name":"Widget","note":"Primary"}]"#);
+            assert_eq!(json, r#"[{"id":25,"name":"Widget","note":"Primary"}]"#);
+
+            let timeout_rows = db.query("PRAGMA busy_timeout;").unwrap();
+            assert_eq!(
+                timeout_rows[0].get("timeout").map(String::as_str),
+                Some("5000")
+            );
+        }
+    }
+
+    #[test]
+    fn binds_parameterized_queries_and_emits_typed_json_rows() {
+        let mut db = NativeSqliteDatabase::new_in_memory();
+        db.execute(
+            "CREATE TABLE records (id INTEGER PRIMARY KEY, score REAL, label TEXT, extra TEXT);",
+        )
+        .unwrap();
+        let params = vec![
+            super::SqlParam::Integer(42),
+            super::SqlParam::Real(9.5),
+            super::SqlParam::Text(String::from("O'Reilly'; DROP TABLE records; --")),
+            super::SqlParam::Null,
+        ];
+        db.execute_params(
+            "INSERT INTO records (id, score, label, extra) VALUES (?, ?, ?, ?);",
+            &params,
+        )
+        .unwrap();
+
+        if db.is_native_loaded() {
+            let lookup = super::parse_json_params("[42]").unwrap();
+            let json = db
+                .query_json_params(
+                    "SELECT id, score, label, extra FROM records WHERE id = ?;",
+                    &lookup,
+                )
+                .unwrap();
+            assert_eq!(
+                json,
+                r#"[{"extra":null,"id":42,"label":"O'Reilly'; DROP TABLE records; --","score":9.5}]"#
+            );
         }
     }
 }

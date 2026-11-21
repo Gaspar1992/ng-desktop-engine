@@ -3,10 +3,28 @@ use super::http_codec::{
     extract_json_u64, parse_bridge_batch, parse_bridge_request,
 };
 use super::libsoup_sys::{LibsoupSys, default_reason_phrase};
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, VecDeque};
+use std::fmt::Write as _;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+
+const MAX_HTTP_HISTORY: usize = 256;
+const MAX_RESPONSE_CACHE_ENTRIES: usize = 256;
+static BATCH_TEMP_SEQ: AtomicU64 = AtomicU64::new(1);
+
+enum ThreadSoupState {
+    Unprobed,
+    Loaded(LibsoupSys),
+    Unavailable,
+}
+
+thread_local! {
+    static THREAD_LIBSOUP: RefCell<ThreadSoupState> = const { RefCell::new(ThreadSoupState::Unprobed) };
+}
 
 /// Native host HTTP transport stack selected per target operating system.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -183,15 +201,33 @@ pub struct NativeHttpEngine {
     config: NativeHttpConfig,
     http_routes: HashMap<String, NativeHttpResponse>,
     response_cache: HashMap<String, NativeHttpResponse>,
+    cache_order: VecDeque<String>,
     http_history: Vec<NativeHttpRequest>,
-    libsoup: Option<LibsoupSys>,
-    libsoup_probed: bool,
 }
 
 impl Default for NativeHttpEngine {
     fn default() -> Self {
         Self::new()
     }
+}
+
+enum PreparedHttpOutcome {
+    Immediate(NativeHttpResponse),
+    Outbound {
+        cache_key: Option<String>,
+        request: NativeHttpRequest,
+        timeout_ms: u32,
+        platform: OsHttpPlatform,
+    },
+}
+
+struct BatchExecutionPlan {
+    results: Vec<Option<NativeHttpResponse>>,
+    pending_gets: Vec<(usize, String, NativeHttpRequest)>,
+    non_get_outbound: Vec<(usize, Option<String>, NativeHttpRequest)>,
+    max_parallel_connections: u16,
+    timeout_ms: u32,
+    platform: OsHttpPlatform,
 }
 
 impl NativeHttpEngine {
@@ -201,9 +237,8 @@ impl NativeHttpEngine {
             config: NativeHttpConfig::default(),
             http_routes: HashMap::new(),
             response_cache: HashMap::new(),
+            cache_order: VecDeque::new(),
             http_history: Vec::new(),
-            libsoup: None,
-            libsoup_probed: false,
         }
     }
 
@@ -216,9 +251,6 @@ impl NativeHttpEngine {
     }
 
     pub fn set_config(&mut self, config: NativeHttpConfig) {
-        if let Some(soup) = &self.libsoup {
-            soup.set_timeout_ms(config.timeout_ms);
-        }
         self.config = config;
     }
 
@@ -242,74 +274,261 @@ impl NativeHttpEngine {
         &self.http_history
     }
 
-    pub fn execute_http(&mut self, request: &NativeHttpRequest) -> NativeHttpResponse {
-        let prepared = self.prepare_request(request);
-        let key = format!(
-            "{} {}",
-            prepared.method.trim().to_ascii_uppercase(),
-            prepared.url.trim()
-        );
-        self.http_history.push(prepared.clone());
+    fn record_history(&mut self, req: NativeHttpRequest) {
+        if self.http_history.len() >= MAX_HTTP_HISTORY {
+            self.http_history.remove(0);
+        }
+        self.http_history.push(req);
+    }
 
-        if let Some(res) = self.http_routes.get(&key) {
-            return res.clone();
+    fn base_route_key(req: &NativeHttpRequest) -> String {
+        format!(
+            "{} {}",
+            req.method.trim().to_ascii_uppercase(),
+            req.url.trim()
+        )
+    }
+
+    fn cache_key_for(req: &NativeHttpRequest) -> String {
+        let base = Self::base_route_key(req);
+        let mut auth_headers: Vec<(&str, &str)> = req
+            .headers
+            .iter()
+            .filter_map(|(k, v)| {
+                let lower = k.trim().to_ascii_lowercase();
+                if lower == "authorization" || lower == "cookie" {
+                    Some((k.as_str(), v.as_str()))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        if auth_headers.is_empty() {
+            return base;
+        }
+        auth_headers.sort_by(|a, b| a.0.cmp(b.0).then_with(|| a.1.cmp(b.1)));
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for (k, v) in auth_headers {
+            for b in k.to_ascii_lowercase().as_bytes() {
+                hash ^= u64::from(*b);
+                hash = hash.wrapping_mul(0x0100_0000_01b3);
+            }
+            hash ^= u64::from(b':');
+            hash = hash.wrapping_mul(0x0100_0000_01b3);
+            for b in v.as_bytes() {
+                hash ^= u64::from(*b);
+                hash = hash.wrapping_mul(0x0100_0000_01b3);
+            }
+            hash ^= u64::from(b';');
+            hash = hash.wrapping_mul(0x0100_0000_01b3);
+        }
+        let mut keyed = base;
+        let _ = write!(keyed, "|auth={hash:016x}");
+        keyed
+    }
+
+    fn cache_get(&mut self, key: &str) -> Option<NativeHttpResponse> {
+        let mut hit = self.response_cache.get(key)?.clone();
+        if let Some(pos) = self.cache_order.iter().position(|k| k == key) {
+            self.cache_order.remove(pos);
+        }
+        self.cache_order.push_back(key.to_string());
+        hit.cached = true;
+        Some(hit)
+    }
+
+    fn cache_put(&mut self, key: String, response: NativeHttpResponse) {
+        if let Some(pos) = self.cache_order.iter().position(|k| k == &key) {
+            self.cache_order.remove(pos);
+        } else {
+            while self.response_cache.len() >= MAX_RESPONSE_CACHE_ENTRIES {
+                let Some(oldest) = self.cache_order.pop_front() else {
+                    break;
+                };
+                self.response_cache.remove(&oldest);
+            }
+        }
+        self.cache_order.push_back(key.clone());
+        self.response_cache.insert(key, response);
+    }
+
+    fn begin_http_request(&mut self, request: &NativeHttpRequest) -> PreparedHttpOutcome {
+        let prepared = self.prepare_request(request);
+        let route_key = Self::base_route_key(&prepared);
+        let cache_key = Self::cache_key_for(&prepared);
+        self.record_history(prepared.clone());
+
+        if let Some(res) = self.http_routes.get(&route_key) {
+            return PreparedHttpOutcome::Immediate(res.clone());
         }
         if self.is_cacheable(&prepared)
-            && let Some(cached) = self.response_cache.get(&key)
+            && let Some(hit) = self.cache_get(&cache_key)
         {
-            let mut hit = cached.clone();
-            hit.cached = true;
-            return hit;
+            return PreparedHttpOutcome::Immediate(hit);
         }
 
-        let response = self.dispatch_outbound(&prepared);
-        if self.is_cacheable(&prepared) && response.status < 400 && !response.body.is_empty() {
-            self.response_cache.insert(key, response.clone());
+        PreparedHttpOutcome::Outbound {
+            cache_key: self.is_cacheable(&prepared).then_some(cache_key),
+            request: prepared,
+            timeout_ms: self.config.timeout_ms,
+            platform: self.platform,
+        }
+    }
+
+    fn finish_http_request(
+        &mut self,
+        cache_key: Option<String>,
+        response: NativeHttpResponse,
+    ) -> NativeHttpResponse {
+        if let Some(key) = cache_key
+            && response.status < 400
+            && !response.body.is_empty()
+        {
+            self.cache_put(key, response.clone());
         }
         response
     }
 
-    /// Executes multiple HTTP requests, fulfilling mocks/cache hits immediately and
-    /// fetching remaining HTTP `GET` URLs concurrently via an HTTP/2 parallel batch transfer.
-    pub fn execute_batch(&mut self, requests: &[NativeHttpRequest]) -> Vec<NativeHttpResponse> {
+    pub fn execute_http(&mut self, request: &NativeHttpRequest) -> NativeHttpResponse {
+        match self.begin_http_request(request) {
+            PreparedHttpOutcome::Immediate(res) => res,
+            PreparedHttpOutcome::Outbound {
+                cache_key,
+                request,
+                timeout_ms,
+                platform,
+            } => {
+                let response = perform_outbound_detached(&request, timeout_ms, platform);
+                self.finish_http_request(cache_key, response)
+            }
+        }
+    }
+
+    fn prepare_batch_plan(&mut self, requests: &[NativeHttpRequest]) -> BatchExecutionPlan {
         let mut results: Vec<Option<NativeHttpResponse>> = vec![None; requests.len()];
-        let mut pending: Vec<(usize, NativeHttpRequest)> = Vec::new();
+        let mut pending_gets: Vec<(usize, String, NativeHttpRequest)> = Vec::new();
+        let mut non_get_outbound: Vec<(usize, Option<String>, NativeHttpRequest)> = Vec::new();
 
         for (idx, req) in requests.iter().enumerate() {
             let prepared = self.prepare_request(req);
-            let key = format!(
-                "{} {}",
-                prepared.method.trim().to_ascii_uppercase(),
-                prepared.url.trim()
-            );
-            self.http_history.push(prepared.clone());
-            if let Some(res) = self.http_routes.get(&key) {
+            let route_key = Self::base_route_key(&prepared);
+            let cache_key = Self::cache_key_for(&prepared);
+            self.record_history(prepared.clone());
+            if let Some(res) = self.http_routes.get(&route_key) {
                 results[idx] = Some(res.clone());
             } else if self.is_cacheable(&prepared)
-                && let Some(cached) = self.response_cache.get(&key)
+                && let Some(hit) = self.cache_get(&cache_key)
             {
-                let mut hit = cached.clone();
-                hit.cached = true;
                 results[idx] = Some(hit);
             } else if prepared.method.eq_ignore_ascii_case("GET")
                 && prepared.headers.is_empty()
                 && (prepared.url.starts_with("http://") || prepared.url.starts_with("https://"))
             {
-                pending.push((idx, prepared));
+                pending_gets.push((idx, cache_key, prepared));
             } else {
-                let mut res = self.dispatch_outbound(&prepared);
-                res.call_kind = NativeHttpCallKind::BatchParallel;
-                results[idx] = Some(res);
+                let maybe_cache = self.is_cacheable(&prepared).then_some(cache_key);
+                non_get_outbound.push((idx, maybe_cache, prepared));
             }
         }
 
-        self.run_parallel_get_batch(&pending, &mut results);
+        BatchExecutionPlan {
+            results,
+            pending_gets,
+            non_get_outbound,
+            max_parallel_connections: self.config.max_parallel_connections,
+            timeout_ms: self.config.timeout_ms,
+            platform: self.platform,
+        }
+    }
+
+    fn execute_batch_plan_detached(
+        plan: &BatchExecutionPlan,
+    ) -> Vec<(usize, Option<String>, NativeHttpResponse)> {
+        let mut completed = Vec::new();
+        for (idx, maybe_cache, req) in &plan.non_get_outbound {
+            let mut res = perform_outbound_detached(req, plan.timeout_ms, plan.platform);
+            res.call_kind = NativeHttpCallKind::BatchParallel;
+            completed.push((*idx, maybe_cache.clone(), res));
+        }
+
+        if plan.pending_gets.is_empty() {
+            return completed;
+        }
+        if plan.pending_gets.len() == 1 {
+            let (idx, key, req) = &plan.pending_gets[0];
+            let mut res = perform_outbound_detached(req, plan.timeout_ms, plan.platform);
+            res.call_kind = NativeHttpCallKind::BatchParallel;
+            completed.push((*idx, Some(key.clone()), res));
+            return completed;
+        }
+
+        let stamp = std::process::id();
+        let seq = BATCH_TEMP_SEQ.fetch_add(1, Ordering::Relaxed);
+        let temp_dir = std::env::temp_dir();
+        let pairs: Vec<(String, PathBuf)> = plan
+            .pending_gets
+            .iter()
+            .map(|(idx, _, req)| {
+                let path = temp_dir.join(format!("ng_native_batch_{stamp}_{seq}_{idx}.tmp"));
+                (req.url.clone(), path)
+            })
+            .collect();
+        let ok_flags = Self::download_files_parallel_with(
+            plan.max_parallel_connections,
+            plan.timeout_ms,
+            &pairs,
+        );
+        for ((idx, key, _), ((_, tmp_path), ok)) in plan
+            .pending_gets
+            .iter()
+            .zip(pairs.into_iter().zip(ok_flags))
+        {
+            let body = if ok {
+                fs::read_to_string(&tmp_path).unwrap_or_default()
+            } else {
+                String::new()
+            };
+            let _ = fs::remove_file(&tmp_path);
+            let status = if ok { 200 } else { 500 };
+            let res = NativeHttpResponse {
+                status,
+                status_text: default_reason_phrase(status),
+                body,
+                headers: HashMap::new(),
+                transport: format!("{}-parallel", plan.platform.as_str()),
+                call_kind: NativeHttpCallKind::BatchParallel,
+                cached: false,
+            };
+            completed.push((*idx, Some(key.clone()), res));
+        }
+        completed
+    }
+
+    fn apply_batch_results(
+        &mut self,
+        mut results: Vec<Option<NativeHttpResponse>>,
+        completed: Vec<(usize, Option<String>, NativeHttpResponse)>,
+    ) -> Vec<NativeHttpResponse> {
+        for (idx, cache_key, res) in completed {
+            let stored = self.finish_http_request(cache_key, res);
+            if idx < results.len() {
+                results[idx] = Some(stored);
+            }
+        }
         results
             .into_iter()
             .map(|item| {
                 item.unwrap_or_else(|| not_found_response(NativeHttpCallKind::BatchParallel))
             })
             .collect()
+    }
+
+    /// Executes multiple HTTP requests, fulfilling mocks/cache hits immediately and
+    /// fetching remaining HTTP `GET` URLs concurrently via an HTTP/2 parallel batch transfer.
+    pub fn execute_batch(&mut self, requests: &[NativeHttpRequest]) -> Vec<NativeHttpResponse> {
+        let plan = self.prepare_batch_plan(requests);
+        let fetched = Self::execute_batch_plan_detached(&plan);
+        self.apply_batch_results(plan.results, fetched)
     }
 
     /// Downloads multiple `(url, dest_path)` pairs concurrently in a single multiplexed HTTP/2 process.
@@ -387,33 +606,98 @@ impl NativeHttpEngine {
             )
     }
 
-    fn ensure_libsoup(&mut self) -> Option<&LibsoupSys> {
-        if !self.libsoup_probed {
-            self.libsoup_probed = true;
-            let loaded = LibsoupSys::try_load();
-            if let Some(ref soup) = loaded {
-                soup.set_timeout_ms(self.config.timeout_ms);
-            }
-            self.libsoup = loaded;
+    /// Executes a bridge HTTP request or batch without holding `engine`'s mutex across network I/O.
+    pub(crate) fn execute_bridge_detached(engine: &Arc<Mutex<Self>>, payload_json: &str) -> String {
+        if payload_json.trim_start().starts_with('[')
+            || extract_json_string(payload_json, "kind").as_deref() == Some("batch")
+        {
+            let requests = parse_bridge_batch(payload_json);
+            let plan = {
+                let Ok(mut guard) = engine.lock() else {
+                    return String::from("[]");
+                };
+                guard.prepare_batch_plan(&requests)
+            };
+            let fetched = Self::execute_batch_plan_detached(&plan);
+            let responses = {
+                let Ok(mut guard) = engine.lock() else {
+                    return String::from("[]");
+                };
+                guard.apply_batch_results(plan.results, fetched)
+            };
+            let encoded: Vec<String> = responses.iter().map(encode_response_json).collect();
+            return format!("[{}]", encoded.join(","));
         }
-        self.libsoup.as_ref()
-    }
 
-    fn dispatch_outbound(&mut self, request: &NativeHttpRequest) -> NativeHttpResponse {
-        if !request.url.starts_with("http://") && !request.url.starts_with("https://") {
-            return not_found_response(request.call_kind);
-        }
-        let timeout_ms = self.config.timeout_ms;
-        let platform = self.platform;
-        if platform == OsHttpPlatform::LinuxLibsoup
-            && let Some(soup) = self.ensure_libsoup()
-            && let Some(raw) = soup.send_raw(
+        let req = parse_bridge_request(payload_json);
+        let outcome = {
+            let Ok(mut guard) = engine.lock() else {
+                return encode_response_json(&error_500_response(
+                    req.call_kind,
+                    "Host Mutex Poisoned",
+                ));
+            };
+            guard.begin_http_request(&req)
+        };
+        let response = match outcome {
+            PreparedHttpOutcome::Immediate(res) => res,
+            PreparedHttpOutcome::Outbound {
+                cache_key,
+                request,
+                timeout_ms,
+                platform,
+            } => {
+                let fetched = perform_outbound_detached(&request, timeout_ms, platform);
+                if let Ok(mut guard) = engine.lock() {
+                    guard.finish_http_request(cache_key, fetched)
+                } else {
+                    fetched
+                }
+            }
+        };
+        encode_response_json(&response)
+    }
+}
+
+fn error_500_response(call_kind: NativeHttpCallKind, status_text: &str) -> NativeHttpResponse {
+    NativeHttpResponse {
+        status: 500,
+        status_text: String::from(status_text),
+        body: String::new(),
+        headers: HashMap::new(),
+        transport: String::from("host-error"),
+        call_kind,
+        cached: false,
+    }
+}
+
+fn perform_outbound_detached(
+    request: &NativeHttpRequest,
+    timeout_ms: u32,
+    platform: OsHttpPlatform,
+) -> NativeHttpResponse {
+    if !request.url.starts_with("http://") && !request.url.starts_with("https://") {
+        return not_found_response(request.call_kind);
+    }
+    if platform == OsHttpPlatform::LinuxLibsoup {
+        let libsoup_raw = THREAD_LIBSOUP.with(|cell| {
+            let mut slot = cell.borrow_mut();
+            if matches!(*slot, ThreadSoupState::Unprobed) {
+                *slot = LibsoupSys::try_load()
+                    .map_or(ThreadSoupState::Unavailable, ThreadSoupState::Loaded);
+            }
+            let ThreadSoupState::Loaded(ref soup) = *slot else {
+                return None;
+            };
+            soup.set_timeout_ms(timeout_ms);
+            soup.send_raw(
                 &request.method,
                 &request.url,
                 &request.headers,
                 request.body.as_deref(),
             )
-        {
+        });
+        if let Some(raw) = libsoup_raw {
             return NativeHttpResponse {
                 status: raw.status,
                 status_text: raw.status_text,
@@ -424,62 +708,8 @@ impl NativeHttpEngine {
                 cached: false,
             };
         }
-        execute_curl_fallback(request, timeout_ms, platform)
     }
-
-    fn run_parallel_get_batch(
-        &mut self,
-        pending: &[(usize, NativeHttpRequest)],
-        results: &mut [Option<NativeHttpResponse>],
-    ) {
-        if pending.is_empty() {
-            return;
-        }
-        if pending.len() == 1 {
-            let (idx, req) = &pending[0];
-            let mut res = self.dispatch_outbound(req);
-            res.call_kind = NativeHttpCallKind::BatchParallel;
-            results[*idx] = Some(res);
-            return;
-        }
-        let stamp = std::process::id();
-        let pairs: Vec<(String, PathBuf)> = pending
-            .iter()
-            .map(|(idx, req)| {
-                let path = PathBuf::from(format!("/tmp/ng_native_batch_{stamp}_{idx}.tmp"));
-                (req.url.clone(), path)
-            })
-            .collect();
-        let ok_flags = self.download_files_parallel(&pairs);
-        for ((idx, req), ((_, tmp_path), ok)) in pending.iter().zip(pairs.into_iter().zip(ok_flags))
-        {
-            let body = if ok {
-                fs::read_to_string(&tmp_path).unwrap_or_default()
-            } else {
-                String::new()
-            };
-            let _ = fs::remove_file(&tmp_path);
-            let status = if ok { 200 } else { 500 };
-            let res = NativeHttpResponse {
-                status,
-                status_text: default_reason_phrase(status),
-                body,
-                headers: HashMap::new(),
-                transport: format!("{}-parallel", self.platform.as_str()),
-                call_kind: NativeHttpCallKind::BatchParallel,
-                cached: false,
-            };
-            let key = format!(
-                "{} {}",
-                req.method.trim().to_ascii_uppercase(),
-                req.url.trim()
-            );
-            if status < 400 && self.is_cacheable(req) && !res.body.is_empty() {
-                self.response_cache.insert(key, res.clone());
-            }
-            results[*idx] = Some(res);
-        }
-    }
+    execute_curl_fallback(request, timeout_ms, platform)
 }
 
 fn not_found_response(call_kind: NativeHttpCallKind) -> NativeHttpResponse {
@@ -717,5 +947,73 @@ mod tests {
             NativeHttpEngine::download_files_parallel_with(4, 1000, &[]),
             Vec::<bool>::new()
         );
+    }
+
+    #[test]
+    fn bounds_history_and_lru_cache_and_isolates_auth_cache_keys() {
+        let mut engine = NativeHttpEngine::new();
+        for idx in 0..300_u32 {
+            let url = format!("https://api.ng-native.dev/item/{idx}");
+            engine.register_http_endpoint("GET", &url, 200, &format!(r#"{{"idx":{idx}}}"#));
+            let res = engine.execute_http(&NativeHttpRequest::new("GET", &url));
+            assert_eq!(res.status, 200);
+        }
+        assert!(engine.http_history().len() <= MAX_HTTP_HISTORY);
+
+        let mut req_a = NativeHttpRequest::new("GET", "https://api.ng-native.dev/profile");
+        req_a
+            .headers
+            .insert(String::from("Authorization"), String::from("Bearer tokA"));
+        let mut req_b = NativeHttpRequest::new("GET", "https://api.ng-native.dev/profile");
+        req_b
+            .headers
+            .insert(String::from("Authorization"), String::from("Bearer tokB"));
+        assert_ne!(
+            NativeHttpEngine::cache_key_for(&req_a),
+            NativeHttpEngine::cache_key_for(&req_b)
+        );
+
+        let shared = Arc::new(Mutex::new(NativeHttpEngine::new()));
+        {
+            let mut guard = shared.lock().unwrap();
+            guard.register_http_endpoint(
+                "GET",
+                "https://api.ng-native.dev/detached",
+                200,
+                r#"{"detached":true}"#,
+            );
+            for idx in 0..270_u32 {
+                guard.cache_put(
+                    format!("GET https://api.ng-native.dev/lru/{idx}"),
+                    NativeHttpResponse {
+                        status: 200,
+                        status_text: String::from("OK"),
+                        body: format!(r#"{{"n":{idx}}}"#),
+                        headers: HashMap::new(),
+                        transport: String::from("test"),
+                        call_kind: NativeHttpCallKind::JsonApi,
+                        cached: false,
+                    },
+                );
+            }
+            let cache_len = guard.response_cache.len();
+            drop(guard);
+            assert!(cache_len <= MAX_RESPONSE_CACHE_ENTRIES);
+        }
+        let handles: Vec<_> = (0..4)
+            .map(|_| {
+                let cloned = Arc::clone(&shared);
+                std::thread::spawn(move || {
+                    NativeHttpEngine::execute_bridge_detached(
+                        &cloned,
+                        r#"{"method":"GET","url":"https://api.ng-native.dev/detached"}"#,
+                    )
+                })
+            })
+            .collect();
+        for handle in handles {
+            let json = handle.join().unwrap();
+            assert!(json.contains(r#""status":200"#));
+        }
     }
 }
