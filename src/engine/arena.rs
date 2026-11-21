@@ -71,6 +71,18 @@ impl Arena {
         Ok(slot)
     }
 
+    /// Ensures `id` points to a live node with no active shared or exclusive borrow.
+    pub fn ensure_unborrowed(&self, id: NodeId) -> Result<(), EngineError> {
+        let slot = self.get_slot(id)?;
+        if slot.borrow != BorrowState::Unborrowed {
+            return Err(EngineError::BorrowConflict {
+                id,
+                current_state: slot.borrow,
+            });
+        }
+        Ok(())
+    }
+
     pub fn get(&self, id: NodeId) -> Result<&WidgetKind, EngineError> {
         let slot = self.get_slot(id)?;
         if slot.borrow == BorrowState::Exclusive {

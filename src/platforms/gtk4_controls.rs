@@ -139,6 +139,12 @@ impl Gtk4Sys {
         }
     }
 
+    pub fn clear_window_child(&self, win: GtkHandle) {
+        unsafe {
+            (self.gtk_window_set_child)(win.0, std::ptr::null_mut());
+        }
+    }
+
     pub fn box_append(&self, bx: GtkHandle, child: GtkHandle) {
         unsafe {
             (self.gtk_box_append)(bx.0, child.0);
@@ -149,6 +155,13 @@ impl Gtk4Sys {
         let sib_ptr = sibling.map_or(std::ptr::null_mut(), |h| h.0);
         unsafe {
             (self.gtk_box_insert_child_after)(bx.0, child.0, sib_ptr);
+        }
+    }
+
+    pub fn box_reorder_after(&self, bx: GtkHandle, child: GtkHandle, sibling: Option<GtkHandle>) {
+        let sib_ptr = sibling.map_or(std::ptr::null_mut(), |h| h.0);
+        unsafe {
+            (self.gtk_box_reorder_child_after)(bx.0, child.0, sib_ptr);
         }
     }
 

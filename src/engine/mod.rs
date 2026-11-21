@@ -14,7 +14,7 @@ pub use commands::{CommandQueue, RenderCommand};
 pub use events::{EventPayload, EventRegistry, NativeEvent};
 pub use icons::{IconResolution, WindowIconAsset};
 pub use node::{EngineError, NodeId, StyleId};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 pub use styles::{StyleRegistry, StyleRule};
 pub use widget::WidgetKind;
 
@@ -221,13 +221,54 @@ impl<B: PlatformBackend> RenderEngine<B> {
         Ok(())
     }
 
+    fn collect_subtree_postorder(&self, root: NodeId) -> Result<Vec<NodeId>, EngineError> {
+        self.arena.ensure_unborrowed(root)?;
+        let mut stack = vec![(root, false)];
+        let mut visited = HashSet::new();
+        let mut order = Vec::new();
+
+        while let Some((node_id, children_visited)) = stack.pop() {
+            if children_visited {
+                order.push(node_id);
+                continue;
+            }
+            if !visited.insert(node_id) {
+                continue;
+            }
+            match self.arena.ensure_unborrowed(node_id) {
+                Ok(()) => {}
+                Err(EngineError::InvalidNode(_) | EngineError::StaleGeneration { .. })
+                    if node_id != root =>
+                {
+                    continue;
+                }
+                Err(err) => return Err(err),
+            }
+            let children = self.arena.get(node_id)?.child_ids();
+            stack.push((node_id, true));
+            for child_id in children.into_iter().rev() {
+                stack.push((child_id, false));
+            }
+        }
+        Ok(order)
+    }
+
+    /// Recursively destroys `id` and its live subtree in post-order (children before parent).
+    pub fn destroy_subtree(&mut self, id: NodeId) -> Result<Vec<NodeId>, EngineError> {
+        let order = self.collect_subtree_postorder(id)?;
+        for &node_id in &order {
+            self.arena.remove(node_id)?;
+            self.events.remove_for_node(node_id);
+            self.styles.remove_node(node_id);
+            self.attributes.remove(&node_id);
+            self.commands
+                .push(RenderCommand::DestroyWidget { id: node_id });
+        }
+        Ok(order)
+    }
+
     pub fn destroy_node(&mut self, id: NodeId) -> Result<(), EngineError> {
-        self.arena.remove(id)?;
-        self.events.remove_for_node(id);
-        self.styles.remove_node(id);
-        self.attributes.remove(&id);
-        self.commands.push(RenderCommand::DestroyWidget { id });
-        Ok(())
+        self.destroy_subtree(id).map(|_| ())
     }
 
     pub fn flush_frame(&mut self) {

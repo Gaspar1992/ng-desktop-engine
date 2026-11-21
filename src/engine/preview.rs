@@ -20,7 +20,7 @@ impl<B: PlatformBackend> RenderEngine<B> {
             Self::format_tree_node_header(id, widget, &class_str)
         );
 
-        for child_id in Self::collect_widget_children(widget) {
+        for child_id in widget.child_ids() {
             if self.arena.get(child_id).is_ok() {
                 self.print_tree(child_id, indent + 1)?;
             }
@@ -188,48 +188,6 @@ impl<B: PlatformBackend> RenderEngine<B> {
         }
     }
 
-    fn collect_widget_children(widget: &WidgetKind) -> Vec<NodeId> {
-        match widget {
-            WidgetKind::Window {
-                header_bar, child, ..
-            } => header_bar.iter().chain(child.iter()).copied().collect(),
-            WidgetKind::Paned {
-                start_child,
-                end_child,
-                ..
-            } => start_child
-                .iter()
-                .chain(end_child.iter())
-                .copied()
-                .collect(),
-            WidgetKind::Scroll { child, .. }
-            | WidgetKind::Expander { child, .. }
-            | WidgetKind::Clamp { child, .. } => child.iter().copied().collect(),
-            WidgetKind::HeaderBar { children, .. }
-            | WidgetKind::Box { children, .. }
-            | WidgetKind::Grid { children, .. }
-            | WidgetKind::FlowBox { children, .. }
-            | WidgetKind::Stack { children, .. } => children.clone(),
-            WidgetKind::Separator { .. }
-            | WidgetKind::Button { .. }
-            | WidgetKind::Label { .. }
-            | WidgetKind::Image { .. }
-            | WidgetKind::LevelBar { .. }
-            | WidgetKind::Spinner { .. }
-            | WidgetKind::ProgressBar { .. }
-            | WidgetKind::Entry { .. }
-            | WidgetKind::TextView { .. }
-            | WidgetKind::PasswordEntry { .. }
-            | WidgetKind::SearchEntry { .. }
-            | WidgetKind::SpinButton { .. }
-            | WidgetKind::Switch { .. }
-            | WidgetKind::CheckButton { .. }
-            | WidgetKind::Slider { .. }
-            | WidgetKind::DropDown { .. }
-            | WidgetKind::Anchor { .. } => Vec::new(),
-        }
-    }
-
     pub fn render_window_preview(&self, root_id: NodeId) -> Result<String, EngineError> {
         let root = self.arena.get(root_id)?;
         let (title, icon_opt, header_opt, child_opt) = match root {
@@ -283,7 +241,7 @@ impl<B: PlatformBackend> RenderEngine<B> {
             let _ = writeln!(out, "║{line:<width$}║");
         }
 
-        for child_id in Self::collect_widget_children(widget) {
+        for child_id in widget.child_ids() {
             if self.arena.get(child_id).is_ok() {
                 self.format_preview_node(child_id, width, out)?;
             }
