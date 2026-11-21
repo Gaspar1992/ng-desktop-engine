@@ -44,7 +44,7 @@ impl JsRuntime {
                 value,
             } => {
                 let id = self.resolve_var(&var_name)?;
-                if key == "id" && !value.trim().is_empty() {
+                if (key == "id" || key == "data-testid") && !value.trim().is_empty() {
                     self.variables.insert(value.trim().to_string(), id);
                 }
                 engine.set_attribute(id, key, value)

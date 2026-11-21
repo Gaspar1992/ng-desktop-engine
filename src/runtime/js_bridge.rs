@@ -53,7 +53,12 @@ impl JsRuntime {
         if let Some(var) = self.node_vars.get(&node_id).cloned() {
             self.dispatch_to_js(engine, &var, event_name, payload)?;
         }
-        self.trigger_node_event(engine, node_id, event_name)
+        match self.trigger_node_event(engine, node_id, event_name) {
+            Ok(()) | Err(EngineError::StaleGeneration { .. } | EngineError::InvalidNode(_)) => {
+                Ok(())
+            }
+            Err(err) => Err(err),
+        }
     }
 
     /// Dispatches a native OS event by `NodeId` and runs registered Angular handlers.

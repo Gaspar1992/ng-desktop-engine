@@ -1,5 +1,8 @@
 use ng_native_engine::config::AngularNativeConfig;
 use ng_native_engine::engine::{NodeId, RenderEngine};
+use ng_native_engine::ipc::test_harness::{
+    TestHarnessState, emit_status_error, emit_status_line, run_stdio_harness,
+};
 use ng_native_engine::ipc::{HmrIpcServer, HmrMessage, HmrResponse};
 use ng_native_engine::packager::{stage_all_distributions, stage_linux_distribution};
 use ng_native_engine::platforms::{AnyPlatformBackend, PlatformBackend};
@@ -255,6 +258,155 @@ fn handle_cli_actions(args: &[String], cfg: &AngularNativeConfig) -> bool {
     false
 }
 
+struct BootedBundle {
+    path: String,
+    is_js_bundle: bool,
+    last_mtime: Option<SystemTime>,
+}
+
+fn attach_server_worker_if_present(
+    cfg: &AngularNativeConfig,
+    js_runtime: &JsRuntime,
+    quiet_stdout: bool,
+) -> ServerWatchState {
+    if !js_runtime.js_engine().is_jit_enabled() {
+        return None;
+    }
+    let server_path = resolve_server_bundle_path(cfg)?;
+    let server_path_str = server_path.to_string_lossy().into_owned();
+    let server_source = fs::read_to_string(&server_path).ok()?;
+    let server_mtime = bundle_modified_time(&server_path_str);
+    let worker = js_runtime.attach_server_bundle(&server_source, true).ok()?;
+    if quiet_stdout {
+        eprintln!("[Native Server Worker] Isolated backend started from '{server_path_str}'");
+    } else {
+        println!("[Native Server Worker] Isolated backend started from '{server_path_str}'\n");
+    }
+    Some((worker, server_path_str, server_mtime))
+}
+
+fn boot_application(
+    cfg: &AngularNativeConfig,
+    engine: &mut RenderEngine<AnyPlatformBackend>,
+    js_runtime: &mut JsRuntime,
+) -> Result<BootedBundle, String> {
+    if let Some(js_path) = resolve_app_bundle_path(cfg)
+        && js_runtime.js_engine().is_jit_enabled()
+    {
+        let path_str = js_path.to_string_lossy().into_owned();
+        let js_source = fs::read_to_string(&js_path)
+            .map_err(|e| format!("Failed reading '{path_str}': {e}"))?;
+        let mtime = bundle_modified_time(&path_str);
+        js_runtime
+            .eval_js(engine, &js_source)
+            .map_err(|e| format!("{e:?}"))?;
+        for _ in 0..100 {
+            if js_runtime.resolve_primary_window().is_ok() {
+                break;
+            }
+            js_runtime.tick(engine).map_err(|e| format!("{e:?}"))?;
+            thread::sleep(Duration::from_millis(5));
+        }
+        return Ok(BootedBundle {
+            path: path_str,
+            is_js_bundle: true,
+            last_mtime: mtime,
+        });
+    }
+
+    let ngb_path = format!("{}/main.ngb", cfg.output_path);
+    let bootstrap_script = ensure_bundle_compiled(cfg, &ngb_path)?;
+    let mtime = bundle_modified_time(&ngb_path);
+    js_runtime
+        .eval_tick(engine, &bootstrap_script)
+        .map_err(|e| format!("{e:?}"))?;
+    Ok(BootedBundle {
+        path: ngb_path,
+        is_js_bundle: false,
+        last_mtime: mtime,
+    })
+}
+
+fn run_test_ipc_mode(
+    cfg: &AngularNativeConfig,
+    engine: &mut RenderEngine<AnyPlatformBackend>,
+    js_runtime: &mut JsRuntime,
+    defer_boot: bool,
+) {
+    let engine_name = String::from(js_runtime.js_engine().engine_name());
+    let backend_name = String::from(engine.backend().backend_name());
+
+    let (booted, bundle_kind) = if defer_boot {
+        emit_status_line(
+            "waiting_boot",
+            &cfg.project_name,
+            &backend_name,
+            &engine_name,
+            None,
+        );
+        (false, String::from("pending"))
+    } else {
+        match boot_application(cfg, engine, js_runtime) {
+            Ok(info) => {
+                let kind = String::from(if info.is_js_bundle {
+                    "angular-ivy"
+                } else {
+                    "ngb"
+                });
+                emit_status_line(
+                    "ready",
+                    &cfg.project_name,
+                    &backend_name,
+                    &engine_name,
+                    Some(&kind),
+                );
+                (true, kind)
+            }
+            Err(err) => {
+                emit_status_error(&err);
+                std::process::exit(1);
+            }
+        }
+    };
+
+    let mut boot_cb = |eng: &mut RenderEngine<AnyPlatformBackend>, rt: &mut JsRuntime| {
+        boot_application(cfg, eng, rt).map(|info| {
+            String::from(if info.is_js_bundle {
+                "angular-ivy"
+            } else {
+                "ngb"
+            })
+        })
+    };
+
+    let mut state = TestHarnessState {
+        cfg,
+        engine,
+        js_runtime,
+        booted,
+        bundle_kind,
+        boot_cb: &mut boot_cb,
+    };
+
+    if let Err(err) = run_stdio_harness(&mut state) {
+        eprintln!("[NgDesktop TestIPC Error] {err}");
+        std::process::exit(1);
+    }
+}
+
+fn has_test_ipc_stdio_flag(args: &[String]) -> bool {
+    for arg in args {
+        if arg == "--test-ipc" || arg == "--test-ipc=stdio" {
+            return true;
+        }
+        if let Some(mode) = arg.strip_prefix("--test-ipc=") {
+            eprintln!("[NgDesktop Error] Unsupported --test-ipc mode '{mode}' (expected 'stdio')");
+            std::process::exit(2);
+        }
+    }
+    false
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     let cfg = AngularNativeConfig::from_cli_and_env(&args);
@@ -262,60 +414,42 @@ fn main() {
         return;
     }
 
-    let backend = AnyPlatformBackend::from_config(&cfg).unwrap();
+    let force_headless = args.iter().any(|a| a == "--headless");
+    let test_ipc_stdio = has_test_ipc_stdio_flag(&args);
+    let defer_boot = args.iter().any(|a| a == "--defer-boot");
+
+    let backend = if force_headless {
+        AnyPlatformBackend::headless()
+    } else {
+        AnyPlatformBackend::from_config(&cfg).unwrap()
+    };
     let mut engine = RenderEngine::new(backend);
     let mut js_runtime = JsRuntime::from_config(&cfg).unwrap();
+
+    if test_ipc_stdio {
+        eprintln!(
+            "Initialized JS Engine -> '{}' (JIT={})",
+            js_runtime.js_engine().engine_name(),
+            js_runtime.js_engine().is_jit_enabled()
+        );
+        let _server_state = attach_server_worker_if_present(&cfg, &js_runtime, true);
+        run_test_ipc_mode(&cfg, &mut engine, &mut js_runtime, defer_boot);
+        return;
+    }
+
     println!(
         "Initialized JS Engine -> '{}' (JIT={})\n",
         js_runtime.js_engine().engine_name(),
         js_runtime.js_engine().is_jit_enabled()
     );
 
-    let server_state: ServerWatchState = if js_runtime.js_engine().is_jit_enabled()
-        && let Some(server_path) = resolve_server_bundle_path(&cfg)
-    {
-        let server_path_str = server_path.to_string_lossy().into_owned();
-        let server_source = fs::read_to_string(&server_path).unwrap();
-        let server_mtime = bundle_modified_time(&server_path_str);
-        let worker = js_runtime
-            .attach_server_bundle(&server_source, true)
-            .unwrap();
-        println!("[Native Server Worker] Isolated backend started from '{server_path_str}'\n");
-        Some((worker, server_path_str, server_mtime))
-    } else {
-        None
-    };
-
-    let (bundle_path, is_js_bundle, last_mtime) = if let Some(js_path) =
-        resolve_app_bundle_path(&cfg)
-        && js_runtime.js_engine().is_jit_enabled()
-    {
-        let path_str = js_path.to_string_lossy().into_owned();
-        let js_source = fs::read_to_string(&js_path).unwrap();
-        let mtime = bundle_modified_time(&path_str);
-        js_runtime.eval_js(&mut engine, &js_source).unwrap();
-        for _ in 0..50 {
-            if js_runtime.resolve_primary_window().is_ok() {
-                break;
-            }
-            let _ = js_runtime.tick(&mut engine).unwrap();
-            thread::sleep(Duration::from_millis(5));
+    let server_state = attach_server_worker_if_present(&cfg, &js_runtime, false);
+    let booted = match boot_application(&cfg, &mut engine, &mut js_runtime) {
+        Ok(b) => b,
+        Err(err) => {
+            eprintln!("[NgDesktop Error] {err}");
+            std::process::exit(1);
         }
-        (path_str, true, mtime)
-    } else {
-        let ngb_path = format!("{}/main.ngb", cfg.output_path);
-        let bootstrap_script = match ensure_bundle_compiled(&cfg, &ngb_path) {
-            Ok(script) => script,
-            Err(err) => {
-                eprintln!("[NgDesktop Error] {err}");
-                std::process::exit(1);
-            }
-        };
-        let mtime = bundle_modified_time(&ngb_path);
-        js_runtime
-            .eval_tick(&mut engine, &bootstrap_script)
-            .unwrap();
-        (ngb_path, false, mtime)
     };
 
     println!(
@@ -323,8 +457,8 @@ fn main() {
         cfg.project_name,
         cfg.version,
         cfg.target_platform,
-        bundle_path,
-        if is_js_bundle {
+        booted.path,
+        if booted.is_js_bundle {
             "Angular Ivy JS"
         } else {
             "legacy .ngb"
@@ -332,7 +466,6 @@ fn main() {
         cfg.permissions.summary_labels()
     );
 
-    // 4. Render visual preview of the mounted native window
     let win_id = js_runtime.resolve_primary_window().unwrap();
     println!("\n--- Rendered Window Preview ---");
     println!("{}", engine.render_window_preview(win_id).unwrap());
@@ -347,9 +480,9 @@ fn main() {
         run_interactive_loop(
             InteractiveContext {
                 cfg: &cfg,
-                bundle_path: &bundle_path,
-                is_js_bundle,
-                last_mtime,
+                bundle_path: &booted.path,
+                is_js_bundle: booted.is_js_bundle,
+                last_mtime: booted.last_mtime,
                 server_state,
                 win_id,
             },
@@ -358,7 +491,6 @@ fn main() {
             hmr_server,
         );
     } else {
-        // Pump non-blocking native events if available and print the mounted scene graph
         let _ = engine.backend().step_event_loop(false);
         println!("\n--- Scene Graph Snapshot ---");
         engine.print_tree(win_id, 0).unwrap();

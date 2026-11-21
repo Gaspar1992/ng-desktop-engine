@@ -102,15 +102,23 @@ pub enum AnyPlatformBackend {
     LinuxGtk(Box<GtkLinuxBackend>),
     WindowsWinUi(WinUiBackend),
     MacOsAppKit(MacOsAppKitBackend),
+    Headless(HeadlessBackend),
 }
 
 impl AnyPlatformBackend {
+    /// Creates an OS-independent headless backend for automated testing and snapshot runs.
+    #[must_use]
+    pub fn headless() -> Self {
+        Self::Headless(HeadlessBackend::new())
+    }
+
     /// Factory Method resolving the concrete OS adapter from `angular.json` `targetPlatform`.
     pub fn from_target(target_platform: &str) -> Result<Self, String> {
         match target_platform {
             "linux-gtk4" => Ok(Self::LinuxGtk(Box::default())),
             "windows-winui" => Ok(Self::WindowsWinUi(WinUiBackend::new())),
             "macos-appkit" => Ok(Self::MacOsAppKit(MacOsAppKitBackend::new())),
+            "headless" => Ok(Self::headless()),
             other => Err(format!("Unsupported targetPlatform '{other}'")),
         }
     }
@@ -124,6 +132,7 @@ impl AnyPlatformBackend {
             )))),
             "windows-winui" => Ok(Self::WindowsWinUi(WinUiBackend::new())),
             "macos-appkit" => Ok(Self::MacOsAppKit(MacOsAppKitBackend::new())),
+            "headless" => Ok(Self::headless()),
             other => Err(format!("Unsupported targetPlatform '{other}'")),
         }
     }
@@ -131,14 +140,14 @@ impl AnyPlatformBackend {
     pub fn is_native_display_active(&self) -> bool {
         match self {
             Self::LinuxGtk(b) => b.is_native_display_active(),
-            Self::WindowsWinUi(_) | Self::MacOsAppKit(_) => false,
+            Self::WindowsWinUi(_) | Self::MacOsAppKit(_) | Self::Headless(_) => false,
         }
     }
 
     pub fn open_window_count(&self) -> u32 {
         match self {
             Self::LinuxGtk(b) => b.open_window_count(),
-            Self::WindowsWinUi(_) | Self::MacOsAppKit(_) => 0,
+            Self::WindowsWinUi(_) | Self::MacOsAppKit(_) | Self::Headless(_) => 0,
         }
     }
 
@@ -147,6 +156,7 @@ impl AnyPlatformBackend {
             Self::LinuxGtk(b) => b.step_event_loop(may_block),
             Self::WindowsWinUi(b) => b.step_native_events().into_iter().map(|e| e.node).collect(),
             Self::MacOsAppKit(b) => b.step_native_events().into_iter().map(|e| e.node).collect(),
+            Self::Headless(_) => Vec::new(),
         }
     }
 
@@ -155,6 +165,7 @@ impl AnyPlatformBackend {
             Self::LinuxGtk(b) => b.step_native_events(may_block),
             Self::WindowsWinUi(b) => b.step_native_events(),
             Self::MacOsAppKit(b) => b.step_native_events(),
+            Self::Headless(_) => Vec::new(),
         }
     }
 }
@@ -165,6 +176,7 @@ impl PlatformBackend for AnyPlatformBackend {
             Self::LinuxGtk(b) => b.backend_name(),
             Self::WindowsWinUi(b) => b.backend_name(),
             Self::MacOsAppKit(b) => b.backend_name(),
+            Self::Headless(b) => b.backend_name(),
         }
     }
 
@@ -173,6 +185,7 @@ impl PlatformBackend for AnyPlatformBackend {
             Self::LinuxGtk(b) => b.map_native_widget(tag),
             Self::WindowsWinUi(b) => b.map_native_widget(tag),
             Self::MacOsAppKit(b) => b.map_native_widget(tag),
+            Self::Headless(b) => b.map_native_widget(tag),
         }
     }
 
@@ -181,6 +194,7 @@ impl PlatformBackend for AnyPlatformBackend {
             Self::LinuxGtk(b) => b.flush_commands(commands),
             Self::WindowsWinUi(b) => b.flush_commands(commands),
             Self::MacOsAppKit(b) => b.flush_commands(commands),
+            Self::Headless(b) => b.flush_commands(commands),
         }
     }
 }

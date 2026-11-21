@@ -1,9 +1,25 @@
-import { HttpClient } from '@angular/common/http';
-import { Component, CUSTOM_ELEMENTS_SCHEMA, inject, signal } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Component, CUSTOM_ELEMENTS_SCHEMA, inject, OnInit, signal } from '@angular/core';
 import { PokedexService } from './pokedex.service';
 import { PokemonCard } from './pokemon-card';
 import { TypeBadge } from './type-badge';
+
+function extractPayloadString(event: unknown): string {
+  if (typeof event === 'string') {
+    return event;
+  }
+  if (event && typeof event === 'object') {
+    if ('value' in event) {
+      return String((event as { value: unknown }).value ?? '');
+    }
+    if ('target' in event) {
+      const target = (event as { target?: { value?: unknown } }).target;
+      if (target && 'value' in target) {
+        return String(target.value ?? '');
+      }
+    }
+  }
+  return '';
+}
 
 @Component({
   selector: 'app-root',
@@ -12,74 +28,73 @@ import { TypeBadge } from './type-badge';
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
-export class App {
+export class App implements OnInit {
   protected readonly pokedex = inject(PokedexService);
-  private readonly http = inject(HttpClient, { optional: true });
   protected readonly windowTitle = signal('Pokédex Nacional');
-  protected readonly subtitle = signal('Angular 22 + GTK4 / Libadwaita');
-  protected readonly greeting = signal('Bulbasaur');
-  protected readonly author = signal('');
-  protected readonly pokemonId = signal(0);
+  protected readonly subtitle = signal('Angular 22 + @ng-desktop/server');
+  protected readonly noteDraft = signal('');
 
-  /**
-   * Executes a live `PokéAPI v2` request via Angular `HttpClient` -> `@ng-desktop/http` -> Rust OS HTTP stack.
-   */
-  fetchPokemonHttp(idOrName: string | number): Observable<unknown> | null {
-    return (
-      this.pokedex.fetchPokemon(idOrName) ??
-      (this.http ? this.http.get(`https://pokeapi.co/api/v2/pokemon/${idOrName}`) : null)
-    );
+  ngOnInit(): void {
+    void this.pokedex.refreshFavorites();
+    void this.pokedex.loadCatalogPage(true);
   }
 
-  increment(): void {
-    this.pokemonId.update((value) => value + 1);
+  onSearchInput(event: unknown): void {
+    void this.pokedex.setSearchQuery(extractPayloadString(event));
   }
 
-  decrement(): void {
-    this.pokemonId.update((value) => value - 1);
+  onSpinChanged(event: unknown): void {
+    const raw = extractPayloadString(event);
+    const id = Number.parseInt(raw, 10);
+    if (Number.isInteger(id) && id >= 1 && id <= 1025) {
+      void this.openPokemon(id);
+    }
   }
 
-  reset(): void {
-    this.pokemonId.set(0);
+  toggleFavoritesFilter(): void {
+    void this.pokedex.toggleFavoritesOnly();
   }
 
-  nextPokemon(): void {
-    this.pokemonId.update((value) => value + 1);
+  loadMore(): void {
+    void this.pokedex.loadMore();
   }
 
-  previousPokemon(): void {
-    this.pokemonId.update((value) => value - 1);
+  async openPokemon(id: number): Promise<void> {
+    await this.pokedex.openPokemon(id);
+    this.noteDraft.set(this.pokedex.selectedNote());
   }
 
   backToList(): void {
-    this.pokemonId.set(0);
+    void this.pokedex.backToList();
   }
 
-  loadMorePokemon(): void {
-    // Handled natively by PokedexController (@defer on viewport / load-more pagination)
+  previousPokemon(): void {
+    const prev = this.pokedex.selectedId() - 1;
+    void this.openPokemon(prev >= 1 ? prev : 1);
   }
 
-  selectBulbasaur(): void {
-    this.pokemonId.set(1);
+  nextPokemon(): void {
+    const next = this.pokedex.selectedId() + 1;
+    void this.openPokemon(next <= 1025 ? next : 1025);
   }
 
-  selectCharmander(): void {
-    this.pokemonId.set(4);
+  toggleCurrentFavorite(): void {
+    const detail = this.pokedex.selectedDetail();
+    if (!detail) {
+      return;
+    }
+    void this.pokedex.toggleFavorite(detail.id, detail.displayName, this.noteDraft());
   }
 
-  selectSquirtle(): void {
-    this.pokemonId.set(7);
+  onNoteInput(event: unknown): void {
+    this.noteDraft.set(extractPayloadString(event));
   }
 
-  selectPikachu(): void {
-    this.pokemonId.set(25);
-  }
-
-  selectCharizard(): void {
-    this.pokemonId.set(6);
-  }
-
-  selectGengar(): void {
-    this.pokemonId.set(94);
+  saveNote(): void {
+    const detail = this.pokedex.selectedDetail();
+    if (!detail) {
+      return;
+    }
+    void this.pokedex.saveFieldNote(detail.id, this.noteDraft());
   }
 }
