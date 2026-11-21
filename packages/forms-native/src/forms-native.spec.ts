@@ -148,4 +148,61 @@ describe('@ng-desktop/forms — ControlValueAccessor Directives', () => {
     textViewAccessor.ngOnDestroy();
     spinAccessor.ngOnDestroy();
   });
+
+  it('matches NativeBooleanValueAccessor selector on <ng-check-button>, <gtk-switch>, and <gtk-check-button>', async () => {
+    const { Component, CUSTOM_ELEMENTS_SCHEMA } = await import('@angular/core');
+    const { TestBed } = await import('@angular/core/testing');
+    const { ReactiveFormsModule } = await import('@angular/forms');
+    const { provideNativePlatform } = await import('@ng-desktop/platform');
+
+    @Component({
+      standalone: true,
+      imports: [ReactiveFormsModule, NativeBooleanValueAccessor],
+      schemas: [CUSTOM_ELEMENTS_SCHEMA],
+      template: `
+        <ng-check-button [formControl]="checkBtnCtrl"></ng-check-button>
+        <gtk-switch [formControl]="gtkSwitchCtrl"></gtk-switch>
+        <gtk-check-button [formControl]="gtkCheckCtrl"></gtk-check-button>
+      `,
+    })
+    class BoolControlsHost {
+      readonly checkBtnCtrl = new FormControl(true, { nonNullable: true });
+      readonly gtkSwitchCtrl = new FormControl(false, { nonNullable: true });
+      readonly gtkCheckCtrl = new FormControl(true, { nonNullable: true });
+    }
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [BoolControlsHost],
+      providers: [provideNativePlatform()],
+    });
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+
+    const fixture = TestBed.createComponent(BoolControlsHost);
+    fixture.detectChanges();
+    const queue = bridge.__drainQueue();
+    expect(queue).toContain('create ');
+    expect(queue).toContain('active true');
+    expect(queue).toContain('active false');
+
+    const comp = fixture.componentInstance;
+    const factory = TestBed.inject(NativeRendererFactory2);
+    const allLines = queue.split('\n');
+    const idOfTag = (tag: string): string => {
+      const line = allLines.find((l) => l.startsWith('create ') && l.endsWith(` ${tag}`));
+      expect(line).toBeDefined();
+      return line!.split(' ')[1]!;
+    };
+
+    bridge.__dispatchEvent(idOfTag('ng-check-button'), 'toggled', { checked: false });
+    bridge.__dispatchEvent(idOfTag('gtk-switch'), 'toggled', { checked: true });
+    bridge.__dispatchEvent(idOfTag('gtk-check-button'), 'toggled', { checked: false });
+    expect(comp.checkBtnCtrl.value).toBe(false);
+    expect(comp.gtkSwitchCtrl.value).toBe(true);
+    expect(comp.gtkCheckCtrl.value).toBe(false);
+    expect(factory.getNode(idOfTag('gtk-switch'))?.attributes.get('active')).toBe('true');
+
+    fixture.destroy();
+  });
 });

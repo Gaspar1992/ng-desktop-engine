@@ -234,6 +234,9 @@ impl GtkLinuxBackend {
                         | GtkWidgetType::PasswordEntry => {
                             EventPayload::Text(gtk.get_entry_text(handle))
                         }
+                        GtkWidgetType::TextView => {
+                            EventPayload::Text(gtk.get_text_view_text(handle))
+                        }
                         GtkWidgetType::Switch => EventPayload::Bool(gtk.get_switch_active(handle)),
                         GtkWidgetType::CheckButton => {
                             EventPayload::Bool(gtk.get_check_button_active(handle))

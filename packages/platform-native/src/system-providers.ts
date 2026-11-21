@@ -2,6 +2,7 @@ import { DATE_PIPE_DEFAULT_TIMEZONE } from '@angular/common';
 import {
   EnvironmentProviders,
   ErrorHandler,
+  inject,
   Injectable,
   LOCALE_ID,
   makeEnvironmentProviders,
@@ -9,6 +10,15 @@ import {
 } from '@angular/core';
 import { EVENT_MANAGER_PLUGINS, EventManagerPlugin } from '@angular/platform-browser';
 import { ensureNgNativeBridge } from './bridge';
+import { NativeRendererFactory2 } from './native-renderer';
+
+function injectOptionalRendererFactory(): NativeRendererFactory2 | null {
+  try {
+    return inject(NativeRendererFactory2, { optional: true });
+  } catch {
+    return null;
+  }
+}
 
 export interface NativeKeyEventPayload {
   key?: string;
@@ -63,6 +73,7 @@ export function matchesKeyboardEvent(eventName: string, payload: NativeKeyEventP
 @Injectable()
 export class NativeKeyEventsPlugin extends EventManagerPlugin {
   private readonly bridge = ensureNgNativeBridge();
+  private readonly rendererFactory = injectOptionalRendererFactory();
 
   constructor() {
     super(null);
@@ -79,12 +90,17 @@ export class NativeKeyEventsPlugin extends EventManagerPlugin {
     handler: (event: unknown) => void,
   ): () => void {
     const baseEvent = eventName.trim().toLowerCase().startsWith('keyup.') ? 'keyup' : 'keydown';
+    const primaryWin = this.rendererFactory?.getPrimaryWindowId() ?? 'win';
     const nodeId =
       typeof element === 'string'
-        ? element
+        ? element === 'window' || element === 'document' || element === 'body'
+          ? primaryWin
+          : element
         : typeof element === 'object' && element !== null && 'id' in element
-          ? String((element as { id: unknown }).id)
-          : 'win';
+          ? 'isVirtual' in element && (element as { isVirtual?: boolean }).isVirtual
+            ? primaryWin
+            : String((element as { id: unknown }).id)
+          : primaryWin;
 
     return this.bridge.listen(nodeId, baseEvent, (rawEvent) => {
       const payload = (rawEvent ?? {}) as NativeKeyEventPayload;

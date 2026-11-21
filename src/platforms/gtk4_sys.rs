@@ -144,6 +144,10 @@ pub struct Gtk4Sys {
     pub(super) gtk_text_view_set_monospace: unsafe extern "C" fn(*mut c_void, c_int),
     pub(super) gtk_text_view_set_wrap_mode: unsafe extern "C" fn(*mut c_void, c_int),
     pub(super) gtk_text_buffer_set_text: unsafe extern "C" fn(*mut c_void, *const c_char, c_int),
+    pub(super) gtk_text_buffer_get_bounds:
+        unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void),
+    pub(super) gtk_text_buffer_get_text:
+        unsafe extern "C" fn(*mut c_void, *const c_void, *const c_void, c_int) -> *mut c_char,
     pub(super) gtk_password_entry_new: unsafe extern "C" fn() -> *mut c_void,
     pub(super) gtk_password_entry_set_show_peek_icon: unsafe extern "C" fn(*mut c_void, c_int),
     pub(super) gtk_search_entry_new: unsafe extern "C" fn() -> *mut c_void,
@@ -160,6 +164,7 @@ pub struct Gtk4Sys {
     pub(super) g_main_context_iteration: unsafe extern "C" fn(*mut c_void, c_int) -> c_int,
     pub(super) g_set_prgname: unsafe extern "C" fn(*const c_char),
     pub(super) g_set_application_name: unsafe extern "C" fn(*const c_char),
+    pub(super) g_free: unsafe extern "C" fn(*mut c_void),
     pub(super) g_signal_connect_data: unsafe extern "C" fn(
         *mut c_void,
         *const c_char,
@@ -451,6 +456,8 @@ impl Gtk4Sys {
                     c"gtk_text_view_set_wrap_mode",
                 )?,
                 gtk_text_buffer_set_text: Self::load_fn(gtk_lib, c"gtk_text_buffer_set_text")?,
+                gtk_text_buffer_get_bounds: Self::load_fn(gtk_lib, c"gtk_text_buffer_get_bounds")?,
+                gtk_text_buffer_get_text: Self::load_fn(gtk_lib, c"gtk_text_buffer_get_text")?,
                 gtk_password_entry_new: Self::load_fn(gtk_lib, c"gtk_password_entry_new")?,
                 gtk_password_entry_set_show_peek_icon: Self::load_fn(
                     gtk_lib,
@@ -481,6 +488,7 @@ impl Gtk4Sys {
                 g_main_context_iteration: Self::load_fn(glib_lib, c"g_main_context_iteration")?,
                 g_set_prgname,
                 g_set_application_name: Self::load_fn(glib_lib, c"g_set_application_name")?,
+                g_free: Self::load_fn(glib_lib, c"g_free")?,
                 g_signal_connect_data: Self::load_fn(gobject_lib, c"g_signal_connect_data")?,
                 g_object_ref: Self::load_fn(gobject_lib, c"g_object_ref")?,
                 g_object_unref: Self::load_fn(gobject_lib, c"g_object_unref")?,

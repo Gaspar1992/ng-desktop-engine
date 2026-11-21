@@ -145,12 +145,16 @@ export interface NgNativeBridge {
   __flushTimers(): void;
   __tickTimers?(nowMs?: number): void;
   __resolveHostCallback?(id: number, payload: unknown): void;
+  beginBatch?(): void;
+  endBatch?(): void;
   __drainQueue(): string;
 }
 
 declare global {
   var __NG_NATIVE__: NgNativeBridge | undefined;
 }
+
+declare const __NG_DESKTOP_PROD_BUNDLE__: boolean | undefined;
 
 /**
  * Ensures `globalThis.__NG_NATIVE__` is initialized.
@@ -161,265 +165,291 @@ export function ensureNgNativeBridge(): NgNativeBridge {
   if (globalThis.__NG_NATIVE__) {
     return globalThis.__NG_NATIVE__;
   }
-
-  let queue: string[] = [];
-  let systemTheme: 'dark' | 'light' = 'dark';
-  let clipboardText = '';
-  const sqliteStore = new InMemorySqliteStore();
-  const fsStore = new InMemoryFsStore();
-  let networkStatus: NativeNetworkStatus = {
-    online: true,
-    metered: false,
-    connectivity: 'full',
-  };
-  const systemLocale =
-    (typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().locale : '') || 'en-US';
-  const systemTimezone =
-    (typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : '') || 'UTC';
-  const systemErrors: string[] = [];
-  const httpEndpoints = new Map<string, NativeHttpBridgeResponse>();
-  let httpConfig: NativeHttpConfig = {
-    platform: 'js-fallback',
-    useFetchTransport: true,
-    interceptorsEnabled: true,
-    xsrfEnabled: true,
-    xsrfCookieName: 'XSRF-TOKEN',
-    xsrfHeaderName: 'X-XSRF-TOKEN',
-    xsrfTokenValue: '',
-    jsonpEnabled: false,
-    requestsViaParent: false,
-    maxParallelConnections: 24,
-    cacheEnabled: true,
-    timeoutMs: 15_000,
-  };
-  const listeners = new Map<
-    number,
-    { id: string; eventName: string; callback: (e?: unknown) => void }
-  >();
-  let nextListenerId = 1;
-
-  const escapeNewlines = (value: string): string => value.replace(/\r?\n/g, '\u001e');
-
-  const fallbackBridge: NgNativeBridge = {
-    registerStyle(cls, bg = 'none', fg = 'none', pad = 0, space = 0, extras = '') {
-      const extraTrimmed = extras.trim();
-      queue.push(
-        extraTrimmed
-          ? `style ${cls} ${bg} ${fg} ${pad} ${space} ${extraTrimmed}`
-          : `style ${cls} ${bg} ${fg} ${pad} ${space}`,
-      );
-    },
-    declareSignal(name, initial = 0) {
-      queue.push(`signal ${name} ${initial}`);
-    },
-    createElement(id, tag) {
-      queue.push(`create ${id} ${tag}`);
-      return id;
-    },
-    createComment(id, text = 'anchor') {
-      queue.push(`comment ${id} ${text}`);
-      return id;
-    },
-    setText(id, text) {
-      queue.push(`text ${id} ${escapeNewlines(text)}`);
-    },
-    setAttribute(id, key, value) {
-      queue.push(`attr ${id} ${key} ${escapeNewlines(value)}`);
-    },
-    setWindowIcon(id, appId, icoPath) {
-      queue.push(`icon ${id} ${appId} ${icoPath}`);
-    },
-    appendChild(parent, child) {
-      queue.push(`append ${parent} ${child}`);
-    },
-    insertBefore(parent, child, refChild) {
-      if (refChild) {
-        queue.push(`insert_before ${parent} ${child} ${refChild}`);
+  if (typeof __NG_DESKTOP_PROD_BUNDLE__ === 'undefined' || !__NG_DESKTOP_PROD_BUNDLE__) {
+    let queue: string[] = [];
+    let batchDepth = 0;
+    const batchBuffer: string[] = [];
+    const emit = (cmd: string): void => {
+      if (batchDepth > 0) {
+        batchBuffer.push(cmd);
       } else {
-        queue.push(`insert_before ${parent} ${child}`);
+        queue.push(cmd);
       }
-    },
-    removeChild(parent, child) {
-      queue.push(`remove_child ${parent} ${child}`);
-    },
-    addClass(id, className) {
-      queue.push(`add_class ${id} ${className}`);
-    },
-    removeClass(id, className) {
-      queue.push(`remove_class ${id} ${className}`);
-    },
-    bindText(id, signalName, template) {
-      queue.push(`bind_text ${id} ${signalName} ${template}`);
-    },
-    bindAttr(id, attrKey, signalName, template = '{}') {
-      queue.push(`bind_attr ${id} ${attrKey} ${signalName} ${template}`);
-    },
-    bindVisible(id, signalName, op = '!=', rhs = 0) {
-      queue.push(`bind_visible ${id} ${signalName} ${op} ${rhs}`);
-    },
-    onAdd(id, eventName, signalName, delta = 1) {
-      queue.push(`on_add ${id} ${eventName} ${signalName} ${delta}`);
-    },
-    onSet(id, eventName, signalName, value = 0) {
-      queue.push(`on_set ${id} ${eventName} ${signalName} ${value}`);
-    },
-    listen(id, eventName, callback) {
-      const lid = nextListenerId++;
-      listeners.set(lid, { id, eventName, callback });
-      return () => {
-        listeners.delete(lid);
-      };
-    },
-    destroyNode(id) {
-      queue.push(`destroy ${id}`);
-    },
-    getSystemTheme() {
-      return systemTheme;
-    },
-    setSystemTheme(theme) {
-      systemTheme = theme === 'light' ? 'light' : 'dark';
-    },
-    getClipboard() {
-      return clipboardText;
-    },
-    setClipboard(text) {
-      clipboardText = text;
-    },
-    sendNotification(title, body, icon = resolveDefaultAppId()) {
-      queue.push(`comment notify_${nextListenerId++} [${icon}] ${title}: ${body}`);
-    },
-    openFileDialog(_title = 'Open File', defaultPath = '/home/user/document.txt') {
-      return defaultPath;
-    },
-    saveFileDialog(_title = 'Save File', suggestedName = '/home/user/untitled.txt') {
-      return suggestedName;
-    },
-    configureHttp(config) {
-      httpConfig = { ...httpConfig, ...config };
-      return { ...httpConfig };
-    },
-    getHttpConfig() {
-      return { ...httpConfig };
-    },
-    registerHttpEndpoint(method, url, status, body) {
-      const key = `${method.trim().toUpperCase()} ${url.trim()}`;
-      httpEndpoints.set(key, {
-        status,
-        statusText: status < 400 ? 'OK' : 'Error',
-        body,
-        headers: {},
-        transport: 'mock-route',
-        callKind: 'json',
-        cached: false,
-      });
-    },
-    httpRequest(method, url, _body, options) {
-      const key = `${method.trim().toUpperCase()} ${url.trim()}`;
-      return (
-        httpEndpoints.get(key) ?? {
-          status: 404,
-          statusText: 'Not Found',
-          body: '{"error":"Endpoint not registered"}',
-          headers: {},
-          transport: 'js-fallback',
-          callKind: options?.callKind ?? 'json',
-          cached: false,
-        }
-      );
-    },
-    httpBatchRequest(requests) {
-      return requests.map((req) =>
-        fallbackBridge.httpRequest(req.method, req.url, req.body, req.options),
-      );
-    },
-    httpRequestAsync(method, url, body, options) {
-      return Promise.resolve(fallbackBridge.httpRequest(method, url, body, options));
-    },
-    httpBatchRequestAsync(requests) {
-      return Promise.resolve(fallbackBridge.httpBatchRequest!(requests));
-    },
-    downloadImageAsync(url, width) {
-      return Promise.resolve({
-        ok: true,
-        cached: false,
-        path: fallbackBridge.resolveImageAsset(url, width),
-      });
-    },
-    sqliteExecute(sql) {
-      return sqliteStore.execute(sql);
-    },
-    sqliteQuery(sql) {
-      return sqliteStore.query(sql);
-    },
-    getNetworkStatus() {
-      return { ...networkStatus };
-    },
-    setNetworkStatus(online, metered = false) {
-      networkStatus = {
-        online,
-        metered,
-        connectivity: !online ? 'offline' : metered ? 'limited' : 'full',
-      };
-    },
-    getSystemLocale() {
-      return systemLocale;
-    },
-    getSystemTimezone() {
-      return systemTimezone;
-    },
-    resolveImageAsset(src, width) {
-      return resolveNativeImageAsset(src, width);
-    },
-    logSystemError(message) {
-      systemErrors.push(String(message));
-    },
-    getSystemErrors() {
-      return [...systemErrors];
-    },
-    computeFuzzyFilter(items, query, limit = 50) {
-      return computeFuzzyFilterFallback(items, query, limit);
-    },
-    computeHash(input) {
-      return computeHashFallback(input);
-    },
-    fsResolvePath(kind, relPath) {
-      return fsStore.resolvePath(kind, relPath);
-    },
-    fsReadText(path) {
-      return fsStore.readText(path);
-    },
-    fsWriteText(path, content) {
-      return fsStore.writeText(path, content);
-    },
-    fsWatchFile(path) {
-      return fsStore.watchFile(path);
-    },
-    fsPollChangedFiles() {
-      return fsStore.pollChangedFiles();
-    },
-    __dispatchEvent(id, eventName, eventPayload = {}) {
-      for (const entry of listeners.values()) {
-        if (entry.id === id && entry.eventName === eventName) {
-          entry.callback(eventPayload);
-        }
-      }
-    },
-    __flushTimers() {
-      // No-op in synchronous fallback
-    },
-    __tickTimers() {
-      // No-op in synchronous fallback
-    },
-    __resolveHostCallback() {
-      // No-op in synchronous fallback
-    },
-    __drainQueue() {
-      const out = queue.join('\n');
-      queue = [];
-      return out;
-    },
-  };
+    };
+    let systemTheme: 'dark' | 'light' = 'dark';
+    let clipboardText = '';
+    const sqliteStore = new InMemorySqliteStore();
+    const fsStore = new InMemoryFsStore();
+    let networkStatus: NativeNetworkStatus = {
+      online: true,
+      metered: false,
+      connectivity: 'full',
+    };
+    const systemLocale =
+      (typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().locale : '') ||
+      'en-US';
+    const systemTimezone =
+      (typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : '') ||
+      'UTC';
+    const systemErrors: string[] = [];
+    const httpEndpoints = new Map<string, NativeHttpBridgeResponse>();
+    let httpConfig: NativeHttpConfig = {
+      platform: 'js-fallback',
+      useFetchTransport: true,
+      interceptorsEnabled: true,
+      xsrfEnabled: true,
+      xsrfCookieName: 'XSRF-TOKEN',
+      xsrfHeaderName: 'X-XSRF-TOKEN',
+      xsrfTokenValue: '',
+      jsonpEnabled: false,
+      requestsViaParent: false,
+      maxParallelConnections: 24,
+      cacheEnabled: true,
+      timeoutMs: 15_000,
+    };
+    const listeners = new Map<
+      number,
+      { id: string; eventName: string; callback: (e?: unknown) => void }
+    >();
+    let nextListenerId = 1;
 
-  globalThis.__NG_NATIVE__ = fallbackBridge;
-  return fallbackBridge;
+    const escapeNewlines = (value: string): string => value.replace(/\r?\n/g, '\u001e');
+
+    const fallbackBridge: NgNativeBridge = {
+      registerStyle(cls, bg = 'none', fg = 'none', pad = 0, space = 0, extras = '') {
+        const extraTrimmed = extras.trim();
+        emit(
+          extraTrimmed
+            ? `style ${cls} ${bg} ${fg} ${pad} ${space} ${extraTrimmed}`
+            : `style ${cls} ${bg} ${fg} ${pad} ${space}`,
+        );
+      },
+      declareSignal(name, initial = 0) {
+        emit(`signal ${name} ${initial}`);
+      },
+      createElement(id, tag) {
+        emit(`create ${id} ${tag}`);
+        return id;
+      },
+      createComment(id, text = 'anchor') {
+        emit(`comment ${id} ${text}`);
+        return id;
+      },
+      setText(id, text) {
+        emit(`text ${id} ${escapeNewlines(text)}`);
+      },
+      setAttribute(id, key, value) {
+        emit(`attr ${id} ${key} ${escapeNewlines(value)}`);
+      },
+      setWindowIcon(id, appId, icoPath) {
+        emit(`icon ${id} ${appId} ${icoPath}`);
+      },
+      appendChild(parent, child) {
+        emit(`append ${parent} ${child}`);
+      },
+      insertBefore(parent, child, refChild) {
+        if (refChild) {
+          emit(`insert_before ${parent} ${child} ${refChild}`);
+        } else {
+          emit(`insert_before ${parent} ${child}`);
+        }
+      },
+      removeChild(parent, child) {
+        emit(`remove_child ${parent} ${child}`);
+      },
+      addClass(id, className) {
+        emit(`add_class ${id} ${className}`);
+      },
+      removeClass(id, className) {
+        emit(`remove_class ${id} ${className}`);
+      },
+      bindText(id, signalName, template) {
+        emit(`bind_text ${id} ${signalName} ${template}`);
+      },
+      bindAttr(id, attrKey, signalName, template = '{}') {
+        emit(`bind_attr ${id} ${attrKey} ${signalName} ${template}`);
+      },
+      bindVisible(id, signalName, op = '!=', rhs = 0) {
+        emit(`bind_visible ${id} ${signalName} ${op} ${rhs}`);
+      },
+      onAdd(id, eventName, signalName, delta = 1) {
+        emit(`on_add ${id} ${eventName} ${signalName} ${delta}`);
+      },
+      onSet(id, eventName, signalName, value = 0) {
+        emit(`on_set ${id} ${eventName} ${signalName} ${value}`);
+      },
+      listen(id, eventName, callback) {
+        const lid = nextListenerId++;
+        listeners.set(lid, { id, eventName, callback });
+        return () => {
+          listeners.delete(lid);
+        };
+      },
+      destroyNode(id) {
+        emit(`destroy ${id}`);
+      },
+      getSystemTheme() {
+        return systemTheme;
+      },
+      setSystemTheme(theme) {
+        systemTheme = theme === 'light' ? 'light' : 'dark';
+      },
+      getClipboard() {
+        return clipboardText;
+      },
+      setClipboard(text) {
+        clipboardText = text;
+      },
+      sendNotification(title, body, icon = resolveDefaultAppId()) {
+        emit(`comment notify_${nextListenerId++} [${icon}] ${title}: ${body}`);
+      },
+      openFileDialog(_title = 'Open File', defaultPath = '/home/user/document.txt') {
+        return defaultPath;
+      },
+      saveFileDialog(_title = 'Save File', suggestedName = '/home/user/untitled.txt') {
+        return suggestedName;
+      },
+      configureHttp(config) {
+        httpConfig = { ...httpConfig, ...config };
+        return { ...httpConfig };
+      },
+      getHttpConfig() {
+        return { ...httpConfig };
+      },
+      registerHttpEndpoint(method, url, status, body) {
+        const key = `${method.trim().toUpperCase()} ${url.trim()}`;
+        httpEndpoints.set(key, {
+          status,
+          statusText: status < 400 ? 'OK' : 'Error',
+          body,
+          headers: {},
+          transport: 'mock-route',
+          callKind: 'json',
+          cached: false,
+        });
+      },
+      httpRequest(method, url, _body, options) {
+        const key = `${method.trim().toUpperCase()} ${url.trim()}`;
+        return (
+          httpEndpoints.get(key) ?? {
+            status: 404,
+            statusText: 'Not Found',
+            body: '{"error":"Endpoint not registered"}',
+            headers: {},
+            transport: 'js-fallback',
+            callKind: options?.callKind ?? 'json',
+            cached: false,
+          }
+        );
+      },
+      httpBatchRequest(requests) {
+        return requests.map((req) =>
+          fallbackBridge.httpRequest(req.method, req.url, req.body, req.options),
+        );
+      },
+      httpRequestAsync(method, url, body, options) {
+        return Promise.resolve(fallbackBridge.httpRequest(method, url, body, options));
+      },
+      httpBatchRequestAsync(requests) {
+        return Promise.resolve(fallbackBridge.httpBatchRequest!(requests));
+      },
+      downloadImageAsync(url, width) {
+        return Promise.resolve({
+          ok: true,
+          cached: false,
+          path: fallbackBridge.resolveImageAsset(url, width),
+        });
+      },
+      sqliteExecute(sql) {
+        return sqliteStore.execute(sql);
+      },
+      sqliteQuery(sql) {
+        return sqliteStore.query(sql);
+      },
+      getNetworkStatus() {
+        return { ...networkStatus };
+      },
+      setNetworkStatus(online, metered = false) {
+        networkStatus = {
+          online,
+          metered,
+          connectivity: !online ? 'offline' : metered ? 'limited' : 'full',
+        };
+      },
+      getSystemLocale() {
+        return systemLocale;
+      },
+      getSystemTimezone() {
+        return systemTimezone;
+      },
+      resolveImageAsset(src, width) {
+        return resolveNativeImageAsset(src, width);
+      },
+      logSystemError(message) {
+        systemErrors.push(String(message));
+      },
+      getSystemErrors() {
+        return [...systemErrors];
+      },
+      computeFuzzyFilter(items, query, limit = 50) {
+        return computeFuzzyFilterFallback(items, query, limit);
+      },
+      computeHash(input) {
+        return computeHashFallback(input);
+      },
+      fsResolvePath(kind, relPath) {
+        return fsStore.resolvePath(kind, relPath);
+      },
+      fsReadText(path) {
+        return fsStore.readText(path);
+      },
+      fsWriteText(path, content) {
+        return fsStore.writeText(path, content);
+      },
+      fsWatchFile(path) {
+        return fsStore.watchFile(path);
+      },
+      fsPollChangedFiles() {
+        return fsStore.pollChangedFiles();
+      },
+      __dispatchEvent(id, eventName, eventPayload = {}) {
+        for (const entry of listeners.values()) {
+          if (entry.id === id && entry.eventName === eventName) {
+            entry.callback(eventPayload);
+          }
+        }
+      },
+      __flushTimers() {
+        // No-op in synchronous fallback
+      },
+      __tickTimers() {
+        // No-op in synchronous fallback
+      },
+      __resolveHostCallback() {
+        // No-op in synchronous fallback
+      },
+      beginBatch() {
+        batchDepth += 1;
+      },
+      endBatch() {
+        if (batchDepth > 0) {
+          batchDepth -= 1;
+        }
+        if (batchDepth === 0 && batchBuffer.length > 0) {
+          queue.push(...batchBuffer);
+          batchBuffer.length = 0;
+        }
+      },
+      __drainQueue() {
+        const out = queue.join('\n');
+        queue = [];
+        return out;
+      },
+    };
+
+    globalThis.__NG_NATIVE__ = fallbackBridge;
+    return fallbackBridge;
+  }
+
+  throw new Error('Native __NG_NATIVE__ bridge is required in production bundles.');
 }

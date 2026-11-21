@@ -1,7 +1,7 @@
 #![allow(unsafe_code)]
 
 use super::gtk4_sys::{GTK_ORIENTATION_HORIZONTAL, GTK_ORIENTATION_VERTICAL, Gtk4Sys, GtkHandle};
-use std::ffi::{CString, c_int};
+use std::ffi::{CStr, CString, c_int, c_void};
 
 impl Gtk4Sys {
     pub fn load_css(&self, css: &str) {
@@ -382,6 +382,37 @@ impl Gtk4Sys {
                     (self.gtk_text_buffer_set_text)(buf, c_str.as_ptr(), -1);
                 }
             }
+        }
+    }
+
+    #[must_use]
+    pub fn get_text_view_text(&self, tv: GtkHandle) -> String {
+        unsafe {
+            let buf = (self.gtk_text_view_get_buffer)(tv.0);
+            if buf.is_null() {
+                return String::new();
+            }
+            // `GtkTextIter` is an 80-byte opaque stack struct in GTK4; 128 bytes
+            // at 8-byte alignment safely covers any GTK4 ABI layout.
+            let mut start_iter = [0_u64; 16];
+            let mut end_iter = [0_u64; 16];
+            (self.gtk_text_buffer_get_bounds)(
+                buf,
+                start_iter.as_mut_ptr().cast::<c_void>(),
+                end_iter.as_mut_ptr().cast::<c_void>(),
+            );
+            let raw = (self.gtk_text_buffer_get_text)(
+                buf,
+                start_iter.as_ptr().cast::<c_void>(),
+                end_iter.as_ptr().cast::<c_void>(),
+                1,
+            );
+            if raw.is_null() {
+                return String::new();
+            }
+            let text = CStr::from_ptr(raw).to_string_lossy().into_owned();
+            (self.g_free)(raw.cast::<c_void>());
+            text
         }
     }
 

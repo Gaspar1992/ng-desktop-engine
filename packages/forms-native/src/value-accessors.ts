@@ -86,7 +86,7 @@ export class NativeTextValueAccessor implements ControlValueAccessor, OnDestroy 
  */
 @Directive({
   selector:
-    'ng-switch[formControlName],ng-switch[formControl],ng-switch[ngModel],ng-checkbox[formControlName],ng-checkbox[formControl],ng-checkbox[ngModel],ng-check[formControlName],ng-check[formControl],ng-check[ngModel]',
+    'ng-switch[formControlName],ng-switch[formControl],ng-switch[ngModel],ng-checkbox[formControlName],ng-checkbox[formControl],ng-checkbox[ngModel],ng-check[formControlName],ng-check[formControl],ng-check[ngModel],ng-check-button[formControlName],ng-check-button[formControl],ng-check-button[ngModel],gtk-switch[formControlName],gtk-switch[formControl],gtk-switch[ngModel],gtk-check-button[formControlName],gtk-check-button[formControl],gtk-check-button[ngModel]',
   standalone: true,
   providers: [
     {

@@ -236,4 +236,141 @@ describe('@ng-desktop/platform — NativeRenderer2 & Bridge', () => {
       bridge.downloadImageAsync = originalDownload;
     }
   });
+
+  it('batches commands between begin() and end(), clears removed styles, syncs property title, guards stale image loads, and binds virtual hosts', async () => {
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+
+    const factory = new NativeRendererFactory2();
+    const renderer = factory.createRenderer(null, null);
+
+    factory.begin();
+    const win = renderer.createElement('ng-window');
+    const header = renderer.createElement('ng-header-bar');
+    const box = renderer.createElement('ng-box');
+    renderer.setProperty(win, 'title', 'Batched Window');
+    renderer.setProperty(header, 'title', 'Header Text');
+    renderer.setStyle(box, 'background', '#0f172a');
+    renderer.removeStyle(box, 'background');
+    expect(bridge.__drainQueue()).toBe('');
+    factory.end();
+
+    const batched = bridge.__drainQueue();
+    expect(batched).toContain(`text ${win.id} Batched Window`);
+    expect(batched).toContain(`text ${header.id} Header Text`);
+    expect(batched).toContain(`attr ${box.id} background #0f172a`);
+    expect(batched).toContain(`attr ${box.id} background `);
+    expect(box.styles.has('background')).toBe(false);
+
+    // Virtual host listen binds both pre-existing and later-projected real children
+    const virtualHost = renderer.createElement('app-card');
+    expect(virtualHost.isVirtual).toBe(true);
+    let virtualClicks = 0;
+    const unlistenVirtual = renderer.listen(virtualHost, 'click', () => {
+      virtualClicks += 1;
+    });
+    const innerBtn = renderer.createElement('ng-button');
+    renderer.appendChild(virtualHost, innerBtn);
+    renderer.appendChild(box, virtualHost);
+
+    bridge.__dispatchEvent(innerBtn.id, 'clicked', {});
+    expect(virtualClicks).toBe(1);
+    unlistenVirtual();
+    bridge.__dispatchEvent(innerBtn.id, 'clicked', {});
+    expect(virtualClicks).toBe(1);
+
+    // Stale async image download does not overwrite newer image source
+    const img = renderer.createElement('ng-image');
+    const pendingResolvers: Array<(res: { ok: boolean; path: string }) => void> = [];
+    const originalDownload = bridge.downloadImageAsync;
+    bridge.downloadImageAsync = () =>
+      new Promise((resolve) => {
+        pendingResolvers.push(resolve);
+      });
+    try {
+      bridge.__drainQueue();
+      renderer.setAttribute(img, 'src', 'https://cdn.example.test/old.png');
+      renderer.setAttribute(img, 'src', 'https://cdn.example.test/new.png');
+      pendingResolvers[1]!({ ok: true, path: '/cache/new.png' });
+      await Promise.resolve();
+      pendingResolvers[0]!({ ok: true, path: '/cache/old.png' });
+      await Promise.resolve();
+
+      const imgCmds = bridge.__drainQueue();
+      expect(imgCmds).toContain(`text ${img.id} /cache/new.png`);
+      expect(imgCmds).not.toContain('/cache/old.png');
+    } finally {
+      bridge.downloadImageAsync = originalDownload;
+    }
+
+    // Sibling insertion inside virtual wrappers preserves exact real DOM order
+    const vFirst = renderer.createElement('ng-container');
+    const vSecond = renderer.createElement('ng-container');
+    const a = renderer.createElement('ng-label');
+    const b = renderer.createElement('ng-label');
+    const middle = renderer.createElement('ng-label');
+    renderer.appendChild(box, vFirst);
+    renderer.appendChild(box, vSecond);
+    renderer.appendChild(vSecond, b);
+    renderer.appendChild(vFirst, a);
+    bridge.__drainQueue();
+    renderer.insertBefore(vFirst, middle, null);
+    // Append into vFirst projects before b (the first real node in vSecond)
+    const orderCmds = bridge.__drainQueue();
+    expect(orderCmds).toContain(`insert_before ${box.id} ${middle.id} ${b.id}`);
+  });
+
+  it('dynamically targets primary ng-window and ng-scroll node IDs in NativeTitleService, NativeViewportScroller, and NativeKeyEventsPlugin', async () => {
+    const { TestBed } = await import('@angular/core/testing');
+    const { ViewportScroller } = await import('@angular/common');
+    const { EVENT_MANAGER_PLUGINS, Title } = await import('@angular/platform-browser');
+    const { RendererFactory2 } = await import('@angular/core');
+    const { provideNativePlatform } = await import('./platform');
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [provideNativePlatform()],
+    });
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+
+    const rf = TestBed.inject(RendererFactory2) as NativeRendererFactory2;
+    const renderer = rf.createRenderer(null, null);
+    const win = renderer.createElement('ng-window');
+    const scroll = renderer.createElement('ng-scroll');
+    renderer.appendChild(win, scroll);
+    bridge.__drainQueue();
+
+    const title = TestBed.inject(Title);
+    title.setTitle('Dynamic Pokédex Window');
+    expect(bridge.__drainQueue()).toContain(`text ${win.id} Dynamic Pokédex Window`);
+
+    const scroller = TestBed.inject(ViewportScroller);
+    scroller.scrollToPosition([12, 340]);
+    expect(bridge.__drainQueue()).toContain(`attr ${scroll.id} scroll-to 12,340`);
+
+    let escHits = 0;
+    const plugins = TestBed.inject(EVENT_MANAGER_PLUGINS);
+    const keyPlugin = plugins.find((p) => p instanceof NativeKeyEventsPlugin);
+    expect(keyPlugin).toBeDefined();
+    expect(keyPlugin!.supports('keydown.escape')).toBe(true);
+    const unlistenKey = keyPlugin!.addEventListener(
+      'window' as unknown as HTMLElement,
+      'keydown.escape',
+      () => {
+        escHits += 1;
+      },
+    );
+    bridge.__dispatchEvent(win.id, 'keydown', { key: 'Escape' });
+    expect(escHits).toBe(1);
+    unlistenKey();
+
+    let winListenerHits = 0;
+    const unlistenWin = renderer.listen('window', 'clicked', () => {
+      winListenerHits += 1;
+    });
+    bridge.__dispatchEvent(win.id, 'clicked', {});
+    expect(winListenerHits).toBe(1);
+    unlistenWin();
+  });
 });

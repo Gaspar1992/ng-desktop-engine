@@ -341,4 +341,115 @@ describe('Phase 5 — @ng-desktop/router, @ng-desktop/http & @ng-desktop/desktop
     reuse.clearCache();
     expect(reuse.cachedRoutes()).toEqual([]);
   });
+
+  it('supports createNativeHttpResource.reloadAsync with stale request cancellation', async () => {
+    const bridge = ensureNgNativeBridge();
+    let resolveFirst!: (val: {
+      ok: boolean;
+      status: number;
+      statusText: string;
+      headers: Record<string, string>;
+      body: string;
+      fromCache?: boolean;
+    }) => void;
+    let resolveSecond!: typeof resolveFirst;
+    let callIdx = 0;
+
+    bridge.httpRequestAsync = () =>
+      new Promise((resolve) => {
+        callIdx += 1;
+        if (callIdx === 1) {
+          resolveFirst = resolve;
+        } else {
+          resolveSecond = resolve;
+        }
+      });
+
+    bridge.registerHttpEndpoint('GET', 'https://api.example.test/initial', 200, '{"step":"sync"}');
+    let currentUrl = 'https://api.example.test/initial';
+    const res = createNativeHttpResource<{ step: string }>(() => currentUrl);
+    expect(res.value()).toEqual({ step: 'sync' });
+
+    currentUrl = 'https://api.example.test/slow';
+    const p1 = res.reloadAsync();
+    currentUrl = 'https://api.example.test/fast';
+    const p2 = res.reloadAsync();
+
+    resolveSecond({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      body: '{"step":"fast"}',
+    });
+    expect(await p2).toBe(true);
+    expect(res.value()).toEqual({ step: 'fast' });
+
+    resolveFirst({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      body: '{"step":"stale"}',
+    });
+    expect(await p1).toBe(false);
+    expect(res.value()).toEqual({ step: 'fast' });
+    delete bridge.httpRequestAsync;
+  });
+
+  it('destroys detached route componentRefs on eviction, replacement, and clearCache', () => {
+    const strategy = new NativeStackRouteReuseStrategy();
+    const makeSnap = (segment: string) =>
+      ({
+        routeConfig: { path: segment },
+        data: {},
+        url: [new UrlSegment(segment, {})],
+        get pathFromRoot() {
+          return [this];
+        },
+      }) as unknown as ActivatedRouteSnapshot;
+
+    const destroyed: string[] = [];
+    for (let i = 0; i < 16; i += 1) {
+      const label = `route-${i}`;
+      strategy.store(makeSnap(label), {
+        componentRef: { destroy: () => destroyed.push(label) },
+      } as unknown as DetachedRouteHandle);
+    }
+    expect(destroyed).toEqual([]);
+
+    // Adding a 17th entry should evict and destroy the oldest ('route-0')
+    strategy.store(makeSnap('route-16'), {
+      componentRef: { destroy: () => destroyed.push('route-16') },
+    } as unknown as DetachedRouteHandle);
+    expect(destroyed).toEqual(['route-0']);
+
+    // Replacing an existing key should destroy its previous handle
+    strategy.store(makeSnap('route-1'), {
+      componentRef: { destroy: () => destroyed.push('route-1-new') },
+    } as unknown as DetachedRouteHandle);
+    expect(destroyed).toEqual(['route-0', 'route-1']);
+
+    strategy.clearCache();
+    expect(destroyed).toContain('route-16');
+    expect(destroyed).toContain('route-1-new');
+    expect(strategy.cachedRoutes()).toEqual([]);
+  });
+
+  it('detaches NativeSqliteService.liveQuery refresher when destroy() is called', () => {
+    const sqlite = TestBed.inject(NativeSqliteService);
+    sqlite.execute('CREATE TABLE IF NOT EXISTS live_cleanup (id TEXT PRIMARY KEY)');
+    sqlite.execute('DELETE FROM live_cleanup');
+
+    const ref = sqlite.liveQuery<{ id: string }>('SELECT * FROM live_cleanup');
+    expect(ref.count()).toBe(0);
+    sqlite.execute("INSERT INTO live_cleanup (id) VALUES ('a')");
+    expect(ref.count()).toBe(1);
+
+    ref.destroy();
+
+    sqlite.execute("INSERT INTO live_cleanup (id) VALUES ('b')");
+    // Frozen at count 1 after destroy()
+    expect(ref.count()).toBe(1);
+  });
 });
