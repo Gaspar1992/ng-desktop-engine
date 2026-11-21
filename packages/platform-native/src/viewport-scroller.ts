@@ -1,6 +1,15 @@
 import { ViewportScroller } from '@angular/common';
-import { EnvironmentProviders, Injectable, makeEnvironmentProviders } from '@angular/core';
+import { EnvironmentProviders, inject, Injectable, makeEnvironmentProviders } from '@angular/core';
 import { ensureNgNativeBridge } from './bridge';
+import { NativeRendererFactory2 } from './native-renderer';
+
+function injectOptionalRendererFactory(): NativeRendererFactory2 | null {
+  try {
+    return inject(NativeRendererFactory2, { optional: true });
+  } catch {
+    return null;
+  }
+}
 
 /**
  * DOM-free Angular `ViewportScroller` backed by native `GtkScrolledWindow` adjustments
@@ -9,9 +18,14 @@ import { ensureNgNativeBridge } from './bridge';
 @Injectable({ providedIn: 'root' })
 export class NativeViewportScroller extends ViewportScroller {
   private readonly bridge = ensureNgNativeBridge();
+  private readonly rendererFactory = injectOptionalRendererFactory();
   private scrollPosition: [number, number] = [0, 0];
   private offsetFn: () => [number, number] = () => [0, 0];
   private scrollRestoration: 'auto' | 'manual' = 'auto';
+
+  private targetScrollId(): string {
+    return this.rendererFactory?.getPrimaryScrollId() ?? 'scroll';
+  }
 
   override setOffset(offset: [number, number] | (() => [number, number])): void {
     this.offsetFn = typeof offset === 'function' ? offset : () => offset;
@@ -26,7 +40,7 @@ export class NativeViewportScroller extends ViewportScroller {
     const x = Math.max(0, position[0] - ox);
     const y = Math.max(0, position[1] - oy);
     this.scrollPosition = [x, y];
-    this.bridge.setAttribute('scroll', 'scroll-to', `${x},${y}`);
+    this.bridge.setAttribute(this.targetScrollId(), 'scroll-to', `${x},${y}`);
   }
 
   override scrollToAnchor(anchor: string): void {
@@ -34,7 +48,7 @@ export class NativeViewportScroller extends ViewportScroller {
     if (!clean) {
       return;
     }
-    this.bridge.setAttribute('scroll', 'scroll-anchor', clean);
+    this.bridge.setAttribute(this.targetScrollId(), 'scroll-anchor', clean);
   }
 
   override setHistoryScrollRestoration(scrollRestoration: 'auto' | 'manual'): void {

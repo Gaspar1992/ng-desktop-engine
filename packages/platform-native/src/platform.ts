@@ -28,7 +28,8 @@ export function provideNativePlatform(): EnvironmentProviders {
   ensureNgNativeBridge();
   return makeEnvironmentProviders([
     provideZonelessChangeDetection(),
-    { provide: RendererFactory2, useClass: NativeRendererFactory2 },
+    NativeRendererFactory2,
+    { provide: RendererFactory2, useExisting: NativeRendererFactory2 },
     provideNativeImageLoader(),
     provideNativeTitle(),
     provideNativeViewportScroller(),

@@ -301,3 +301,67 @@ fn nivel3_compute_pool_xdg_fs_watcher_and_native_drop_target() {
         assert!(after_drop.contains("Dropped:/tmp/team.json"));
     }
 }
+
+#[test]
+fn gtk4_text_view_changed_event_emits_real_buffer_text() {
+    use ng_native_engine::platforms::GtkLinuxBackend;
+
+    let backend = GtkLinuxBackend::new();
+    if !backend.is_native_display_active() {
+        return;
+    }
+
+    let mut engine = RenderEngine::new(backend);
+    let mut runtime = JsRuntime::new();
+    let js_bundle = r#"
+        __NG_NATIVE__.createElement("win", "ng-window");
+        __NG_NATIVE__.setText("win", "GTK4 TextView Test");
+        __NG_NATIVE__.createElement("box", "ng-box");
+        __NG_NATIVE__.createElement("tv", "ng-text-view");
+        __NG_NATIVE__.createElement("lbl", "ng-label");
+        __NG_NATIVE__.setText("tv", "Initial");
+        __NG_NATIVE__.appendChild("box", "tv");
+        __NG_NATIVE__.appendChild("box", "lbl");
+        __NG_NATIVE__.appendChild("win", "box");
+        __NG_NATIVE__.listen("tv", "input", function(evt) {
+            __NG_NATIVE__.setText("lbl", `Observed:${evt.value}`);
+        });
+    "#;
+    runtime.eval_js(&mut engine, js_bundle).unwrap();
+    let win = runtime.resolve_var("win").unwrap();
+    let tv = runtime.resolve_var("tv").unwrap();
+
+    let _ = engine.backend().step_native_events(false);
+    runtime
+        .eval_js(
+            &mut engine,
+            r#"__NG_NATIVE__.setText("tv", "Line 1\nLine 2");"#,
+        )
+        .unwrap();
+
+    let events = engine.backend().step_native_events(false);
+    let changed = events
+        .iter()
+        .find(|ev| ev.node == tv && ev.event_name == "input")
+        .expect("GTK4 TextView input event should be captured");
+    assert_eq!(
+        changed.payload,
+        EventPayload::Text(String::from("Line 1\nLine 2"))
+    );
+
+    runtime
+        .trigger_node_event_with_payload(
+            &mut engine,
+            changed.node,
+            &changed.event_name,
+            &changed.payload,
+        )
+        .unwrap();
+    if runtime.js_engine().is_jit_enabled() {
+        let preview = engine.render_window_preview(win).unwrap();
+        assert!(
+            preview.contains("Observed:Line 1\u{1e}Line 2")
+                || preview.contains("Observed:Line 1\nLine 2")
+        );
+    }
+}

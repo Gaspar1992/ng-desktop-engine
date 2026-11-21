@@ -1,10 +1,11 @@
-import { computed, Injectable, Signal, signal } from '@angular/core';
+import { computed, DestroyRef, inject, Injectable, Signal, signal } from '@angular/core';
 import { ensureNgNativeBridge } from '@ng-desktop/platform';
 
 export interface NativeLiveQueryRef<T> {
   readonly rows: Signal<T[]>;
   readonly count: Signal<number>;
   refresh(): T[];
+  destroy(): void;
 }
 
 /**
@@ -49,10 +50,22 @@ export class NativeSqliteService {
     refresh();
     this.liveQueryRefreshers.add(refresh);
 
+    const destroy = (): void => {
+      this.liveQueryRefreshers.delete(refresh);
+    };
+    let destroyRef: DestroyRef | null = null;
+    try {
+      destroyRef = inject(DestroyRef, { optional: true });
+    } catch {
+      destroyRef = null;
+    }
+    destroyRef?.onDestroy(destroy);
+
     return {
       rows: rowsSignal.asReadonly(),
       count: computed(() => rowsSignal().length),
       refresh,
+      destroy,
     };
   }
 }

@@ -250,8 +250,8 @@ export class App {}`,
       expect(appBundle).toContain(
         'globalThis.__NG_NATIVE__?.registerStyle("badge", "#1e293b", "#f8fafc", 8, 0, "radius=6");',
       );
-      expect(appBundle).toContain('globalThis.__POLYFILL_LOADED__ = true;');
-      expect(appBundle).toContain("console.log('compiled-ivy-main');");
+      expect(appBundle).toMatch(/globalThis\.__POLYFILL_LOADED__\s*=\s*(?:!0|true);/);
+      expect(appBundle).toMatch(/console\.log\(["']compiled-ivy-main["']\);/);
 
       const runtimeCfg = JSON.parse(readFileSync(res.runtimeConfigFile, 'utf8')) as {
         entryBundle?: string;
@@ -360,6 +360,120 @@ export default defineNativeEventHandler((event) => ({
       });
       expect(fileRes.status).toBe(200);
       expect(JSON.parse(fileRes.body)).toEqual({ file: 'exports/team.json' });
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('bundles lazy dynamic import chunks inside app.bundle.js via esbuild', async () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), 'ng-desktop-lazy-bundle-'));
+    try {
+      mkdirSync(join(tmpRoot, 'src/app'), { recursive: true });
+      mkdirSync(join(tmpRoot, 'dist/lazy-app/browser'), { recursive: true });
+      writeFileSync(
+        join(tmpRoot, 'angular.json'),
+        JSON.stringify({
+          projects: {
+            'lazy-app': {
+              projectType: 'application',
+              root: '.',
+              sourceRoot: 'src',
+              architect: {
+                native: {
+                  builder: '@ng-desktop/builders:application',
+                  options: { outputPath: 'dist/lazy-app' },
+                },
+              },
+            },
+          },
+        }),
+      );
+      writeFileSync(join(tmpRoot, 'src/app/app.ts'), 'export class App {}');
+      writeFileSync(
+        join(tmpRoot, 'src/app/app.html'),
+        '<ng-window id="win" title="Lazy"><ng-label id="lbl">Ok</ng-label></ng-window>',
+      );
+      writeFileSync(join(tmpRoot, 'src/app/app.css'), '');
+      writeFileSync(
+        join(tmpRoot, 'dist/lazy-app/browser/chunk-LAZY.js'),
+        "export function lazyGreeting() { return 'hello-lazy-chunk'; }",
+      );
+      writeFileSync(
+        join(tmpRoot, 'dist/lazy-app/browser/main-TEST.js'),
+        "import('./chunk-LAZY.js').then((m) => { globalThis.__LAZY_RESULT__ = m.lazyGreeting(); });",
+      );
+
+      const res = compileBundle({ cwd: tmpRoot, projectName: 'lazy-app', rebuildIcons: false });
+      const appBundle = readFileSync(res.entryBundleFile!, 'utf8');
+      expect(appBundle).toContain('hello-lazy-chunk');
+
+      const sandbox: Record<string, unknown> = { console, Promise };
+      sandbox['globalThis'] = sandbox;
+      vm.runInNewContext(appBundle, sandbox);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(sandbox['__LAZY_RESULT__']).toBe('hello-lazy-chunk');
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('tree-shakes InMemory fallback stores in production app.bundle.js via __NG_DESKTOP_PROD_BUNDLE__', () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), 'ng-desktop-treeshake-'));
+    try {
+      mkdirSync(join(tmpRoot, 'src/app'), { recursive: true });
+      mkdirSync(join(tmpRoot, 'dist/prod-app/browser'), { recursive: true });
+      writeFileSync(
+        join(tmpRoot, 'angular.json'),
+        JSON.stringify({
+          projects: {
+            'prod-app': {
+              projectType: 'application',
+              root: '.',
+              sourceRoot: 'src',
+              architect: {
+                native: {
+                  builder: '@ng-desktop/builders:application',
+                  options: { outputPath: 'dist/prod-app' },
+                },
+              },
+            },
+          },
+        }),
+      );
+      writeFileSync(join(tmpRoot, 'src/app/app.ts'), 'export class App {}');
+      writeFileSync(
+        join(tmpRoot, 'src/app/app.html'),
+        '<ng-window id="win" title="Prod"><ng-label id="lbl">Ok</ng-label></ng-window>',
+      );
+      writeFileSync(join(tmpRoot, 'src/app/app.css'), '');
+      const bridgeTsPath = join(process.cwd(), 'packages/platform-native/src/bridge.ts');
+      writeFileSync(
+        join(tmpRoot, 'dist/prod-app/browser/main-TEST.js'),
+        `import { ensureNgNativeBridge } from ${JSON.stringify(bridgeTsPath)};
+globalThis.__CALL_ENSURE__ = ensureNgNativeBridge;`,
+      );
+
+      const res = compileBundle({ cwd: tmpRoot, projectName: 'prod-app', rebuildIcons: false });
+      const appBundle = readFileSync(res.entryBundleFile!, 'utf8');
+      expect(appBundle).not.toContain('InMemorySqliteStore');
+      expect(appBundle).not.toContain('InMemoryFsStore');
+
+      const sandboxNoBridge: Record<string, unknown> = { console };
+      sandboxNoBridge['globalThis'] = sandboxNoBridge;
+      vm.runInNewContext(appBundle, sandboxNoBridge);
+      expect(() => (sandboxNoBridge['__CALL_ENSURE__'] as () => unknown)()).toThrow(
+        'Native __NG_NATIVE__ bridge is required in production bundles.',
+      );
+
+      const mockBridge = { registerStyle: () => {} };
+      const sandboxWithBridge: Record<string, unknown> = {
+        console,
+        __NG_NATIVE__: mockBridge,
+      };
+      sandboxWithBridge['globalThis'] = sandboxWithBridge;
+      vm.runInNewContext(appBundle, sandboxWithBridge);
+      expect((sandboxWithBridge['__CALL_ENSURE__'] as () => unknown)()).toBe(mockBridge);
     } finally {
       rmSync(tmpRoot, { recursive: true, force: true });
     }

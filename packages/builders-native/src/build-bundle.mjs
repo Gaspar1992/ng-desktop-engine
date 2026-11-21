@@ -13,7 +13,7 @@ import { extractComponentMetadata } from './ast-metadata-extractor.mjs';
 import { pushHmrReload } from './hmr-client.mjs';
 import { buildMultiResolutionIcons } from './icon-compiler.mjs';
 import { analyzeProjectPermissions } from './permission-analyzer.mjs';
-import { compileServerBundle, discoverServerRoutes } from './server-compiler.mjs';
+import { compileServerBundle, discoverServerRoutes, runEsbuildBuild } from './server-compiler.mjs';
 import { emitStyleInstruction, parseStylesCss } from './style-compiler.mjs';
 import { parseTemplateHtml } from './template-compiler.mjs';
 import { resolveWorkspaceProject } from './workspace-resolver.mjs';
@@ -186,14 +186,24 @@ function emitAppJsBundleIfPresent(outDir, projectName, allStyleRules, iconMeta) 
     );
   }
 
-  const chunks = [preamble.join('\n')];
+  const entryLines = [];
   if (polyfillsFile) {
-    chunks.push(readFileSync(resolve(browserDir, polyfillsFile), 'utf8'));
+    entryLines.push(`import ${JSON.stringify(`./${polyfillsFile}`)};`);
   }
-  chunks.push(readFileSync(resolve(browserDir, mainFile), 'utf8'));
+  entryLines.push(`import ${JSON.stringify(`./${mainFile}`)};`);
+
+  const bundled = runEsbuildBuild({
+    workspaceRoot: outDir,
+    resolveDir: browserDir,
+    entrySource: entryLines.join('\n'),
+    loader: 'js',
+    define: { __NG_DESKTOP_PROD_BUNDLE__: 'true' },
+    minifySyntax: true,
+    banner: { js: preamble.join('\n') },
+  });
 
   const entryBundleFile = resolve(outDir, 'app.bundle.js');
-  writeFileSync(entryBundleFile, chunks.join('\n'), 'utf8');
+  writeFileSync(entryBundleFile, bundled, 'utf8');
   return entryBundleFile;
 }
 

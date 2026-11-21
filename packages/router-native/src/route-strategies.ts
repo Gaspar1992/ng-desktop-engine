@@ -59,13 +59,19 @@ export class NativeStackRouteReuseStrategy implements RouteReuseStrategy {
     if (!key) {
       return;
     }
+    const existing = this.handles.get(key);
     if (handle === null) {
+      this.destroyDetachedHandle(existing);
       this.handles.delete(key);
       return;
     }
-    if (!this.handles.has(key) && this.handles.size >= this.maxCachedPages) {
+    if (existing && existing !== handle) {
+      this.destroyDetachedHandle(existing);
+    }
+    if (!existing && this.handles.size >= this.maxCachedPages) {
       const oldestKey = this.handles.keys().next().value;
       if (oldestKey !== undefined) {
+        this.destroyDetachedHandle(this.handles.get(oldestKey));
         this.handles.delete(oldestKey);
       }
     }
@@ -95,7 +101,18 @@ export class NativeStackRouteReuseStrategy implements RouteReuseStrategy {
   }
 
   clearCache(): void {
+    for (const handle of this.handles.values()) {
+      this.destroyDetachedHandle(handle);
+    }
     this.handles.clear();
+  }
+
+  private destroyDetachedHandle(handle: DetachedRouteHandle | undefined): void {
+    if (!handle || typeof handle !== 'object') {
+      return;
+    }
+    const componentRef = (handle as { componentRef?: { destroy?: () => void } }).componentRef;
+    componentRef?.destroy?.();
   }
 
   cachedRoutes(): string[] {

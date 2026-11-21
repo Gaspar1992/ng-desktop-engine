@@ -8,6 +8,15 @@ import {
 } from '@angular/core';
 import { Title } from '@angular/platform-browser';
 import { ensureNgNativeBridge } from './bridge';
+import { NativeRendererFactory2 } from './native-renderer';
+
+function injectOptionalRendererFactory(): NativeRendererFactory2 | null {
+  try {
+    return inject(NativeRendererFactory2, { optional: true });
+  } catch {
+    return null;
+  }
+}
 
 export const NATIVE_WINDOW_NODE_ID = new InjectionToken<string>('NATIVE_WINDOW_NODE_ID', {
   providedIn: 'root',
@@ -22,6 +31,7 @@ export const NATIVE_WINDOW_NODE_ID = new InjectionToken<string>('NATIVE_WINDOW_N
 export class NativeTitleService {
   private readonly bridge = ensureNgNativeBridge();
   private readonly windowNodeId = inject(NATIVE_WINDOW_NODE_ID);
+  private readonly rendererFactory = injectOptionalRendererFactory();
   readonly title = signal('ng-native-app');
 
   getTitle(): string {
@@ -30,8 +40,12 @@ export class NativeTitleService {
 
   setTitle(newTitle: string): void {
     const normalized = String(newTitle ?? '').trim() || 'ng-native-app';
+    const targetId =
+      this.windowNodeId === 'win'
+        ? (this.rendererFactory?.getPrimaryWindowId() ?? this.windowNodeId)
+        : this.windowNodeId;
     this.title.set(normalized);
-    this.bridge.setText(this.windowNodeId, normalized);
+    this.bridge.setText(targetId, normalized);
   }
 }
 

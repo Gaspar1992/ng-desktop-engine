@@ -8,24 +8,38 @@ import {
 import { ensureNgNativeBridge, NgNativeBridge } from './bridge';
 import { NativeElementNode } from './native-element';
 
+const VIRTUAL_ANGULAR_TAGS = new Set(['ng-container', 'ng-template', 'ng-content', 'ng-component']);
+
 const TEXT_BEARING_TAGS = new Set([
   'ng-label',
+  'gtk-label',
   'ng-button',
+  'gtk-button',
   'ng-window',
   'adw-window',
   'ng-header-bar',
   'adw-header-bar',
+  'gtk-header-bar',
   'ng-check-button',
+  'gtk-check-button',
   'ng-expander',
+  'gtk-expander',
   'ng-entry',
+  'gtk-entry',
   'ng-search-entry',
+  'gtk-search-entry',
   'ng-password-entry',
+  'gtk-password-entry',
   'ng-text-view',
+  'gtk-text-view',
 ]);
 
 function isNativeTag(tag: string): boolean {
   const lower = tag.trim().toLowerCase();
-  return lower.startsWith('ng-') || lower.startsWith('adw-');
+  if (VIRTUAL_ANGULAR_TAGS.has(lower)) {
+    return false;
+  }
+  return lower.startsWith('ng-') || lower.startsWith('adw-') || lower.startsWith('gtk-');
 }
 
 function isInternalAngularAttr(name: string): boolean {
@@ -40,6 +54,7 @@ function mapNativeEventNames(eventName: string): string[] {
     case 'scroll-edge':
       return ['edge-reached', 'viewport-reached'];
     case 'change':
+    case 'valueChange':
       return ['changed'];
     case 'submit':
       return ['activate'];
@@ -158,6 +173,19 @@ function registerParsedStyles(bridge: NgNativeBridge, styles: readonly string[])
  * (`createElement`, `createComment`, `insertBefore`, `removeChild`, `setAttribute`, `listen`)
  * into `globalThis.__NG_NATIVE__` scene graph commands.
  */
+interface NativeRendererHooks {
+  onRealElementCreated?: (tag: string, id: string) => void;
+  getPrimaryWindowId?: () => string | null;
+}
+
+interface VirtualListenerRegistration {
+  nativeEvents: string[];
+  callback: (event: unknown) => boolean | void;
+  attachedRealIds: Set<string>;
+  activeUnsubs: Set<() => void>;
+  disposed: boolean;
+}
+
 export class NativeRenderer2 extends Renderer2 {
   readonly data: { [key: string]: unknown } = Object.create(null);
   override destroyNode: ((node: unknown) => void) | null;
@@ -165,20 +193,41 @@ export class NativeRenderer2 extends Renderer2 {
   private readonly bridge: NgNativeBridge;
   private readonly nodesById: Map<string, NativeElementNode>;
   private readonly nextId: () => string;
+  private readonly hooks?: NativeRendererHooks;
   private readonly materializedTextLabels = new Map<NativeElementNode, string>();
+  private readonly imageLoadSeq = new WeakMap<NativeElementNode, number>();
+  private readonly pendingVirtualListeners = new WeakMap<
+    NativeElementNode,
+    Set<VirtualListenerRegistration>
+  >();
 
   constructor(
     bridge: NgNativeBridge,
     nodesById: Map<string, NativeElementNode>,
     nextId: () => string,
+    hooks?: NativeRendererHooks,
   ) {
     super();
     this.bridge = bridge;
     this.nodesById = nodesById;
     this.nextId = nextId;
+    this.hooks = hooks;
     this.destroyNode = (node: unknown) => {
       if (node instanceof NativeElementNode) {
         this.nodesById.delete(node.id);
+        this.imageLoadSeq.delete(node);
+        const pending = this.pendingVirtualListeners.get(node);
+        if (pending) {
+          for (const reg of pending) {
+            reg.disposed = true;
+            for (const unlisten of reg.activeUnsubs) {
+              unlisten();
+            }
+            reg.activeUnsubs.clear();
+            reg.attachedRealIds.clear();
+          }
+          this.pendingVirtualListeners.delete(node);
+        }
         const materializedId = this.materializedTextLabels.get(node);
         if (materializedId) {
           this.materializedTextLabels.delete(node);
@@ -202,6 +251,7 @@ export class NativeRenderer2 extends Renderer2 {
     const node = new NativeElementNode(id, trimmed, false, !isNative, false);
     this.nodesById.set(id, node);
     if (isNative) {
+      this.hooks?.onRealElementCreated?.(trimmed, id);
       this.bridge.createElement(id, trimmed);
       if (trimmed === 'ng-window' || trimmed === 'adw-window') {
         this.attachGlobalWindowIcon(id);
@@ -258,8 +308,8 @@ export class NativeRenderer2 extends Renderer2 {
       const prevReal = this.findRealAncestor(prevParent);
       const nextReal = this.findRealAncestor(parent);
       if (prevParent !== parent && prevReal && prevReal !== nextReal && !newChild.isText) {
-        for (const rn of this.collectRealRoots(newChild)) {
-          this.bridge.removeChild(prevReal.id, rn.id);
+        for (const realId of this.collectRealRootIds(newChild)) {
+          this.bridge.removeChild(prevReal.id, realId);
         }
       }
     }
@@ -289,7 +339,7 @@ export class NativeRenderer2 extends Renderer2 {
     }
     const realParent = this.findRealAncestor(targetParent);
     const materializedId = this.materializedTextLabels.get(oldChild);
-    const realNodes = oldChild.isText ? [] : this.collectRealRoots(oldChild);
+    const realIds = oldChild.isText ? [] : this.collectRealRootIds(oldChild);
 
     const idx = targetParent.children.indexOf(oldChild);
     if (idx !== -1) {
@@ -308,8 +358,8 @@ export class NativeRenderer2 extends Renderer2 {
       }
       return;
     }
-    for (const rn of realNodes) {
-      this.bridge.removeChild(realParent.id, rn.id);
+    for (const realId of realIds) {
+      this.bridge.removeChild(realParent.id, realId);
     }
   }
 
@@ -331,6 +381,7 @@ export class NativeRenderer2 extends Renderer2 {
     if (isRealWindow) {
       const root = new NativeElementNode(normalizedId, 'ng-window', false, false, false);
       this.nodesById.set(normalizedId, root);
+      this.hooks?.onRealElementCreated?.('ng-window', normalizedId);
       this.bridge.createElement(normalizedId, 'ng-window');
       this.attachGlobalWindowIcon(normalizedId);
       return root;
@@ -388,7 +439,11 @@ export class NativeRenderer2 extends Renderer2 {
       return;
     }
     if (name === 'class' || name === 'className') {
-      for (const cls of [...el.classes]) {
+      const classesToRemove: string[] = [];
+      for (const cls of el.classes) {
+        classesToRemove.push(cls);
+      }
+      for (const cls of classesToRemove) {
         this.removeClass(el, cls);
       }
       return;
@@ -416,6 +471,10 @@ export class NativeRenderer2 extends Renderer2 {
     value: unknown,
     _flags?: RendererStyleFlags2,
   ): void {
+    if (value === null || value === undefined || value === false) {
+      this.removeStyle(el, style, _flags);
+      return;
+    }
     const strVal = String(value);
     el.styles.set(style, strVal);
     if (!el.isVirtual) {
@@ -425,6 +484,9 @@ export class NativeRenderer2 extends Renderer2 {
 
   override removeStyle(el: NativeElementNode, style: string, _flags?: RendererStyleFlags2): void {
     el.styles.delete(style);
+    if (!el.isVirtual) {
+      this.bridge.setAttribute(el.id, style, '');
+    }
   }
 
   override setProperty(el: NativeElementNode, name: string, value: unknown): void {
@@ -444,7 +506,16 @@ export class NativeRenderer2 extends Renderer2 {
       this.handleImageSource(el, strVal);
       return;
     }
-    if (name === 'textContent' || name === 'innerText' || name === 'label') {
+    if (
+      name === 'textContent' ||
+      name === 'innerText' ||
+      name === 'label' ||
+      (name === 'title' &&
+        (el.tag === 'ng-window' ||
+          el.tag === 'adw-window' ||
+          el.tag === 'ng-header-bar' ||
+          el.tag === 'adw-header-bar'))
+    ) {
       el.textContent = strVal;
       this.bridge.setText(el.id, strVal);
     } else {
@@ -480,9 +551,57 @@ export class NativeRenderer2 extends Renderer2 {
     eventName: string,
     callback: (event: unknown) => boolean | void,
   ): () => void {
-    const nodeId = typeof target === 'string' ? target : target.id;
-    const unsubs = mapNativeEventNames(eventName).map((nativeEvent) =>
-      this.bridge.listen(nodeId, nativeEvent, (evt) => {
+    const nativeEvents = mapNativeEventNames(eventName);
+    if (typeof target === 'string') {
+      const nodeId =
+        target === 'window' || target === 'document' || target === 'body'
+          ? (this.hooks?.getPrimaryWindowId?.() ?? 'win')
+          : target;
+      const unsubs = nativeEvents.map((nativeEvent) =>
+        this.bridge.listen(nodeId, nativeEvent, (evt) => {
+          callback(evt);
+        }),
+      );
+      return () => {
+        for (const unlisten of unsubs) {
+          unlisten();
+        }
+      };
+    }
+
+    if (target.isVirtual) {
+      const reg: VirtualListenerRegistration = {
+        nativeEvents,
+        callback,
+        attachedRealIds: new Set(),
+        activeUnsubs: new Set(),
+        disposed: false,
+      };
+      let pendingSet = this.pendingVirtualListeners.get(target);
+      if (!pendingSet) {
+        pendingSet = new Set();
+        this.pendingVirtualListeners.set(target, pendingSet);
+      }
+      pendingSet.add(reg);
+
+      const currentRootIds = this.collectRealRootIds(target);
+      if (currentRootIds.length > 0) {
+        this.attachRegistrationToRealIds(reg, currentRootIds);
+      }
+
+      return () => {
+        reg.disposed = true;
+        pendingSet.delete(reg);
+        for (const unlisten of reg.activeUnsubs) {
+          unlisten();
+        }
+        reg.activeUnsubs.clear();
+        reg.attachedRealIds.clear();
+      };
+    }
+
+    const unsubs = nativeEvents.map((nativeEvent) =>
+      this.bridge.listen(target.id, nativeEvent, (evt) => {
         callback(evt);
       }),
     );
@@ -491,6 +610,42 @@ export class NativeRenderer2 extends Renderer2 {
         unlisten();
       }
     };
+  }
+
+  private attachRegistrationToRealIds(reg: VirtualListenerRegistration, realIds: string[]): void {
+    if (reg.disposed) {
+      return;
+    }
+    for (const realId of realIds) {
+      if (reg.attachedRealIds.has(realId)) {
+        continue;
+      }
+      reg.attachedRealIds.add(realId);
+      for (const nativeEvent of reg.nativeEvents) {
+        const unlisten = this.bridge.listen(realId, nativeEvent, (evt) => {
+          reg.callback(evt);
+        });
+        reg.activeUnsubs.add(unlisten);
+      }
+    }
+  }
+
+  private attachVirtualListenersForAncestors(
+    startParent: NativeElementNode | null,
+    realIds: string[],
+  ): void {
+    let ancestor = startParent;
+    while (ancestor) {
+      if (ancestor.isVirtual) {
+        const regs = this.pendingVirtualListeners.get(ancestor);
+        if (regs) {
+          for (const reg of regs) {
+            this.attachRegistrationToRealIds(reg, realIds);
+          }
+        }
+      }
+      ancestor = ancestor.parent;
+    }
   }
 
   private attachGlobalWindowIcon(windowId: string): void {
@@ -508,10 +663,14 @@ export class NativeRenderer2 extends Renderer2 {
         .map((c) => c.trim())
         .filter(Boolean),
     );
-    for (const existing of [...el.classes]) {
+    const toRemove: string[] = [];
+    for (const existing of el.classes) {
       if (!nextClasses.has(existing)) {
-        this.removeClass(el, existing);
+        toRemove.push(existing);
       }
+    }
+    for (const existing of toRemove) {
+      this.removeClass(el, existing);
     }
     for (const added of nextClasses) {
       if (!el.classes.has(added)) {
@@ -521,10 +680,17 @@ export class NativeRenderer2 extends Renderer2 {
   }
 
   private handleImageSource(el: NativeElementNode, src: string): void {
+    const seq = (this.imageLoadSeq.get(el) ?? 0) + 1;
+    this.imageLoadSeq.set(el, seq);
     if (src.startsWith('http://') || src.startsWith('https://')) {
       if (typeof this.bridge.downloadImageAsync === 'function') {
         void this.bridge.downloadImageAsync(src).then((res) => {
-          if (res?.ok && res.path && this.nodesById.has(el.id)) {
+          if (
+            this.imageLoadSeq.get(el) === seq &&
+            res?.ok &&
+            res.path &&
+            this.nodesById.has(el.id)
+          ) {
             this.bridge.setText(el.id, res.path);
           }
         });
@@ -547,51 +713,64 @@ export class NativeRenderer2 extends Renderer2 {
     return null;
   }
 
-  private collectRealRoots(node: NativeElementNode): NativeElementNode[] {
+  private collectRealRootIds(node: NativeElementNode, out: string[] = []): string[] {
     if (!node.isVirtual && !node.isText) {
-      return [node];
+      out.push(node.id);
+      return out;
     }
     if (node.isText) {
       const matId = this.materializedTextLabels.get(node);
-      return matId ? [new NativeElementNode(matId, 'ng-label')] : [];
+      if (matId) {
+        out.push(matId);
+      }
+      return out;
     }
-    const out: NativeElementNode[] = [];
     for (const child of node.children) {
-      out.push(...this.collectRealRoots(child));
+      this.collectRealRootIds(child, out);
     }
     return out;
+  }
+
+  private findFirstRealId(node: NativeElementNode): string | null {
+    if (!node.isVirtual && !node.isText) {
+      return node.id;
+    }
+    if (node.isText) {
+      return this.materializedTextLabels.get(node) ?? null;
+    }
+    for (const child of node.children) {
+      const found = this.findFirstRealId(child);
+      if (found) {
+        return found;
+      }
+    }
+    return null;
   }
 
   private findNextRealSiblingId(
     targetNode: NativeElementNode,
     realParent: NativeElementNode,
   ): string | null {
-    const flat: string[] = [];
-    const collect = (node: NativeElementNode): void => {
-      for (const child of node.children) {
-        if (child === targetNode) {
-          flat.push('__SELF_MARKER__');
-          continue;
-        }
-        if (child.isText) {
-          const matId = this.materializedTextLabels.get(child);
-          if (matId) flat.push(matId);
-        } else if (!child.isVirtual) {
-          flat.push(child.id);
-        } else {
-          collect(child);
+    let cur: NativeElementNode | null = targetNode;
+    while (cur && cur !== realParent) {
+      const parent: NativeElementNode | null = cur.parent;
+      if (!parent) {
+        break;
+      }
+      const siblings = parent.children;
+      const idx = siblings.indexOf(cur);
+      if (idx !== -1) {
+        for (let i = idx + 1; i < siblings.length; i += 1) {
+          const sibling = siblings[i];
+          if (sibling) {
+            const firstId = this.findFirstRealId(sibling);
+            if (firstId) {
+              return firstId;
+            }
+          }
         }
       }
-    };
-    collect(realParent);
-    const selfPos = flat.indexOf('__SELF_MARKER__');
-    if (selfPos === -1) {
-      return null;
-    }
-    for (let i = selfPos + 1; i < flat.length; i++) {
-      if (flat[i] !== '__SELF_MARKER__') {
-        return flat[i];
-      }
+      cur = parent;
     }
     return null;
   }
@@ -614,26 +793,33 @@ export class NativeRenderer2 extends Renderer2 {
   }
 
   private materializeTextIntoContainer(
-    _logicalParent: NativeElementNode,
+    logicalParent: NativeElementNode,
     realParent: NativeElementNode,
     textNode: NativeElementNode,
     refChild: NativeElementNode | null,
     isAppend: boolean,
   ): void {
     let labelId = this.materializedTextLabels.get(textNode);
+    const createdNow = !labelId;
     if (!labelId) {
       labelId = this.nextId();
       this.materializedTextLabels.set(textNode, labelId);
       this.bridge.createElement(labelId, 'ng-label');
     }
     this.bridge.setText(labelId, textNode.textContent);
-    const nextRealId = refChild ? this.findNextRealSiblingId(textNode, realParent) : null;
+    const nextRealId =
+      refChild || logicalParent !== realParent
+        ? this.findNextRealSiblingId(textNode, realParent)
+        : null;
     if (nextRealId) {
       this.bridge.insertBefore(realParent.id, labelId, nextRealId);
     } else if (isAppend) {
       this.bridge.appendChild(realParent.id, labelId);
     } else {
       this.bridge.insertBefore(realParent.id, labelId);
+    }
+    if (createdNow) {
+      this.attachVirtualListenersForAncestors(logicalParent, [labelId]);
     }
   }
 
@@ -643,6 +829,14 @@ export class NativeRenderer2 extends Renderer2 {
     refChild: NativeElementNode | null,
     isAppend: boolean,
   ): void {
+    let realRootIds: string[] = [];
+    if (!newChild.isText) {
+      realRootIds = this.collectRealRootIds(newChild);
+      if (realRootIds.length > 0) {
+        this.attachVirtualListenersForAncestors(parent, realRootIds);
+      }
+    }
+
     const realParent = this.findRealAncestor(parent);
     if (!realParent) {
       return;
@@ -656,19 +850,18 @@ export class NativeRenderer2 extends Renderer2 {
       return;
     }
 
-    const realNodes = this.collectRealRoots(newChild);
-    if (realNodes.length === 0) {
+    if (realRootIds.length === 0) {
       return;
     }
     const nextRealId =
       refChild || parent !== realParent ? this.findNextRealSiblingId(newChild, realParent) : null;
-    for (const rn of realNodes) {
+    for (const realId of realRootIds) {
       if (nextRealId) {
-        this.bridge.insertBefore(realParent.id, rn.id, nextRealId);
+        this.bridge.insertBefore(realParent.id, realId, nextRealId);
       } else if (isAppend) {
-        this.bridge.appendChild(realParent.id, rn.id);
+        this.bridge.appendChild(realParent.id, realId);
       } else {
-        this.bridge.insertBefore(realParent.id, rn.id);
+        this.bridge.insertBefore(realParent.id, realId);
       }
     }
   }
@@ -681,13 +874,30 @@ export class NativeRendererFactory2 implements RendererFactory2 {
   private readonly defaultRenderer: NativeRenderer2;
   private readonly registeredTypeIds = new Set<string>();
   private nodeCounter = 1;
+  private primaryWindowId: string | null = null;
+  private primaryScrollId: string | null = null;
 
   constructor() {
     this.bridge = ensureNgNativeBridge();
-    this.defaultRenderer = new NativeRenderer2(this.bridge, this.nodesById, () => {
-      const id = `ng_node_${this.nodeCounter++}`;
-      return id;
-    });
+    this.defaultRenderer = new NativeRenderer2(
+      this.bridge,
+      this.nodesById,
+      () => `ng_node_${this.nodeCounter++}`,
+      {
+        onRealElementCreated: (tag, id) => {
+          if (tag === 'ng-window' || tag === 'adw-window') {
+            if (!this.primaryWindowId || !this.nodesById.has(this.primaryWindowId)) {
+              this.primaryWindowId = id;
+            }
+          } else if (tag === 'ng-scroll' || tag === 'adw-scroll') {
+            if (!this.primaryScrollId || !this.nodesById.has(this.primaryScrollId)) {
+              this.primaryScrollId = id;
+            }
+          }
+        },
+        getPrimaryWindowId: () => this.getPrimaryWindowId(),
+      },
+    );
   }
 
   createRenderer(_hostElement: unknown, type: RendererType2 | null): Renderer2 {
@@ -702,11 +912,39 @@ export class NativeRendererFactory2 implements RendererFactory2 {
   }
 
   begin(): void {
-    // Frame batching begins
+    this.bridge.beginBatch?.();
   }
 
   end(): void {
-    // Frame batching completes
+    this.bridge.endBatch?.();
+  }
+
+  getPrimaryWindowId(): string | null {
+    if (this.primaryWindowId && this.nodesById.has(this.primaryWindowId)) {
+      return this.primaryWindowId;
+    }
+    for (const node of this.nodesById.values()) {
+      if (!node.isVirtual && (node.tag === 'ng-window' || node.tag === 'adw-window')) {
+        this.primaryWindowId = node.id;
+        return node.id;
+      }
+    }
+    this.primaryWindowId = null;
+    return null;
+  }
+
+  getPrimaryScrollId(): string | null {
+    if (this.primaryScrollId && this.nodesById.has(this.primaryScrollId)) {
+      return this.primaryScrollId;
+    }
+    for (const node of this.nodesById.values()) {
+      if (!node.isVirtual && (node.tag === 'ng-scroll' || node.tag === 'adw-scroll')) {
+        this.primaryScrollId = node.id;
+        return node.id;
+      }
+    }
+    this.primaryScrollId = null;
+    return null;
   }
 
   getNode(id: string): NativeElementNode | undefined {

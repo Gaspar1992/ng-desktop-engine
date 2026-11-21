@@ -135,25 +135,39 @@ function resolveEsbuildPath(workspaceRoot) {
   throw new Error("Cannot locate 'esbuild' to compile server.bundle.js");
 }
 
-function runEsbuildBuild({ workspaceRoot, entrySource, alias }) {
+export function runEsbuildBuild({
+  workspaceRoot,
+  resolveDir = workspaceRoot,
+  entrySource,
+  loader = 'ts',
+  alias,
+  define,
+  minifySyntax = false,
+  banner,
+}) {
   const esbuildPath = resolveEsbuildPath(workspaceRoot);
+  const buildOptions = {
+    stdin: {
+      contents: entrySource,
+      resolveDir,
+      loader,
+    },
+    bundle: true,
+    format: 'iife',
+    platform: 'browser',
+    target: 'es2022',
+    write: false,
+    mainFields: ['fesm2022', 'module', 'main'],
+    ...(alias ? { alias } : {}),
+    ...(define ? { define } : {}),
+    ...(minifySyntax ? { minifySyntax: true } : {}),
+    ...(banner ? { banner } : {}),
+  };
+
   if (typeof window === 'undefined') {
     const req = createRequire(resolve(workspaceRoot, 'package.json'));
     const esbuild = req(esbuildPath);
-    const built = esbuild.buildSync({
-      stdin: {
-        contents: entrySource,
-        resolveDir: workspaceRoot,
-        loader: 'ts',
-      },
-      bundle: true,
-      format: 'iife',
-      platform: 'browser',
-      target: 'es2022',
-      write: false,
-      mainFields: ['fesm2022', 'module', 'main'],
-      alias,
-    });
+    const built = esbuild.buildSync(buildOptions);
     return built.outputFiles[0].text;
   }
 
@@ -161,17 +175,13 @@ function runEsbuildBuild({ workspaceRoot, entrySource, alias }) {
   const runner = [
     "const fs = require('node:fs');",
     'const esbuild = require(process.argv[1]);',
-    "const cfg = JSON.parse(fs.readFileSync(0, 'utf8'));",
-    'const built = esbuild.buildSync({',
-    "  stdin: { contents: cfg.entrySource, resolveDir: cfg.workspaceRoot, loader: 'ts' },",
-    "  bundle: true, format: 'iife', platform: 'browser', target: 'es2022', write: false,",
-    "  mainFields: ['fesm2022', 'module', 'main'], alias: cfg.alias,",
-    '});',
+    "const buildOptions = JSON.parse(fs.readFileSync(0, 'utf8'));",
+    'const built = esbuild.buildSync(buildOptions);',
     'process.stdout.write(built.outputFiles[0].text);',
   ].join('\n');
 
   return execFileSync(process.execPath, ['-e', runner, esbuildPath], {
-    input: JSON.stringify({ workspaceRoot, entrySource, alias }),
+    input: JSON.stringify(buildOptions),
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
   });
