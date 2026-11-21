@@ -268,6 +268,50 @@ impl WidgetKind {
         matches!(self, Self::HeaderBar { .. })
     }
 
+    /// Returns all direct child `NodeId`s held by container widgets in traversal order.
+    #[must_use]
+    pub fn child_ids(&self) -> Vec<NodeId> {
+        match self {
+            Self::Window {
+                header_bar, child, ..
+            } => header_bar.iter().chain(child.iter()).copied().collect(),
+            Self::Paned {
+                start_child,
+                end_child,
+                ..
+            } => start_child
+                .iter()
+                .chain(end_child.iter())
+                .copied()
+                .collect(),
+            Self::Scroll { child, .. }
+            | Self::Expander { child, .. }
+            | Self::Clamp { child, .. } => child.iter().copied().collect(),
+            Self::HeaderBar { children, .. }
+            | Self::Box { children, .. }
+            | Self::Grid { children, .. }
+            | Self::FlowBox { children, .. }
+            | Self::Stack { children, .. } => children.clone(),
+            Self::Separator { .. }
+            | Self::Button { .. }
+            | Self::Label { .. }
+            | Self::Image { .. }
+            | Self::LevelBar { .. }
+            | Self::Spinner { .. }
+            | Self::ProgressBar { .. }
+            | Self::Entry { .. }
+            | Self::TextView { .. }
+            | Self::PasswordEntry { .. }
+            | Self::SearchEntry { .. }
+            | Self::SpinButton { .. }
+            | Self::Switch { .. }
+            | Self::CheckButton { .. }
+            | Self::Slider { .. }
+            | Self::DropDown { .. }
+            | Self::Anchor { .. } => Vec::new(),
+        }
+    }
+
     pub fn set_text(&mut self, id: NodeId, text: impl Into<String>) -> Result<(), EngineError> {
         match self {
             Self::Window { title, .. } | Self::HeaderBar { title, .. } => *title = text.into(),

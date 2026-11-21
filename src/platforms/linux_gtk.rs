@@ -100,6 +100,8 @@ pub struct GtkLinuxBackend {
     pub(super) widgets: HashMap<NodeId, NativeGtkWidget>,
     pub(super) styles: HashMap<StyleId, StyleRule>,
     pub(super) header_titles: HashMap<NodeId, (String, String)>,
+    css_dirty: bool,
+    css_reload_count: u64,
     pulse_tick: std::cell::Cell<u32>,
 }
 
@@ -125,6 +127,8 @@ impl GtkLinuxBackend {
             widgets: HashMap::new(),
             styles: HashMap::new(),
             header_titles: HashMap::new(),
+            css_dirty: false,
+            css_reload_count: 0,
             pulse_tick: std::cell::Cell::new(0),
         }
     }
@@ -138,6 +142,8 @@ impl GtkLinuxBackend {
             widgets: HashMap::new(),
             styles: HashMap::new(),
             header_titles: HashMap::new(),
+            css_dirty: false,
+            css_reload_count: 0,
             pulse_tick: std::cell::Cell::new(0),
         }
     }
@@ -162,6 +168,18 @@ impl GtkLinuxBackend {
 
     pub fn widget_count(&self) -> usize {
         self.widgets.len()
+    }
+
+    /// Returns the ordered child `NodeId` slice tracked for a container widget.
+    #[must_use]
+    pub fn widget_children(&self, id: NodeId) -> Option<&[NodeId]> {
+        self.widgets.get(&id).map(|w| w.children.as_slice())
+    }
+
+    /// Returns how many times the GTK CSS stylesheet has been rebuilt and reloaded.
+    #[must_use]
+    pub const fn css_reload_count(&self) -> u64 {
+        self.css_reload_count
     }
 
     pub fn is_drop_target(&self, node: NodeId) -> bool {
@@ -268,10 +286,7 @@ impl GtkLinuxBackend {
         match cmd {
             RenderCommand::RegisterStyle { style_id, rule } => {
                 self.styles.insert(*style_id, rule.clone());
-                let stylesheet = self.rebuild_css_stylesheet();
-                if let Some(gtk) = &self.gtk {
-                    gtk.load_css(&stylesheet);
-                }
+                self.css_dirty = true;
             }
             RenderCommand::CreateWidget { id, tag } => self.create_native_widget(*id, tag),
             RenderCommand::CreateComment { id, .. } => {
@@ -337,9 +352,10 @@ impl GtkLinuxBackend {
                 self.apply_remove_child(*parent, *child);
             }
             RenderCommand::DestroyWidget { id } => {
-                if let (Some(gtk), Some(widget)) = (&self.gtk, self.widgets.remove(id))
+                self.header_titles.remove(id);
+                if let Some(widget) = self.widgets.remove(id)
                     && widget.kind == GtkWidgetType::Window
-                    && let Some(handle) = widget.handle
+                    && let (Some(gtk), Some(handle)) = (&self.gtk, widget.handle)
                 {
                     gtk.destroy_window(handle);
                 }
@@ -522,15 +538,12 @@ impl GtkLinuxBackend {
     }
 
     fn apply_append_child(&mut self, parent: NodeId, child: NodeId) {
-        let (Some(gtk), Some(parent_w), Some(child_w)) = (
-            &self.gtk,
-            self.widgets.get(&parent),
-            self.widgets.get(&child),
-        ) else {
+        let (Some(parent_w), Some(child_w)) = (self.widgets.get(&parent), self.widgets.get(&child))
+        else {
             return;
         };
         let child_index = i32::try_from(parent_w.children.len()).unwrap_or(0);
-        if let (Some(p_h), Some(c_h)) = (parent_w.handle, child_w.handle) {
+        if let (Some(gtk), Some(p_h), Some(c_h)) = (&self.gtk, parent_w.handle, child_w.handle) {
             match parent_w.kind {
                 GtkWidgetType::Window => {
                     if child_w.kind == GtkWidgetType::HeaderBar {
@@ -567,11 +580,8 @@ impl GtkLinuxBackend {
     }
 
     fn apply_insert_before(&mut self, parent: NodeId, child: NodeId, ref_child: Option<NodeId>) {
-        let (Some(gtk), Some(parent_w), Some(child_w)) = (
-            &self.gtk,
-            self.widgets.get(&parent),
-            self.widgets.get(&child),
-        ) else {
+        let (Some(parent_w), Some(child_w)) = (self.widgets.get(&parent), self.widgets.get(&child))
+        else {
             return;
         };
 
@@ -602,9 +612,7 @@ impl GtkLinuxBackend {
             total_real_children
         };
 
-        if let Some(c_h) = child_w.handle
-            && let Some(p_h) = parent_w.handle
-        {
+        if let (Some(gtk), Some(c_h), Some(p_h)) = (&self.gtk, child_w.handle, parent_w.handle) {
             Self::attach_gtk_child_at(
                 gtk,
                 parent_w.kind,
@@ -663,9 +671,8 @@ impl GtkLinuxBackend {
             }
             GtkWidgetType::Box => {
                 if is_existing_child {
-                    gtk.box_remove(p_h, c_h);
-                }
-                if has_ref {
+                    gtk.box_reorder_after(p_h, c_h, prev_real_sibling);
+                } else if has_ref {
                     gtk.box_insert_after(p_h, c_h, prev_real_sibling);
                 } else {
                     gtk.box_append(p_h, c_h);
@@ -673,9 +680,8 @@ impl GtkLinuxBackend {
             }
             GtkWidgetType::FlowBox => {
                 if is_existing_child {
-                    gtk.flow_box_remove(p_h, c_h);
-                }
-                if has_ref {
+                    gtk.flow_box_reorder(p_h, c_h, target_idx, has_ref);
+                } else if has_ref {
                     gtk.flow_box_insert(p_h, c_h, target_idx);
                 } else {
                     gtk.flow_box_append(p_h, c_h);
@@ -688,18 +694,34 @@ impl GtkLinuxBackend {
     }
 
     fn apply_remove_child(&mut self, parent: NodeId, child: NodeId) {
-        let (Some(gtk), Some(parent_w), Some(child_w)) = (
+        if let (Some(gtk), Some(parent_w), Some(child_w)) = (
             &self.gtk,
             self.widgets.get(&parent),
             self.widgets.get(&child),
-        ) else {
-            return;
-        };
-        if let Some(p_h) = parent_w.handle {
+        ) && let Some(p_h) = parent_w.handle
+        {
             match parent_w.kind {
+                GtkWidgetType::Window => {
+                    if child_w.kind == GtkWidgetType::HeaderBar {
+                        gtk.clear_window_titlebar(p_h);
+                    } else {
+                        gtk.clear_window_child(p_h);
+                    }
+                }
+                GtkWidgetType::HeaderBar => {
+                    if let Some(c_h) = child_w.handle {
+                        gtk.header_bar_remove(p_h, c_h);
+                    }
+                }
+                GtkWidgetType::Scroll => gtk.clear_scrolled_child(p_h),
                 GtkWidgetType::Box => {
                     if let Some(c_h) = child_w.handle {
                         gtk.box_remove(p_h, c_h);
+                    }
+                }
+                GtkWidgetType::Grid => {
+                    if let Some(c_h) = child_w.handle {
+                        gtk.grid_remove(p_h, c_h);
                     }
                 }
                 GtkWidgetType::FlowBox => {
@@ -777,22 +799,19 @@ impl PlatformBackend for GtkLinuxBackend {
             return;
         }
         self.flushed_frames += 1;
-        println!(
-            "[{} | Frame #{}] Flushing {} render commands:",
-            self.backend_name(),
-            self.flushed_frames,
-            commands.len()
-        );
+        super::trace_flush_commands(self.backend_name(), self.flushed_frames, commands, |tag| {
+            self.map_native_widget(tag)
+        });
         for cmd in commands {
-            if let RenderCommand::CreateWidget { id, tag } = cmd {
-                println!(
-                    "  -> CreateWidget {{ id: {id:?}, tag: {tag:?} => native: {} }}",
-                    self.map_native_widget(tag)
-                );
-            } else {
-                println!("  -> {cmd:?}");
-            }
             self.apply_command_to_gtk(cmd);
+        }
+        if self.css_dirty {
+            let stylesheet = self.rebuild_css_stylesheet();
+            if let Some(gtk) = &self.gtk {
+                gtk.load_css(&stylesheet);
+            }
+            self.css_dirty = false;
+            self.css_reload_count += 1;
         }
     }
 }

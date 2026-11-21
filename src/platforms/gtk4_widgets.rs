@@ -217,6 +217,26 @@ impl Gtk4Sys {
         }
     }
 
+    /// Reorders an existing `GtkFlowBox` child safely by retaining a strong reference across removal.
+    pub fn flow_box_reorder(
+        &self,
+        flow: GtkHandle,
+        child: GtkHandle,
+        position: i32,
+        has_ref: bool,
+    ) {
+        unsafe {
+            (self.g_object_ref)(child.0);
+            (self.gtk_flow_box_remove)(flow.0, child.0);
+            if has_ref {
+                (self.gtk_flow_box_insert)(flow.0, child.0, position);
+            } else {
+                (self.gtk_flow_box_append)(flow.0, child.0);
+            }
+            (self.g_object_unref)(child.0);
+        }
+    }
+
     pub fn set_flow_box_row_spacing(&self, flow: GtkHandle, spacing: u32) {
         unsafe {
             (self.gtk_flow_box_set_row_spacing)(flow.0, spacing);
@@ -479,6 +499,12 @@ impl Gtk4Sys {
         }
     }
 
+    pub fn clear_window_titlebar(&self, win: GtkHandle) {
+        unsafe {
+            (self.gtk_window_set_titlebar)(win.0, std::ptr::null_mut());
+        }
+    }
+
     pub fn set_header_bar_title(&self, hb: GtkHandle, title: &str, subtitle: &str) {
         let c_title = CString::new(title).ok();
         let c_sub = CString::new(subtitle).ok();
@@ -524,9 +550,21 @@ impl Gtk4Sys {
         }
     }
 
+    pub fn header_bar_remove(&self, hb: GtkHandle, child: GtkHandle) {
+        unsafe {
+            (self.gtk_header_bar_remove)(hb.0, child.0);
+        }
+    }
+
     pub fn set_scrolled_child(&self, scroll: GtkHandle, child: GtkHandle) {
         unsafe {
             (self.gtk_scrolled_window_set_child)(scroll.0, child.0);
+        }
+    }
+
+    pub fn clear_scrolled_child(&self, scroll: GtkHandle) {
+        unsafe {
+            (self.gtk_scrolled_window_set_child)(scroll.0, std::ptr::null_mut());
         }
     }
 
@@ -568,6 +606,12 @@ impl Gtk4Sys {
     pub fn grid_attach(&self, grid: GtkHandle, child: GtkHandle, col: i32, row: i32) {
         unsafe {
             (self.gtk_grid_attach)(grid.0, child.0, col, row, 1, 1);
+        }
+    }
+
+    pub fn grid_remove(&self, grid: GtkHandle, child: GtkHandle) {
+        unsafe {
+            (self.gtk_grid_remove)(grid.0, child.0);
         }
     }
 

@@ -35,7 +35,9 @@ impl GtkLinuxBackend {
             "window { background: #1e1e1e; color: #ffffff; }\n\
              headerbar, windowhandle { min-height: 46px; }\n",
         );
-        for rule in self.styles.values() {
+        let mut ordered: Vec<_> = self.styles.iter().collect();
+        ordered.sort_by_key(|(style_id, _)| style_id.0);
+        for (_, rule) in ordered {
             css.push_str(&render_gtk_css_rule(rule));
         }
         css

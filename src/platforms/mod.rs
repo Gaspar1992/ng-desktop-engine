@@ -15,7 +15,47 @@ pub use headless::HeadlessBackend;
 pub use linux_gtk::GtkLinuxBackend;
 pub use macos_appkit::MacOsAppKitBackend;
 pub use scene_state::{NativeSceneNode, NativeSceneState};
+use std::sync::OnceLock;
 pub use windows_winui::WinUiBackend;
+
+static TRACE_COMMANDS: OnceLock<bool> = OnceLock::new();
+
+fn parse_trace_flag(raw: &str) -> bool {
+    matches!(raw.trim(), "1" | "true" | "TRUE" | "yes" | "YES")
+}
+
+/// Returns whether per-command render traces should be written to stdout.
+#[must_use]
+pub fn trace_commands_enabled() -> bool {
+    *TRACE_COMMANDS.get_or_init(|| {
+        std::env::var("NG_DESKTOP_TRACE_COMMANDS").is_ok_and(|v| parse_trace_flag(&v))
+    })
+}
+
+pub(super) fn trace_flush_commands(
+    backend_name: &str,
+    frame: u64,
+    commands: &[RenderCommand],
+    resolve_widget: impl Fn(&str) -> &'static str,
+) {
+    if !trace_commands_enabled() {
+        return;
+    }
+    println!(
+        "[{backend_name} | Frame #{frame}] Flushing {} render commands:",
+        commands.len()
+    );
+    for cmd in commands {
+        if let RenderCommand::CreateWidget { id, tag } = cmd {
+            println!(
+                "  -> CreateWidget {{ id: {id:?}, tag: {tag:?} => native: {} }}",
+                resolve_widget(tag)
+            );
+        } else {
+            println!("  -> {cmd:?}");
+        }
+    }
+}
 
 /// Generic platform interface (Render Hardware Interface / OS Bridge).
 /// Applies Dependency Inversion (DIP) and Open/Closed Principle (OCP):
@@ -142,5 +182,22 @@ impl PlatformBackend for AnyPlatformBackend {
             Self::WindowsWinUi(b) => b.flush_commands(commands),
             Self::MacOsAppKit(b) => b.flush_commands(commands),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_tracing_is_disabled_by_default() {
+        if std::env::var_os("NG_DESKTOP_TRACE_COMMANDS").is_none() {
+            assert!(!trace_commands_enabled());
+        }
+        assert!(parse_trace_flag("1"));
+        assert!(parse_trace_flag("true"));
+        assert!(parse_trace_flag("YES"));
+        assert!(!parse_trace_flag("0"));
+        assert!(!parse_trace_flag("false"));
     }
 }

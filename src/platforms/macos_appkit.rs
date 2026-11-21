@@ -82,21 +82,13 @@ impl PlatformBackend for MacOsAppKitBackend {
             return;
         }
         self.flushed_frames += 1;
-        println!(
-            "[{} | Frame #{}] Flushing {} render commands:",
+        super::trace_flush_commands(
             self.backend_name(),
             self.flushed_frames,
-            commands.len()
+            commands,
+            Self::map_appkit_tag,
         );
         for cmd in commands {
-            if let RenderCommand::CreateWidget { id, tag } = cmd {
-                println!(
-                    "  -> CreateWidget {{ id: {id:?}, tag: {tag:?} => native: {} }}",
-                    Self::map_appkit_tag(tag)
-                );
-            } else {
-                println!("  -> {cmd:?}");
-            }
             self.state
                 .apply_command(cmd, "NSAnchorComment", Self::map_appkit_tag);
         }

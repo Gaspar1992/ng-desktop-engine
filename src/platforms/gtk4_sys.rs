@@ -40,6 +40,7 @@ pub struct Gtk4Sys {
     pub(super) gtk_header_bar_set_show_title_buttons: unsafe extern "C" fn(*mut c_void, c_int),
     pub(super) gtk_header_bar_set_title_widget: unsafe extern "C" fn(*mut c_void, *mut c_void),
     pub(super) gtk_header_bar_pack_end: unsafe extern "C" fn(*mut c_void, *mut c_void),
+    pub(super) gtk_header_bar_remove: unsafe extern "C" fn(*mut c_void, *mut c_void),
     pub(super) adw_window_title_new:
         Option<unsafe extern "C" fn(*const c_char, *const c_char) -> *mut c_void>,
     pub(super) gtk_scrolled_window_new: unsafe extern "C" fn() -> *mut c_void,
@@ -50,10 +51,13 @@ pub struct Gtk4Sys {
     pub(super) gtk_box_remove: unsafe extern "C" fn(*mut c_void, *mut c_void),
     pub(super) gtk_box_insert_child_after:
         unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void),
+    pub(super) gtk_box_reorder_child_after:
+        unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void),
     pub(super) gtk_box_set_spacing: unsafe extern "C" fn(*mut c_void, c_int),
     pub(super) gtk_grid_new: unsafe extern "C" fn() -> *mut c_void,
     pub(super) gtk_grid_attach:
         unsafe extern "C" fn(*mut c_void, *mut c_void, c_int, c_int, c_int, c_int),
+    pub(super) gtk_grid_remove: unsafe extern "C" fn(*mut c_void, *mut c_void),
     pub(super) gtk_grid_set_row_spacing: unsafe extern "C" fn(*mut c_void, c_uint),
     pub(super) gtk_grid_set_column_spacing: unsafe extern "C" fn(*mut c_void, c_uint),
     pub(super) gtk_separator_new: unsafe extern "C" fn(c_int) -> *mut c_void,
@@ -164,10 +168,22 @@ pub struct Gtk4Sys {
         *mut c_void,
         c_uint,
     ) -> c_ulong,
+    pub(super) g_object_ref: unsafe extern "C" fn(*mut c_void) -> *mut c_void,
     pub(super) g_object_unref: unsafe extern "C" fn(*mut c_void),
     pub(super) g_list_model_get_n_items: unsafe extern "C" fn(*mut c_void) -> c_uint,
     pub(super) css_provider: *mut c_void,
     pub(super) icon_theme: *mut c_void,
+}
+
+impl Drop for Gtk4Sys {
+    fn drop(&mut self) {
+        if !self.css_provider.is_null() {
+            unsafe {
+                (self.g_object_unref)(self.css_provider);
+            }
+            self.css_provider = std::ptr::null_mut();
+        }
+    }
 }
 
 impl Gtk4Sys {
@@ -253,6 +269,7 @@ impl Gtk4Sys {
                     c"gtk_header_bar_set_title_widget",
                 )?,
                 gtk_header_bar_pack_end: Self::load_fn(gtk_lib, c"gtk_header_bar_pack_end")?,
+                gtk_header_bar_remove: Self::load_fn(gtk_lib, c"gtk_header_bar_remove")?,
                 adw_window_title_new,
                 gtk_scrolled_window_new: Self::load_fn(gtk_lib, c"gtk_scrolled_window_new")?,
                 gtk_scrolled_window_set_child: Self::load_fn(
@@ -267,9 +284,14 @@ impl Gtk4Sys {
                 gtk_box_append: Self::load_fn(gtk_lib, c"gtk_box_append")?,
                 gtk_box_remove: Self::load_fn(gtk_lib, c"gtk_box_remove")?,
                 gtk_box_insert_child_after: Self::load_fn(gtk_lib, c"gtk_box_insert_child_after")?,
+                gtk_box_reorder_child_after: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_box_reorder_child_after",
+                )?,
                 gtk_box_set_spacing: Self::load_fn(gtk_lib, c"gtk_box_set_spacing")?,
                 gtk_grid_new: Self::load_fn(gtk_lib, c"gtk_grid_new")?,
                 gtk_grid_attach: Self::load_fn(gtk_lib, c"gtk_grid_attach")?,
+                gtk_grid_remove: Self::load_fn(gtk_lib, c"gtk_grid_remove")?,
                 gtk_grid_set_row_spacing: Self::load_fn(gtk_lib, c"gtk_grid_set_row_spacing")?,
                 gtk_grid_set_column_spacing: Self::load_fn(
                     gtk_lib,
@@ -460,6 +482,7 @@ impl Gtk4Sys {
                 g_set_prgname,
                 g_set_application_name: Self::load_fn(glib_lib, c"g_set_application_name")?,
                 g_signal_connect_data: Self::load_fn(gobject_lib, c"g_signal_connect_data")?,
+                g_object_ref: Self::load_fn(gobject_lib, c"g_object_ref")?,
                 g_object_unref: Self::load_fn(gobject_lib, c"g_object_unref")?,
                 g_list_model_get_n_items: Self::load_fn(gio_lib, c"g_list_model_get_n_items")?,
                 css_provider,

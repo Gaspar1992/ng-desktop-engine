@@ -113,13 +113,22 @@ impl JsRuntime {
         engine: &mut RenderEngine<B>,
         var_name: &str,
     ) -> Result<(), EngineError> {
-        let id = self.resolve_var(var_name)?;
-        self.variables.remove(var_name);
-        self.node_vars.remove(&id);
-        if self.primary_window == Some(id) {
+        let Ok(id) = self.resolve_var(var_name) else {
+            return Ok(());
+        };
+        let destroyed = engine.destroy_subtree(id)?;
+        let destroyed_set: HashSet<NodeId> = destroyed.into_iter().collect();
+        self.variables.retain(|_, nid| !destroyed_set.contains(nid));
+        for nid in &destroyed_set {
+            self.node_vars.remove(nid);
+        }
+        if self
+            .primary_window
+            .is_some_and(|win_id| destroyed_set.contains(&win_id))
+        {
             self.primary_window = None;
         }
-        engine.destroy_node(id)
+        Ok(())
     }
 
     fn register_handle(&mut self, var_name: &str, id: NodeId) {
