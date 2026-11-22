@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HmrMessage {
     Reload { script: String },
+    ReloadServer { bundle_js: String },
     Eval { code: String },
     Ping,
 }
@@ -216,6 +217,12 @@ impl HmrIpcClient {
         })
     }
 
+    pub fn send_reload_server(&mut self, bundle_js: &str) -> Result<(), EngineError> {
+        self.send_message(&HmrMessage::ReloadServer {
+            bundle_js: bundle_js.to_string(),
+        })
+    }
+
     pub fn send_eval(&mut self, code: &str) -> Result<(), EngineError> {
         self.send_message(&HmrMessage::Eval {
             code: code.to_string(),
@@ -234,6 +241,10 @@ impl HmrIpcClient {
                 HmrMessage::Reload { script } => {
                     let esc = escape_json(script);
                     format!(r#"{{"type":"reload","script":"{esc}"}}"#)
+                }
+                HmrMessage::ReloadServer { bundle_js } => {
+                    let esc = escape_json(bundle_js);
+                    format!(r#"{{"type":"reload_server","bundle":"{esc}"}}"#)
                 }
                 HmrMessage::Eval { code } => {
                     let esc = escape_json(code);
@@ -288,6 +299,12 @@ pub fn parse_hmr_json(line: &str) -> Option<HmrMessage> {
         "reload" => {
             let script = extract_json_value(line, "script").unwrap_or_default();
             Some(HmrMessage::Reload { script })
+        }
+        "reload_server" => {
+            let bundle_js = extract_json_value(line, "bundle")
+                .or_else(|| extract_json_value(line, "script"))
+                .unwrap_or_default();
+            Some(HmrMessage::ReloadServer { bundle_js })
         }
         "eval" => {
             let code = extract_json_value(line, "code").unwrap_or_default();
@@ -378,6 +395,16 @@ mod tests {
 
         let ping = parse_hmr_json(r#"{"type":"ping"}"#).unwrap();
         assert_eq!(ping, HmrMessage::Ping);
+
+        let srv =
+            parse_hmr_json(r#"{"type":"reload_server","bundle":"globalThis.__NG_SRV__ = 1;"}"#)
+                .unwrap();
+        assert_eq!(
+            srv,
+            HmrMessage::ReloadServer {
+                bundle_js: String::from("globalThis.__NG_SRV__ = 1;"),
+            }
+        );
     }
 
     #[cfg(unix)]
@@ -409,6 +436,24 @@ mod tests {
         server.send_response(*cid, &HmrResponse::Pong);
         let response = client.read_response().unwrap();
         assert_eq!(response, r#"{"status":"ok","pong":true}"#);
+
+        client
+            .send_reload_server("globalThis.__SVR_V__ = 2;")
+            .unwrap();
+        let mut srv_msgs = Vec::new();
+        for _ in 0..10 {
+            srv_msgs = server.poll_messages();
+            if !srv_msgs.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(
+            srv_msgs.iter().map(|(_, m)| m.clone()).collect::<Vec<_>>(),
+            vec![HmrMessage::ReloadServer {
+                bundle_js: String::from("globalThis.__SVR_V__ = 2;"),
+            }]
+        );
 
         drop(server);
         assert!(!socket_path.exists());

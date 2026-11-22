@@ -11,6 +11,12 @@ export interface CompileBundleOptions {
   version?: string;
 }
 
+export interface HmrDeltaSummary {
+  ngbChanged: boolean;
+  appBundleChanged: boolean;
+  serverBundleChanged: boolean;
+}
+
 export interface CompileBundleResult {
   projectName: string;
   version: string;
@@ -22,6 +28,7 @@ export interface CompileBundleResult {
   runtimeConfigFile: string;
   permissions: PermissionAnalysisManifest;
   socketPath: string;
+  hmrDelta: HmrDeltaSummary;
 }
 
 export function emitNgbBundle(

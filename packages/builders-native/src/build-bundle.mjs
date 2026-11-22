@@ -10,7 +10,7 @@ import {
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { extractComponentMetadata } from './ast-metadata-extractor.mjs';
-import { pushHmrReload } from './hmr-client.mjs';
+import { pushHmrReload, pushHmrServerReload } from './hmr-client.mjs';
 import { buildMultiResolutionIcons } from './icon-compiler.mjs';
 import { analyzeProjectPermissions } from './permission-analyzer.mjs';
 import { compileServerBundle, discoverServerRoutes, runEsbuildBuild } from './server-compiler.mjs';
@@ -25,7 +25,10 @@ export {
   parseStylesCss,
   parseTemplateHtml,
   pushHmrReload,
+  pushHmrServerReload,
 };
+
+const lastEmittedByOutDir = new Map();
 
 function extractCliFlagValue(argv, flag) {
   const prefix = `${flag}=`;
@@ -333,13 +336,42 @@ export function compileBundle({
     console.log(`[Angular Native Compiler] Bundled Analog server routes -> ${serverBundleFile}`);
   }
 
+  const prevEmitted = lastEmittedByOutDir.get(outDir);
+  const appBundleContent = entryBundleFile ? readFileSync(entryBundleFile, 'utf8') : null;
+  const serverBundleContent = serverBundleFile ? readFileSync(serverBundleFile, 'utf8') : null;
+  const hmrDelta = {
+    ngbChanged: !prevEmitted || prevEmitted.ngb !== bundle,
+    appBundleChanged: Boolean(
+      appBundleContent && (!prevEmitted || prevEmitted.appBundle !== appBundleContent),
+    ),
+    serverBundleChanged: Boolean(
+      serverBundleContent && (!prevEmitted || prevEmitted.serverBundle !== serverBundleContent),
+    ),
+  };
+  lastEmittedByOutDir.set(outDir, {
+    ngb: bundle,
+    appBundle: appBundleContent,
+    serverBundle: serverBundleContent,
+  });
+
   const socketPath = resolve(outDir, 'hmr.sock');
   if (existsSync(socketPath)) {
-    pushHmrReload(socketPath, bundle).then((res) => {
-      if (res.connected && res.response?.status === 'ok') {
-        console.log(`[Angular Native HMR] Pushed live bundle update over IPC -> ${socketPath}`);
-      }
-    });
+    if (hmrDelta.ngbChanged) {
+      pushHmrReload(socketPath, bundle).then((res) => {
+        if (res.connected && res.response?.status === 'ok') {
+          console.log(`[Angular Native HMR] Pushed live bundle update over IPC -> ${socketPath}`);
+        }
+      });
+    }
+    if (hmrDelta.serverBundleChanged && serverBundleContent) {
+      pushHmrServerReload(socketPath, serverBundleContent).then((res) => {
+        if (res.connected && res.response?.status === 'ok') {
+          console.log(
+            `[Angular Native HMR] Pushed live server route reload over IPC -> ${socketPath}`,
+          );
+        }
+      });
+    }
   }
 
   return {
@@ -353,6 +385,7 @@ export function compileBundle({
     runtimeConfigFile,
     permissions,
     socketPath,
+    hmrDelta,
   };
 }
 

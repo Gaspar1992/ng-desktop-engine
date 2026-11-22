@@ -39,6 +39,24 @@
       "type": "string",
       "description": "Optional main entrypoint override (inherited from architect.build.options.browser)."
     },
+    "projectName": {
+      "type": "string",
+      "description": "Target workspace project name when invoked outside an explicit Architect target."
+    },
+    "configPath": {
+      "type": "string",
+      "description": "Optional path to angular.json or project.json."
+    },
+    "rebuildIcons": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether to regenerate multi-resolution OS application icons during compilation."
+    },
+    "watch": {
+      "type": "boolean",
+      "default": false,
+      "description": "Watch source files and push incremental HMR updates over IPC when running dev-server."
+    },
     "version": {
       "type": "string",
       "description": "Application release version propagated to runtime config and OS installers."

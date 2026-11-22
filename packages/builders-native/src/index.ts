@@ -5,11 +5,29 @@ export {
   type MethodMutationMeta,
 } from './ast-metadata-extractor.mjs';
 export {
+  ARCHITECT_BUILDER_SYMBOL,
+  ARCHITECT_VERSION_SYMBOL,
+  applicationBuilder,
+  createArchitectBuilder,
+  runNativeApplicationBuilder,
+  type ArchitectBuilderContextLike,
+  type ArchitectBuilderObject,
+  type NativeApplicationBuilderOptions,
+  type NativeApplicationBuilderOutput,
+} from './application-builder.mjs';
+export {
+  devServerBuilder,
+  runNativeDevServerBuilder,
+  type NativeDevServerBuilderOptions,
+  type NativeDevServerBuilderOutput,
+} from './dev-server-builder.mjs';
+export {
   compileBundle,
   emitNgbBundle,
   watchBundle,
   type CompileBundleOptions,
   type CompileBundleResult,
+  type HmrDeltaSummary,
 } from './build-bundle.mjs';
 export {
   analyzeProjectPermissions,
@@ -55,6 +73,7 @@ export {
   pingHmr,
   pushHmrEval,
   pushHmrReload,
+  pushHmrServerReload,
   sendHmrMessage,
   type HmrClientResult,
 } from './hmr-client.mjs';

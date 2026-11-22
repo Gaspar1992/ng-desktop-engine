@@ -167,6 +167,17 @@ impl HostBridge {
         }
     }
 
+    /// Hot-reloads the attached `NativeServerWorker` with a newly compiled `server.bundle.js`.
+    pub fn reload_server_worker(&self, bundle_js: &str) -> Result<bool, String> {
+        let worker_opt = self.server_worker.lock().ok().and_then(|g| g.clone());
+        if let Some(worker) = worker_opt {
+            worker.reload(bundle_js)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     pub(crate) fn attach_server_resolve(&self, slot: ServerResolveSlot) {
         if let Ok(mut guard) = self.server_resolve.lock() {
             *guard = Some(slot);

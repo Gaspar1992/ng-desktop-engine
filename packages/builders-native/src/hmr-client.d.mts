@@ -14,6 +14,11 @@ export function sendHmrMessage(
 
 export function pushHmrReload(socketPath: string, bundleScript: string): Promise<HmrClientResult>;
 
+export function pushHmrServerReload(
+  socketPath: string,
+  serverBundleCode: string,
+): Promise<HmrClientResult>;
+
 export function pushHmrEval(socketPath: string, jsCode: string): Promise<HmrClientResult>;
 
 export function pingHmr(socketPath: string): Promise<HmrClientResult>;

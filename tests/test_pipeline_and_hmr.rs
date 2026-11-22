@@ -6,6 +6,8 @@ use ng_native_engine::engine::{EngineError, RenderCommand, RenderEngine};
 #[cfg(unix)]
 use ng_native_engine::ipc::{HmrIpcClient, HmrIpcServer, HmrMessage, HmrResponse};
 use ng_native_engine::platforms::HeadlessBackend;
+#[cfg(unix)]
+use ng_native_engine::runtime::JsEngineBackend;
 use ng_native_engine::runtime::JsRuntime;
 
 #[test]
@@ -276,4 +278,85 @@ fn hmr_ipc_server_handles_client_disconnect_and_malformed_payloads() {
     // Poll again after client disconnects: server must prune dead streams cleanly
     let after_disconnect = hmr_server.poll_messages();
     assert_eq!(after_disconnect, []);
+}
+
+#[cfg(unix)]
+#[test]
+fn hmr_ipc_server_reloads_server_bundle_message() {
+    let socket_path = format!(
+        "/tmp/ng-native-pipeline-server-hmr-{}.sock",
+        std::process::id()
+    );
+    let mut hmr_server = HmrIpcServer::bind(&socket_path).unwrap();
+
+    let runtime = JsRuntime::from_engine_config("jsc").unwrap();
+    if !runtime.js_engine().is_jit_enabled() {
+        return;
+    }
+
+    let initial_server_bundle = r"
+        globalThis.__NG_NATIVE_SERVER_ROUTER__ = {
+            handle(req) {
+                return { status: 200, statusText: 'OK', headers: {}, body: JSON.stringify({ version: 1, url: req.url }) };
+            }
+        };
+    ";
+    runtime
+        .attach_server_bundle(initial_server_bundle, false)
+        .unwrap();
+
+    let mut client = HmrIpcClient::connect(&socket_path).unwrap();
+    let updated_server_bundle = r"
+        globalThis.__NG_NATIVE_SERVER_ROUTER__ = {
+            handle(req) {
+                return { status: 200, statusText: 'OK', headers: {}, body: JSON.stringify({ version: 2, url: req.url }) };
+            }
+        };
+    ";
+    client.send_reload_server(updated_server_bundle).unwrap();
+
+    let mut messages = Vec::new();
+    for _ in 0..10 {
+        messages = hmr_server.poll_messages();
+        if !messages.is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+
+    assert_eq!(messages.len(), 1);
+    let (cid, msg) = &messages[0];
+    let HmrMessage::ReloadServer { bundle_js } = msg else {
+        panic!("Expected ReloadServer message, got {msg:?}");
+    };
+    runtime.reload_server_bundle(bundle_js, false).unwrap();
+    hmr_server.send_response(*cid, &HmrResponse::Ok { reloaded: true });
+    assert_eq!(
+        client.read_response().unwrap(),
+        r#"{"status":"ok","reloaded":true}"#
+    );
+
+    let ack_json = runtime.host_bridge().handle_service_call(
+        r#"{"action":"httpAsync","callbackId":42,"request":{"method":"GET","url":"/api/health"}}"#,
+    );
+    assert!(
+        ack_json.contains(r#""localServer":true"#),
+        "ack: {ack_json}"
+    );
+
+    let mut completed = Vec::new();
+    for _ in 0..50 {
+        completed = runtime.host_bridge().drain_async_completions();
+        if !completed.is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(completed.len(), 1);
+    assert_eq!(completed[0].callback_id, 42);
+    assert!(
+        completed[0].payload_json.contains(r#"version\":2"#),
+        "payload_json: {}",
+        completed[0].payload_json
+    );
 }

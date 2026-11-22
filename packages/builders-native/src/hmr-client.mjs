@@ -63,6 +63,13 @@ export async function pushHmrReload(socketPath, bundleScript) {
 }
 
 /**
+ * Pushes a newly compiled `server.bundle.js` to hot-reload the isolated backend worker.
+ */
+export async function pushHmrServerReload(socketPath, serverBundleCode) {
+  return sendHmrMessage(socketPath, { type: 'reload_server', bundle: serverBundleCode });
+}
+
+/**
  * Evaluates arbitrary JavaScript inside the active runtime of the running desktop window.
  */
 export async function pushHmrEval(socketPath, jsCode) {

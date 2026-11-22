@@ -4,10 +4,14 @@ import { join } from 'node:path';
 import vm from 'node:vm';
 import {
   analyzeSourcePermissions,
+  applicationBuilder,
+  ARCHITECT_BUILDER_SYMBOL,
   compileBundle,
+  devServerBuilder,
   discoverServerRoutes,
   executeNativeBuilder,
   resolveWorkspaceProject,
+  runNativeApplicationBuilder,
 } from '@ng-desktop/builders';
 import { applyNgAddToTree } from '../schematics/ng-add/index.mjs';
 
@@ -474,6 +478,82 @@ globalThis.__CALL_ENSURE__ = ensureNgNativeBridge;`,
       sandboxWithBridge['globalThis'] = sandboxWithBridge;
       vm.runInNewContext(appBundle, sandboxWithBridge);
       expect((sandboxWithBridge['__CALL_ENSURE__'] as () => unknown)()).toBe(mockBridge);
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('exports @angular-devkit/architect builders with incremental hmrDelta tracking', async () => {
+    expect(applicationBuilder[ARCHITECT_BUILDER_SYMBOL]).toBe(true);
+    expect(devServerBuilder[ARCHITECT_BUILDER_SYMBOL]).toBe(true);
+
+    const tmpRoot = mkdtempSync(join(tmpdir(), 'ng-desktop-architect-'));
+    try {
+      mkdirSync(join(tmpRoot, 'src/app'), { recursive: true });
+      mkdirSync(join(tmpRoot, 'src/server/routes/api'), { recursive: true });
+      writeFileSync(
+        join(tmpRoot, 'angular.json'),
+        JSON.stringify({
+          projects: {
+            'architect-app': {
+              projectType: 'application',
+              root: '.',
+              sourceRoot: 'src',
+              architect: {
+                native: {
+                  builder: '@ng-desktop/builders:application',
+                  options: { outputPath: 'dist/architect-app' },
+                },
+              },
+            },
+          },
+        }),
+      );
+      writeFileSync(
+        join(tmpRoot, 'src/app/app.ts'),
+        `import { Component } from '@angular/core';
+@Component({ selector: 'app-root', templateUrl: './app.html', styleUrl: './app.css' })
+export class App {}`,
+      );
+      writeFileSync(
+        join(tmpRoot, 'src/app/app.html'),
+        `<ng-window id="win" title="Architect App"><ng-label id="lbl">Ready</ng-label></ng-window>`,
+      );
+      writeFileSync(join(tmpRoot, 'src/app/app.css'), `.panel { padding: 8px; }`);
+      writeFileSync(
+        join(tmpRoot, 'src/server/routes/api/health.get.ts'),
+        `import { defineNativeEventHandler } from '@ng-desktop/server';
+export default defineNativeEventHandler(() => ({ ok: true, rev: 1 }));`,
+      );
+
+      const logs: string[] = [];
+      const ctx = {
+        workspaceRoot: tmpRoot,
+        target: { project: 'architect-app', target: 'native' },
+        logger: {
+          info: (msg: string) => logs.push(msg),
+        },
+      };
+
+      const first = await runNativeApplicationBuilder({ rebuildIcons: false }, ctx);
+      expect(first.success).toBe(true);
+      expect(first.projectName).toBe('architect-app');
+      expect(first.hmrDelta.ngbChanged).toBe(true);
+      expect(first.hmrDelta.serverBundleChanged).toBe(true);
+      expect(logs[0]).toContain('[NgDesktop Architect] Built architect-app');
+
+      const second = await runNativeApplicationBuilder({ rebuildIcons: false }, ctx);
+      expect(second.hmrDelta.ngbChanged).toBe(false);
+      expect(second.hmrDelta.serverBundleChanged).toBe(false);
+
+      writeFileSync(
+        join(tmpRoot, 'src/server/routes/api/health.get.ts'),
+        `import { defineNativeEventHandler } from '@ng-desktop/server';
+export default defineNativeEventHandler(() => ({ ok: true, rev: 2 }));`,
+      );
+      const third = await runNativeApplicationBuilder({ rebuildIcons: false }, ctx);
+      expect(third.hmrDelta.ngbChanged).toBe(false);
+      expect(third.hmrDelta.serverBundleChanged).toBe(true);
     } finally {
       rmSync(tmpRoot, { recursive: true, force: true });
     }

@@ -37,6 +37,12 @@ fn handle_hmr_messages(
                     server.send_response(cid, &HmrResponse::Ok { reloaded: true });
                 }
             }
+            HmrMessage::ReloadServer { bundle_js } => {
+                match js_runtime.reload_server_bundle(&bundle_js, true) {
+                    Ok(()) => server.send_response(cid, &HmrResponse::Ok { reloaded: true }),
+                    Err(err) => server.send_response(cid, &HmrResponse::Error(err)),
+                }
+            }
             HmrMessage::Eval { code } => match js_runtime.eval_js(engine, &code) {
                 Ok(res) => server.send_response(cid, &HmrResponse::EvalResult(res)),
                 Err(err) => {
