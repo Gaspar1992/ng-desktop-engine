@@ -42,28 +42,7 @@
 
       @if (pokedex.errorMessage(); as errMsg) {
       <ng-label id="error_banner" class="error-banner">{{ errMsg }}</ng-label>
-      } @if (pokedex.viewMode() === 'list') {
-      <app-catalog-view
-        [items]="pokedex.catalogItems()"
-        [totalCount]="pokedex.totalCount()"
-        [favoriteIds]="pokedex.favoriteIds()"
-        [hasMore]="pokedex.hasMore()"
-        (selectPokemon)="openPokemon($event)"
-        (loadMore)="loadMore()"
-      />
-      } @else { @if (pokedex.selectedDetail(); as detail) {
-      <app-pokemon-detail-view
-        [detail]="detail"
-        [isFavorite]="pokedex.isFavorite(detail.id)"
-        [noteStatus]="pokedex.noteStatus()"
-        [noteControl]="noteControl"
-        (back)="backToList()"
-        (previous)="previousPokemon()"
-        (next)="nextPokemon()"
-        (toggleFavorite)="toggleCurrentFavorite()"
-        (saveNote)="saveNote()"
-      />
-      } }
+      }
       <router-outlet />
     </ng-box>
   </ng-scroll>

@@ -90,6 +90,7 @@ impl AppKitFfiDriver {
         if ffi_loaded {
             for class_name in [
                 "NSWindow",
+                "NSPanel",
                 "NSToolbar",
                 "NSScrollView",
                 "NSStackView",
@@ -130,7 +131,7 @@ impl AppKitFfiDriver {
     const fn primary_selector_for(objc_class: &'static str) -> &'static str {
         match objc_class.as_bytes() {
             b"NSWindow" => "initWithContentRect:styleMask:backing:defer:",
-            b"NSButton" => "setTitle:",
+            b"NSPanel" | b"NSButton" => "setTitle:",
             b"NSTextField" | b"NSSecureTextField" | b"NSSearchField" => "setStringValue:",
             b"NSStackView" => "addArrangedSubview:",
             b"NSScrollView" => "setDocumentView:",
@@ -307,6 +308,11 @@ impl MacOsAppKitBackend {
         self.ffi_driver.open_window_count()
     }
 
+    #[must_use]
+    pub fn toplevel_count(&self) -> usize {
+        self.state.toplevel_count()
+    }
+
     pub fn get_view_binding(&self, id: NodeId) -> Option<&AppKitWidgetBinding> {
         self.ffi_driver.bindings.get(&id)
     }
@@ -334,6 +340,7 @@ impl MacOsAppKitBackend {
     fn map_appkit_tag(tag: &str) -> &'static str {
         match tag {
             "ng-window" | "adw-window" => "NSWindow",
+            "ng-dialog" | "gtk-dialog" | "adw-dialog" => "NSPanel",
             "ng-header-bar" | "adw-header-bar" | "gtk-header-bar" => "NSToolbar",
             "ng-scroll" | "gtk-scrolled-window" => "NSScrollView",
             "ng-box" | "gtk-box" => "NSStackView",

@@ -3,9 +3,7 @@ use super::widget::WidgetKind;
 impl WidgetKind {
     pub fn set_attribute(&mut self, key: &str, value: &str) {
         match self {
-            Self::Window { title, .. } if key == "title" => {
-                *title = value.to_string();
-            }
+            Self::Window { .. } | Self::Dialog { .. } => self.set_toplevel_attribute(key, value),
             Self::HeaderBar {
                 title,
                 subtitle,
@@ -99,6 +97,27 @@ impl WidgetKind {
                 *vertical = value == "vertical";
             }
             _ => self.set_extended_container_attribute(key, value),
+        }
+    }
+
+    fn set_toplevel_attribute(&mut self, key: &str, value: &str) {
+        match self {
+            Self::Window { title, .. } if key == "title" => *title = value.to_string(),
+            Self::Dialog {
+                title,
+                modal,
+                transient_for,
+                ..
+            } => match key {
+                "title" => *title = value.to_string(),
+                "modal" => *modal = value != "false" && value != "0",
+                "transient-for" => {
+                    let trimmed = value.trim();
+                    *transient_for = (!trimmed.is_empty()).then(|| trimmed.to_string());
+                }
+                _ => {}
+            },
+            _ => {}
         }
     }
 

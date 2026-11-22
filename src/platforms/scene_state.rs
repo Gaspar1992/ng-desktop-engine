@@ -16,6 +16,8 @@ pub struct NativeSceneNode {
     pub event_mask: EventMask,
     pub drop_target: bool,
     pub prevent_close: bool,
+    pub modal: bool,
+    pub transient_for: Option<String>,
     pub scroll_position: Option<(i32, i32)>,
     pub scroll_anchor: Option<String>,
 }
@@ -52,6 +54,18 @@ impl NativeSceneState {
 
     pub fn get_window_icon(&self, window: NodeId) -> Option<&WindowIconAsset> {
         self.window_icons.get(&window)
+    }
+
+    #[must_use]
+    pub fn toplevel_count(&self) -> usize {
+        self.nodes
+            .values()
+            .filter(|n| {
+                n.native_class.contains("Window")
+                    || n.native_class.contains("Dialog")
+                    || n.native_class == "NSPanel"
+            })
+            .count()
     }
 
     pub fn push_event(&self, event: NativeEvent) {
@@ -92,6 +106,13 @@ impl NativeSceneState {
                     node.prevent_close = false;
                 }
             }
+            "modal" => {
+                node.modal = Self::parse_truthy_attr(value);
+            }
+            "transient-for" => {
+                let trimmed = value.trim();
+                node.transient_for = (!trimmed.is_empty()).then(|| trimmed.to_string());
+            }
             "scroll-to" => {
                 node.scroll_position = Self::parse_scroll_coords(value);
             }
@@ -123,6 +144,8 @@ impl NativeSceneState {
                         event_mask: EventMask::NONE,
                         drop_target: false,
                         prevent_close: false,
+                        modal: matches!(tag.as_str(), "ng-dialog" | "gtk-dialog" | "adw-dialog"),
+                        transient_for: None,
                         scroll_position: None,
                         scroll_anchor: None,
                     },
@@ -140,6 +163,8 @@ impl NativeSceneState {
                         event_mask: EventMask::NONE,
                         drop_target: false,
                         prevent_close: false,
+                        modal: false,
+                        transient_for: None,
                         scroll_position: None,
                         scroll_anchor: None,
                     },

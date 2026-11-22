@@ -14,7 +14,9 @@ use crate::desktop::http_codec::{
 use crate::desktop::http_native::NativeHttpEngine;
 use crate::desktop::sqlite_sys::{NativeSqliteDatabase, SqlParam, parse_json_params};
 use crate::desktop::system_env::NativeSystemEnv;
-use crate::desktop::{AppMenuItem, DesktopServices, ShortcutBinding, TrayState, WindowGeometry};
+use crate::desktop::{
+    AppMenuItem, ConfirmDialogRequest, DesktopServices, ShortcutBinding, TrayState, WindowGeometry,
+};
 
 use super::server_worker::{NativeServerWorker, is_local_api_url};
 
@@ -131,6 +133,8 @@ struct DesktopUiState {
     app_menu: Vec<AppMenuItem>,
     tray_state: TrayState,
     shortcuts: Vec<ShortcutBinding>,
+    confirm_dialogs: Vec<ConfirmDialogRequest>,
+    next_confirm_response: Option<bool>,
 }
 
 /// Thread-safe native desktop service multiplexer exposed to embedded JavaScript runtimes.
@@ -166,6 +170,8 @@ impl HostBridge {
                 app_menu: desktop.app_menu().to_vec(),
                 tray_state: desktop.tray_state().clone(),
                 shortcuts: desktop.shortcuts().to_vec(),
+                confirm_dialogs: desktop.confirm_dialogs().to_vec(),
+                next_confirm_response: None,
             }),
             async_completions: Arc::new(Mutex::new(Vec::new())),
             server_worker: Mutex::new(None),
@@ -230,6 +236,8 @@ impl HostBridge {
             "shortcutRegister" => self.handle_shortcut_register(req_json),
             "shortcutUnregister" => self.handle_shortcut_unregister(req_json),
             "shortcutList" => self.handle_shortcut_list(),
+            "dialogConfirm" => self.handle_dialog_confirm(req_json),
+            "dialogConfirmSetNext" => self.handle_dialog_confirm_set_next(req_json),
             _ => Self::err_json("Unsupported host service action"),
         }
     }
@@ -875,6 +883,42 @@ impl HostBridge {
             Self::encode_shortcuts(&state.shortcuts)
         )
     }
+
+    fn handle_dialog_confirm(&self, req_json: &str) -> String {
+        let title =
+            extract_json_string(req_json, "title").unwrap_or_else(|| String::from("Confirm"));
+        let message = extract_json_string(req_json, "message").unwrap_or_default();
+        let confirm_label =
+            extract_json_string(req_json, "confirmLabel").unwrap_or_else(|| String::from("OK"));
+        let cancel_label =
+            extract_json_string(req_json, "cancelLabel").unwrap_or_else(|| String::from("Cancel"));
+        let default_confirmed = extract_json_bool(req_json, "defaultConfirmed").unwrap_or(true);
+        let Ok(mut state) = self.ui_state.lock() else {
+            return Self::err_json("Desktop UI mutex poisoned");
+        };
+        let confirmed = state
+            .next_confirm_response
+            .take()
+            .unwrap_or(default_confirmed);
+        state.confirm_dialogs.push(ConfirmDialogRequest {
+            title,
+            message,
+            confirm_label,
+            cancel_label,
+            default_confirmed,
+            confirmed,
+        });
+        format!(r#"{{"ok":true,"confirmed":{confirmed}}}"#)
+    }
+
+    fn handle_dialog_confirm_set_next(&self, req_json: &str) -> String {
+        let confirmed = extract_json_bool(req_json, "confirmed").unwrap_or(true);
+        let Ok(mut state) = self.ui_state.lock() else {
+            return Self::err_json("Desktop UI mutex poisoned");
+        };
+        state.next_confirm_response = Some(confirmed);
+        format!(r#"{{"ok":true,"confirmed":{confirmed}}}"#)
+    }
 }
 
 #[cfg(test)]
@@ -1043,5 +1087,25 @@ mod tests {
                 let _ = fs::remove_dir_all(parent);
             }
         }
+    }
+
+    #[test]
+    fn host_bridge_supports_confirm_dialogs() {
+        let desktop = DesktopServices::new();
+        let bridge = HostBridge::new(&desktop);
+
+        let default_yes = bridge.handle_service_call(
+            r#"{"action":"dialogConfirm","title":"Close","message":"Save first?","defaultConfirmed":true}"#,
+        );
+        assert!(default_yes.contains(r#""confirmed":true"#));
+
+        let set_no =
+            bridge.handle_service_call(r#"{"action":"dialogConfirmSetNext","confirmed":false}"#);
+        assert!(set_no.contains(r#""ok":true"#));
+
+        let overridden = bridge.handle_service_call(
+            r#"{"action":"dialogConfirm","title":"Overwrite","message":"Replace?","defaultConfirmed":true}"#,
+        );
+        assert!(overridden.contains(r#""confirmed":false"#));
     }
 }

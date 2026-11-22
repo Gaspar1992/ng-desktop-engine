@@ -113,6 +113,8 @@ impl QuickJsEngine {
                 | "getClipboard"
                 | "openFileDialog"
                 | "saveFileDialog"
+                | "confirmDialog"
+                | "setNextConfirmDialogResponse"
                 | "sendNotification"
                 | "sqliteExecute"
                 | "sqliteQuery"

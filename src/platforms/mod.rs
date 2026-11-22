@@ -57,42 +57,49 @@ pub(super) fn trace_flush_commands(
     }
 }
 
+/// Default cross-platform tag-to-widget mapping shared by generic and headless backends.
+#[must_use]
+pub const fn default_map_native_widget(tag: &str) -> &'static str {
+    match tag.as_bytes() {
+        b"ng-window" | b"adw-window" => "NativeWindow",
+        b"ng-dialog" | b"gtk-dialog" | b"adw-dialog" => "NativeDialog",
+        b"ng-header-bar" | b"adw-header-bar" | b"gtk-header-bar" => "NativeHeaderBar",
+        b"ng-scroll" | b"gtk-scrolled-window" => "NativeScrollView",
+        b"ng-box" | b"gtk-box" => "NativeBox",
+        b"ng-grid" | b"gtk-grid" => "NativeGrid",
+        b"ng-separator" | b"gtk-separator" => "NativeSeparator",
+        b"ng-label" | b"gtk-label" => "NativeLabel",
+        b"ng-button" | b"gtk-button" => "NativeButton",
+        b"ng-entry" | b"gtk-entry" => "NativeEntry",
+        b"ng-switch" | b"gtk-switch" => "NativeSwitch",
+        b"ng-checkbox" | b"ng-check" | b"gtk-check-button" => "NativeCheckButton",
+        b"ng-slider" | b"ng-scale" | b"gtk-scale" => "NativeSlider",
+        b"ng-select" | b"ng-dropdown" | b"gtk-drop-down" => "NativeDropDown",
+        b"ng-image" | b"gtk-picture" | b"ng-picture" => "NativeImage",
+        b"ng-level-bar" | b"gtk-level-bar" => "NativeLevelBar",
+        b"ng-progress-bar" | b"gtk-progress-bar" => "NativeProgressBar",
+        b"ng-spinner" | b"gtk-spinner" => "NativeSpinner",
+        b"ng-flow" | b"ng-flow-box" | b"gtk-flow-box" => "NativeFlowBox",
+        b"ng-paned" | b"gtk-paned" => "NativePaned",
+        b"ng-stack" | b"gtk-stack" | b"adw-navigation-view" => "NativeStack",
+        b"ng-expander" | b"gtk-expander" => "NativeExpander",
+        b"ng-text-view" | b"gtk-text-view" => "NativeTextView",
+        b"ng-password-entry" | b"gtk-password-entry" => "NativePasswordEntry",
+        b"ng-search-entry" | b"gtk-search-entry" => "NativeSearchEntry",
+        b"ng-spin-button" | b"gtk-spin-button" => "NativeSpinButton",
+        b"ng-clamp" | b"adw-clamp" => "NativeClamp",
+        b"ng-anchor" => "NativeAnchor",
+        _ => "NativeWidget",
+    }
+}
+
 /// Generic platform interface (Render Hardware Interface / OS Bridge).
 /// Applies Dependency Inversion (DIP) and Open/Closed Principle (OCP):
 /// `RenderEngine` depends only on this abstraction, never on a concrete OS toolkit.
 pub trait PlatformBackend {
     fn backend_name(&self) -> &str;
     fn map_native_widget(&self, tag: &str) -> &'static str {
-        match tag {
-            "ng-window" | "adw-window" => "NativeWindow",
-            "ng-header-bar" | "adw-header-bar" | "gtk-header-bar" => "NativeHeaderBar",
-            "ng-scroll" | "gtk-scrolled-window" => "NativeScrollView",
-            "ng-box" | "gtk-box" => "NativeBox",
-            "ng-grid" | "gtk-grid" => "NativeGrid",
-            "ng-separator" | "gtk-separator" => "NativeSeparator",
-            "ng-label" | "gtk-label" => "NativeLabel",
-            "ng-button" | "gtk-button" => "NativeButton",
-            "ng-entry" | "gtk-entry" => "NativeEntry",
-            "ng-switch" | "gtk-switch" => "NativeSwitch",
-            "ng-checkbox" | "ng-check" | "gtk-check-button" => "NativeCheckButton",
-            "ng-slider" | "ng-scale" | "gtk-scale" => "NativeSlider",
-            "ng-select" | "ng-dropdown" | "gtk-drop-down" => "NativeDropDown",
-            "ng-image" | "gtk-picture" | "ng-picture" => "NativeImage",
-            "ng-level-bar" | "gtk-level-bar" => "NativeLevelBar",
-            "ng-progress-bar" | "gtk-progress-bar" => "NativeProgressBar",
-            "ng-spinner" | "gtk-spinner" => "NativeSpinner",
-            "ng-flow" | "ng-flow-box" | "gtk-flow-box" => "NativeFlowBox",
-            "ng-paned" | "gtk-paned" => "NativePaned",
-            "ng-stack" | "gtk-stack" | "adw-navigation-view" => "NativeStack",
-            "ng-expander" | "gtk-expander" => "NativeExpander",
-            "ng-text-view" | "gtk-text-view" => "NativeTextView",
-            "ng-password-entry" | "gtk-password-entry" => "NativePasswordEntry",
-            "ng-search-entry" | "gtk-search-entry" => "NativeSearchEntry",
-            "ng-spin-button" | "gtk-spin-button" => "NativeSpinButton",
-            "ng-clamp" | "adw-clamp" => "NativeClamp",
-            "ng-anchor" => "NativeAnchor",
-            _ => "NativeWidget",
-        }
+        default_map_native_widget(tag)
     }
     fn flush_commands(&mut self, commands: &[RenderCommand]);
 }

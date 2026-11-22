@@ -33,6 +33,7 @@ fn cross_platform_factory_supports_linux_windows_and_macos() {
     assert_eq!(linux.map_native_widget("ng-search-entry"), "GtkSearchEntry");
     assert_eq!(linux.map_native_widget("ng-spin-button"), "GtkSpinButton");
     assert_eq!(linux.map_native_widget("ng-clamp"), "AdwClamp");
+    assert_eq!(linux.map_native_widget("ng-dialog"), "AdwDialog");
 
     let windows = AnyPlatformBackend::from_target("windows-winui").unwrap();
     assert_eq!(
@@ -75,6 +76,10 @@ fn cross_platform_factory_supports_linux_windows_and_macos() {
         windows.map_native_widget("ng-clamp"),
         "Microsoft.UI.Xaml.Controls.Grid"
     );
+    assert_eq!(
+        windows.map_native_widget("ng-dialog"),
+        "Microsoft.UI.Xaml.Controls.ContentDialog"
+    );
 
     let macos = AnyPlatformBackend::from_target("macos-appkit").unwrap();
     assert_eq!(macos.map_native_widget("ng-window"), "NSWindow");
@@ -91,6 +96,7 @@ fn cross_platform_factory_supports_linux_windows_and_macos() {
     assert_eq!(macos.map_native_widget("ng-search-entry"), "NSSearchField");
     assert_eq!(macos.map_native_widget("ng-spin-button"), "NSStepper");
     assert_eq!(macos.map_native_widget("ng-clamp"), "NSBox");
+    assert_eq!(macos.map_native_widget("ng-dialog"), "NSPanel");
 }
 
 #[test]
@@ -279,6 +285,7 @@ fn all_27_primitives_have_cross_platform_mapping_parity() {
         "ng-search-entry",
         "ng-spin-button",
         "ng-clamp",
+        "ng-dialog",
         "ng-anchor",
     ];
 

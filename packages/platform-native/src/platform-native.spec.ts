@@ -882,4 +882,56 @@ describe('@ng-desktop/platform — NativeRenderer2 & Bridge', () => {
       'radius=10 min-height=44 orientation=horizontal hexpand=true min-children=1 max-children=12 homogeneous=true',
     );
   });
+
+  it('compiles <ng-dialog> and standard HTML <dialog> with modal, transient-for, title, and (closeRequest)', () => {
+    @Component({
+      standalone: true,
+      imports: [NATIVE_UI_DIRECTIVES],
+      template: `
+        <ng-window id="main_win" title="Workspace">
+          <ng-dialog
+            id="confirm_dlg"
+            title="Unsaved Changes"
+            [modal]="true"
+            transient-for="main_win"
+            [preventClose]="true"
+            (closeRequest)="closed.set(true)"
+          >
+            <ng-label>Discard pending edits?</ng-label>
+          </ng-dialog>
+          <dialog id="html_dlg" title="Quick Notice"><span>Saved!</span></dialog>
+        </ng-window>
+      `,
+    })
+    class DialogHost {
+      readonly closed = signal(false);
+    }
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [DialogHost],
+      providers: [provideNativePlatform()],
+    });
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+
+    expect(resolveNativeTag('dialog')).toBe('ng-dialog');
+
+    const fixture = TestBed.createComponent(DialogHost);
+    fixture.detectChanges();
+    const cmds = bridge.__drainQueue().split('\n');
+    const dlgLines = cmds.filter((l) => l.endsWith(' ng-dialog'));
+    expect(dlgLines).toHaveLength(2);
+
+    const dlgId = dlgLines[0]!.split(' ')[1]!;
+    expect(cmds).toContain(`text ${dlgId} Unsaved Changes`);
+    expect(cmds).toContain(`attr ${dlgId} modal true`);
+    expect(cmds).toContain(`attr ${dlgId} transient-for main_win`);
+    expect(cmds).toContain(`attr ${dlgId} prevent-close true`);
+    expect(cmds).toContain(`attr ${dlgId} event-mask close-request`);
+
+    bridge.__dispatchEvent(dlgId, 'close-request', { value: '{"preventable":true}' });
+    expect(fixture.componentInstance.closed()).toBe(true);
+    fixture.destroy();
+  });
 });

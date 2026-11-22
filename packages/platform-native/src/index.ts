@@ -1,6 +1,7 @@
 export {
   ensureNgNativeBridge,
   type NativeComputeMatch,
+  type NativeConfirmDialogOptions,
   type NativeConnectivity,
   type NativeHttpBridgeResponse,
   type NativeHttpCallKind,

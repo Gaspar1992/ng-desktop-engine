@@ -23,6 +23,13 @@ impl PlatformBackend for HeadlessBackend {
         "Headless Test Backend"
     }
 
+    fn map_native_widget(&self, tag: &str) -> &'static str {
+        match tag {
+            "ng-dialog" | "gtk-dialog" | "adw-dialog" => "HeadlessDialog",
+            other => super::default_map_native_widget(other),
+        }
+    }
+
     fn flush_commands(&mut self, commands: &[RenderCommand]) {
         if !commands.is_empty() {
             self.frames.push(commands.to_vec());

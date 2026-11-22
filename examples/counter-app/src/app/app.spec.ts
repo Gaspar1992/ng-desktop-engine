@@ -5,7 +5,7 @@ import {
   NativeTitleService,
   provideNativePlatform,
 } from '@ng-desktop/platform';
-import { NativePlatformLocation } from '@ng-desktop/router';
+import { NativePlatformLocation, Router } from '@ng-desktop/router';
 import { App } from './app';
 import { appConfig } from './app.config';
 import { PokedexService } from './pokedex.service';
@@ -236,5 +236,35 @@ describe('App (100% Angular + @ng-desktop/server API)', () => {
     expect(desktop.triggerShortcut('Escape')).toBe(true);
     await new Promise<void>((resolve) => setTimeout(resolve, 25));
     expect(service.viewMode()).toBe('list');
+  });
+
+  it('activates CatalogRouteComponent and DetailRouteComponent directly inside real <router-outlet />', async () => {
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const service = TestBed.inject(PokedexService);
+    fixture.detectChanges();
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    fixture.detectChanges();
+
+    const initialCmds = bridge.__drainQueue();
+    expect(router.url).toBe('/pokemon');
+    expect(initialCmds).toContain('list_view');
+    expect(initialCmds).not.toContain('detail_view');
+
+    await router.navigate(['/pokemon', 25]);
+    fixture.detectChanges();
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    fixture.detectChanges();
+
+    const detailCmds = bridge.__drainQueue();
+    expect(service.viewMode()).toBe('detail');
+    expect(service.selectedId()).toBe(25);
+    expect(service.selectedDetail()?.displayName).toBe('Pikachu');
+    expect(detailCmds).toContain('detail_view');
+
+    fixture.destroy();
   });
 });

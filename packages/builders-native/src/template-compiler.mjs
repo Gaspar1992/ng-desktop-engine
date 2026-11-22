@@ -452,6 +452,7 @@ const HTML_TO_NATIVE_TAG = {
   select: 'ng-select',
   progress: 'ng-progress-bar',
   details: 'ng-expander',
+  dialog: 'ng-dialog',
 };
 
 function resolveNativeHtmlTag(tagName, attrs) {

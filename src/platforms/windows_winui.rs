@@ -84,6 +84,7 @@ impl WinUiFfiDriver {
     fn win32_class_for(xaml_class: &str) -> &'static str {
         match xaml_class {
             "Microsoft.UI.Xaml.Window" => "Window",
+            "Microsoft.UI.Xaml.Controls.ContentDialog" => "Dialog",
             "Microsoft.UI.Xaml.Controls.Button"
             | "Microsoft.UI.Xaml.Controls.CheckBox"
             | "Microsoft.UI.Xaml.Controls.ToggleSwitch" => "BUTTON",
@@ -194,6 +195,11 @@ impl WinUiBackend {
         self.ffi_driver.open_window_count()
     }
 
+    #[must_use]
+    pub fn toplevel_count(&self) -> usize {
+        self.state.toplevel_count()
+    }
+
     pub fn get_control_binding(&self, id: NodeId) -> Option<&WinUiControlBinding> {
         self.ffi_driver.bindings.get(&id)
     }
@@ -221,6 +227,7 @@ impl WinUiBackend {
     fn map_winui_tag(tag: &str) -> &'static str {
         match tag {
             "ng-window" | "adw-window" => "Microsoft.UI.Xaml.Window",
+            "ng-dialog" | "gtk-dialog" | "adw-dialog" => "Microsoft.UI.Xaml.Controls.ContentDialog",
             "ng-header-bar" | "adw-header-bar" | "gtk-header-bar" => {
                 "Microsoft.UI.Xaml.Controls.TitleBar"
             }

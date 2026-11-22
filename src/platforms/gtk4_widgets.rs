@@ -41,6 +41,35 @@ impl Gtk4Sys {
         }
     }
 
+    pub fn create_dialog(&self) -> GtkHandle {
+        unsafe {
+            let win = (self.gtk_window_new)();
+            (self.gtk_window_set_default_size)(win, 460, 280);
+            (self.gtk_window_set_modal)(win, 1);
+            GtkHandle(win)
+        }
+    }
+
+    pub fn set_window_modal(&self, win: GtkHandle, modal: bool) {
+        unsafe {
+            (self.gtk_window_set_modal)(win.0, i32::from(modal));
+        }
+    }
+
+    pub fn set_window_transient_for(&self, win: GtkHandle, parent: Option<GtkHandle>) {
+        let parent_ptr = parent.map_or(std::ptr::null_mut(), |h| h.0);
+        unsafe {
+            (self.gtk_window_set_transient_for)(win.0, parent_ptr);
+            (self.gtk_window_set_destroy_with_parent)(win.0, i32::from(parent.is_some()));
+        }
+    }
+
+    pub fn present_window(&self, win: GtkHandle) {
+        unsafe {
+            (self.gtk_window_present)(win.0);
+        }
+    }
+
     pub fn create_header_bar(&self) -> GtkHandle {
         unsafe {
             let hb = (self.gtk_header_bar_new)();

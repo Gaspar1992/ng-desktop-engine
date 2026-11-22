@@ -209,5 +209,21 @@ describe('@ng-desktop/desktop Nivel 1-3 services', () => {
 
     unClose();
     expect(bridge.__drainQueue()).toContain('attr win prevent-close false');
+
+    expect(
+      desktop.confirmDialog({
+        title: 'Discard changes?',
+        message: 'You have unsaved notes.',
+        defaultConfirmed: true,
+      }),
+    ).toBe(true);
+    desktop.setNextConfirmDialogResponse(false);
+    expect(
+      desktop.confirmDialog({
+        title: 'Overwrite file?',
+        message: 'Target already exists.',
+        defaultConfirmed: true,
+      }),
+    ).toBe(false);
   });
 });

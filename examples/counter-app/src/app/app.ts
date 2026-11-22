@@ -1,4 +1,4 @@
-import { Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, effect, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { NativeDesktopService } from '@ng-desktop/desktop';
@@ -6,19 +6,10 @@ import { NATIVE_FORM_DIRECTIVES } from '@ng-desktop/forms';
 import { NATIVE_UI_DIRECTIVES } from '@ng-desktop/platform';
 import { NativePlatformLocation, Router, RouterOutlet } from '@ng-desktop/router';
 import { PokedexService } from './core/services/pokedex.service';
-import { CatalogView } from './features/catalog/catalog-view';
-import { PokemonDetailView } from './features/detail/pokemon-detail-view';
 
 @Component({
   selector: 'app-root',
-  imports: [
-    ReactiveFormsModule,
-    NATIVE_FORM_DIRECTIVES,
-    NATIVE_UI_DIRECTIVES,
-    RouterOutlet,
-    CatalogView,
-    PokemonDetailView,
-  ],
+  imports: [ReactiveFormsModule, NATIVE_FORM_DIRECTIVES, NATIVE_UI_DIRECTIVES, RouterOutlet],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
@@ -36,11 +27,18 @@ export class App implements OnInit, OnDestroy {
   readonly searchControl = new FormControl('', { nonNullable: true });
   readonly spinIdControl = new FormControl(1, { nonNullable: true });
   readonly favoritesOnlyControl = new FormControl(false, { nonNullable: true });
-  readonly noteControl = new FormControl('', { nonNullable: true });
+  readonly noteControl = this.pokedex.noteControl;
 
   private unlistenPopState: VoidFunction | null = null;
 
   constructor() {
+    effect(() => {
+      const selected = this.pokedex.selectedId();
+      if (this.spinIdControl.value !== selected) {
+        this.spinIdControl.setValue(selected, { emitEvent: false });
+      }
+    });
+
     this.searchControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((query) => {
       void this.pokedex.setSearchQuery(query);
     });
@@ -106,6 +104,9 @@ export class App implements OnInit, OnDestroy {
 
     void this.pokedex.refreshFavorites();
     void this.pokedex.loadCatalogPage(true);
+    if (!this.router.navigated) {
+      void this.router.navigateByUrl('/pokemon', { replaceUrl: true });
+    }
     this.unlistenPopState = this.location.onPopState(() => {
       const match = this.location.pathname.match(/^\/pokemon\/(\d+)$/);
       if (match) {

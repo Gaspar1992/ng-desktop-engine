@@ -79,6 +79,14 @@ export interface NativeShortcutBinding {
   actionId: string;
 }
 
+export interface NativeConfirmDialogOptions {
+  title?: string;
+  message?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  defaultConfirmed?: boolean;
+}
+
 /**
  * Host FFI bridge contract injected at `globalThis.__NG_NATIVE__` by the Rust `JsEngineBackend`
  * (`JscEngine` or `QuickJsEngine`).
@@ -117,6 +125,8 @@ export interface NgNativeBridge {
   sendNotification(title: string, body: string, icon?: string): void;
   openFileDialog(title?: string, defaultPath?: string): string;
   saveFileDialog(title?: string, suggestedName?: string): string;
+  confirmDialog?(options?: NativeConfirmDialogOptions): boolean;
+  setNextConfirmDialogResponse?(confirmed: boolean): void;
   configureHttp(config: NativeHttpConfig): NativeHttpConfig;
   getHttpConfig(): NativeHttpConfig;
   registerHttpEndpoint(method: string, url: string, status: number, body: string): void;
@@ -233,6 +243,7 @@ export function ensureNgNativeBridge(): NgNativeBridge {
       menuItems: [],
     };
     let shortcuts: NativeShortcutBinding[] = [];
+    let nextConfirmResponse: boolean | null = null;
     let networkStatus: NativeNetworkStatus = {
       online: true,
       metered: false,
@@ -375,6 +386,17 @@ export function ensureNgNativeBridge(): NgNativeBridge {
       },
       saveFileDialog(_title = 'Save File', suggestedName = '/home/user/untitled.txt') {
         return suggestedName;
+      },
+      confirmDialog(options = {}) {
+        if (nextConfirmResponse !== null) {
+          const next = nextConfirmResponse;
+          nextConfirmResponse = null;
+          return next;
+        }
+        return options.defaultConfirmed !== false;
+      },
+      setNextConfirmDialogResponse(confirmed) {
+        nextConfirmResponse = Boolean(confirmed);
       },
       configureHttp(config) {
         httpConfig = { ...httpConfig, ...config };

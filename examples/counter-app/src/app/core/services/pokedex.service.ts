@@ -1,5 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable, signal } from '@angular/core';
+import { FormControl } from '@angular/forms';
 import {
   NativeComputeService,
   NativeFileSystemService,
@@ -53,6 +54,7 @@ export class PokedexService {
   readonly selectedId = signal(1);
   readonly selectedDetail = signal<PokemonDetailRecord | null>(null);
   readonly selectedNote = signal('');
+  readonly noteControl = new FormControl('', { nonNullable: true });
   readonly noteStatus = signal('');
   readonly isOnline = this.network.isOnline;
 
@@ -146,6 +148,7 @@ export class PokedexService {
       }
       this.selectedDetail.set(res.pokemon);
       this.selectedNote.set(res.note);
+      this.noteControl.setValue(res.note, { emitEvent: false });
       this.favoriteIds.update((prev) => {
         const next = new Set(prev);
         if (res.isFavorite) {

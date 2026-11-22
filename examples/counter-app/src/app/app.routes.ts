@@ -1,17 +1,17 @@
 import { Routes } from '@ng-desktop/router';
+import { CatalogRouteComponent } from './features/catalog/catalog-route';
+import { DetailRouteComponent } from './features/detail/detail-route';
 
 export const appRoutes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'pokemon' },
   {
     path: 'pokemon',
-    loadComponent: () =>
-      import('./features/catalog/catalog-route').then((m) => m.CatalogRouteComponent),
+    component: CatalogRouteComponent,
     title: 'Catálogo Nacional',
   },
   {
     path: 'pokemon/:id',
-    loadComponent: () =>
-      import('./features/detail/detail-route').then((m) => m.DetailRouteComponent),
+    component: DetailRouteComponent,
     title: 'Ficha Pokémon',
   },
 ];

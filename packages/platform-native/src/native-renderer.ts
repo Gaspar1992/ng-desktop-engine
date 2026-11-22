@@ -18,6 +18,9 @@ const TEXT_BEARING_TAGS = new Set([
   'gtk-button',
   'ng-window',
   'adw-window',
+  'ng-dialog',
+  'gtk-dialog',
+  'adw-dialog',
   'ng-header-bar',
   'adw-header-bar',
   'gtk-header-bar',
@@ -90,6 +93,7 @@ export const HTML_TO_NATIVE_TAG: Readonly<Record<string, string>> = {
   select: 'ng-select',
   progress: 'ng-progress-bar',
   details: 'ng-expander',
+  dialog: 'ng-dialog',
 };
 
 /**
@@ -586,6 +590,9 @@ export class NativeRenderer2 extends Renderer2 {
       name === 'title' &&
       (el.tag === 'ng-window' ||
         el.tag === 'adw-window' ||
+        el.tag === 'ng-dialog' ||
+        el.tag === 'gtk-dialog' ||
+        el.tag === 'adw-dialog' ||
         el.tag === 'ng-header-bar' ||
         el.tag === 'adw-header-bar')
     ) {
@@ -756,6 +763,9 @@ export class NativeRenderer2 extends Renderer2 {
       (name === 'title' &&
         (el.tag === 'ng-window' ||
           el.tag === 'adw-window' ||
+          el.tag === 'ng-dialog' ||
+          el.tag === 'gtk-dialog' ||
+          el.tag === 'adw-dialog' ||
           el.tag === 'ng-header-bar' ||
           el.tag === 'adw-header-bar'))
     ) {

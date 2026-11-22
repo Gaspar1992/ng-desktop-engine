@@ -14,6 +14,8 @@ pub const GTK_ORIENTATION_HORIZONTAL: c_int = 0;
 pub const GTK_ORIENTATION_VERTICAL: c_int = 1;
 #[cfg(target_os = "linux")]
 const GTK_STYLE_PROVIDER_PRIORITY_APPLICATION: c_uint = 600;
+#[cfg(target_os = "linux")]
+static TOOLKIT_INIT_OK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 
 pub type GtkClickCallback = unsafe extern "C" fn(*mut c_void, *mut c_void);
 pub type GtkNotifyCallback = unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void);
@@ -45,6 +47,9 @@ pub struct Gtk4Sys {
     pub(super) gtk_window_get_toplevels: unsafe extern "C" fn() -> *mut c_void,
     pub(super) gtk_window_is_maximized: unsafe extern "C" fn(*mut c_void) -> c_int,
     pub(super) gtk_window_is_active: unsafe extern "C" fn(*mut c_void) -> c_int,
+    pub(super) gtk_window_set_modal: unsafe extern "C" fn(*mut c_void, c_int),
+    pub(super) gtk_window_set_transient_for: unsafe extern "C" fn(*mut c_void, *mut c_void),
+    pub(super) gtk_window_set_destroy_with_parent: unsafe extern "C" fn(*mut c_void, c_int),
     pub(super) gtk_header_bar_new: unsafe extern "C" fn() -> *mut c_void,
     pub(super) gtk_header_bar_set_show_title_buttons: unsafe extern "C" fn(*mut c_void, c_int),
     pub(super) gtk_header_bar_set_title_widget: unsafe extern "C" fn(*mut c_void, *mut c_void),
@@ -240,18 +245,24 @@ impl Gtk4Sys {
 
             let gtk_init_check: unsafe extern "C" fn() -> c_int =
                 Self::load_fn(gtk_lib, c"gtk_init_check")?;
-            if gtk_init_check() == 0 {
+            let adw_lib = Self::open_lib(c"libadwaita-1.so.0");
+            let adw_init =
+                adw_lib.and_then(|lib| Self::load_fn::<unsafe extern "C" fn()>(lib, c"adw_init"));
+            // Libadwaita's `adw_init` aborts if called concurrently/twice on the same display.
+            let toolkit_ready = *TOOLKIT_INIT_OK.get_or_init(|| {
+                if gtk_init_check() == 0 {
+                    return false;
+                }
+                if let Some(init_fn) = adw_init {
+                    init_fn();
+                }
+                true
+            });
+            if !toolkit_ready {
                 return None;
             }
 
             let (css_provider, icon_theme) = Self::init_display_resources(gtk_lib)?;
-
-            let adw_lib = Self::open_lib(c"libadwaita-1.so.0");
-            if let Some(lib) = adw_lib
-                && let Some(adw_init) = Self::load_fn::<unsafe extern "C" fn()>(lib, c"adw_init")
-            {
-                adw_init();
-            }
             let adw_window_title_new =
                 adw_lib.and_then(|lib| Self::load_fn(lib, c"adw_window_title_new"));
             let adw_clamp_new = adw_lib.and_then(|lib| Self::load_fn(lib, c"adw_clamp_new"));
@@ -292,6 +303,15 @@ impl Gtk4Sys {
                 gtk_window_get_toplevels: Self::load_fn(gtk_lib, c"gtk_window_get_toplevels")?,
                 gtk_window_is_maximized: Self::load_fn(gtk_lib, c"gtk_window_is_maximized")?,
                 gtk_window_is_active: Self::load_fn(gtk_lib, c"gtk_window_is_active")?,
+                gtk_window_set_modal: Self::load_fn(gtk_lib, c"gtk_window_set_modal")?,
+                gtk_window_set_transient_for: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_window_set_transient_for",
+                )?,
+                gtk_window_set_destroy_with_parent: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_window_set_destroy_with_parent",
+                )?,
                 gtk_header_bar_new: Self::load_fn(gtk_lib, c"gtk_header_bar_new")?,
                 gtk_header_bar_set_show_title_buttons: Self::load_fn(
                     gtk_lib,
