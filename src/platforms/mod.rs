@@ -13,10 +13,10 @@ use crate::config::AngularNativeConfig;
 use crate::engine::{NativeEvent, NodeId, RenderCommand};
 pub use headless::HeadlessBackend;
 pub use linux_gtk::GtkLinuxBackend;
-pub use macos_appkit::MacOsAppKitBackend;
+pub use macos_appkit::{AppKitWidgetBinding, MacOsAppKitBackend};
 pub use scene_state::{NativeSceneNode, NativeSceneState};
 use std::sync::OnceLock;
-pub use windows_winui::WinUiBackend;
+pub use windows_winui::{WinUiBackend, WinUiControlBinding};
 
 static TRACE_COMMANDS: OnceLock<bool> = OnceLock::new();
 
@@ -147,7 +147,18 @@ impl AnyPlatformBackend {
     pub fn open_window_count(&self) -> u32 {
         match self {
             Self::LinuxGtk(b) => b.open_window_count(),
-            Self::WindowsWinUi(_) | Self::MacOsAppKit(_) | Self::Headless(_) => 0,
+            Self::WindowsWinUi(b) => b.open_window_count(),
+            Self::MacOsAppKit(b) => b.open_window_count(),
+            Self::Headless(_) => 0,
+        }
+    }
+
+    pub fn is_ffi_driver_loaded(&self) -> bool {
+        match self {
+            Self::LinuxGtk(b) => b.is_native_display_active(),
+            Self::WindowsWinUi(b) => b.is_ffi_loaded(),
+            Self::MacOsAppKit(b) => b.is_ffi_loaded(),
+            Self::Headless(_) => false,
         }
     }
 
