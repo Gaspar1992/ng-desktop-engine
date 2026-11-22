@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { NativeDesktopService } from '@ng-desktop/desktop';
 import {
   ensureNgNativeBridge,
   NativeTitleService,
@@ -193,6 +194,47 @@ describe('App (100% Angular + @ng-desktop/server API)', () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(location.pathname).toBe('/pokemon');
+    expect(service.viewMode()).toBe('list');
+  });
+
+  it('registers Nivel 2 desktop menus, tray status, keyboard shortcuts, and window geometry persistence', async () => {
+    const fixture = TestBed.createComponent(App);
+    const app = fixture.componentInstance;
+    const desktop = TestBed.inject(NativeDesktopService);
+    const service = TestBed.inject(PokedexService);
+
+    const customGeom = desktop.saveWindowGeometry({
+      width: 1180,
+      height: 780,
+      maximized: false,
+    });
+    fixture.detectChanges();
+    await Promise.resolve();
+
+    expect(desktop.windowGeometry()).toEqual(customGeom);
+    expect(desktop.appMenu().map((item) => item.id)).toEqual([
+      'refresh-catalog',
+      'toggle-favorites',
+      'export-favorites',
+      'back-to-list',
+    ]);
+    expect(desktop.trayState().visible).toBe(true);
+    expect(desktop.trayState().icon).toBe('pokedex-app');
+
+    expect(desktop.triggerShortcut('<Control>b')).toBe(true);
+    expect(service.favoritesOnly()).toBe(true);
+    expect(desktop.triggerShortcut('<Control>b')).toBe(true);
+    expect(service.favoritesOnly()).toBe(false);
+
+    app.searchControl.setValue('pika');
+    await Promise.resolve();
+    expect(desktop.triggerShortcut('<Control>f')).toBe(true);
+    expect(app.searchControl.value).toBe('');
+
+    await app.openPokemon(25);
+    expect(service.viewMode()).toBe('detail');
+    expect(desktop.triggerShortcut('Escape')).toBe(true);
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
     expect(service.viewMode()).toBe('list');
   });
 });

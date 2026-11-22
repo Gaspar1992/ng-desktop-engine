@@ -6,7 +6,11 @@ export {
   type NativeHttpCallKind,
   type NativeHttpConfig,
   type NativeHttpRequestOptions,
+  type NativeMenuItem,
   type NativeNetworkStatus,
+  type NativeShortcutBinding,
+  type NativeTrayState,
+  type NativeWindowGeometry,
   type NativeXdgDirKind,
   type NgNativeBridge,
 } from './bridge';

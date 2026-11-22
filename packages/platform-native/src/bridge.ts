@@ -52,6 +52,33 @@ export interface NativeHttpBridgeResponse {
   cached?: boolean;
 }
 
+export interface NativeWindowGeometry {
+  width: number;
+  height: number;
+  x?: number | null;
+  y?: number | null;
+  maximized: boolean;
+}
+
+export interface NativeMenuItem {
+  id: string;
+  label: string;
+  accelerator?: string | null;
+  enabled?: boolean;
+}
+
+export interface NativeTrayState {
+  visible: boolean;
+  icon: string;
+  tooltip: string;
+  menuItems?: readonly NativeMenuItem[];
+}
+
+export interface NativeShortcutBinding {
+  accelerator: string;
+  actionId: string;
+}
+
 /**
  * Host FFI bridge contract injected at `globalThis.__NG_NATIVE__` by the Rust `JsEngineBackend`
  * (`JscEngine` or `QuickJsEngine`).
@@ -141,6 +168,15 @@ export interface NgNativeBridge {
   fsWriteText(path: string, content: string): boolean;
   fsWatchFile(path: string): boolean;
   fsPollChangedFiles(): string[];
+  getWindowGeometry?(): NativeWindowGeometry;
+  setWindowGeometry?(geometry: Partial<NativeWindowGeometry>): NativeWindowGeometry;
+  getAppMenu?(): NativeMenuItem[];
+  setAppMenu?(items: readonly NativeMenuItem[]): NativeMenuItem[];
+  getTrayState?(): NativeTrayState;
+  setTrayState?(state: Partial<NativeTrayState>): NativeTrayState;
+  registerShortcut?(accelerator: string, actionId: string): NativeShortcutBinding[];
+  unregisterShortcut?(accelerator: string): NativeShortcutBinding[];
+  getRegisteredShortcuts?(): NativeShortcutBinding[];
   __dispatchEvent(id: string, eventName: string, eventPayload?: unknown): void;
   __dispatchAndDrain?(id: string, eventName: string, eventPayload?: unknown): string;
   __flushTimers(): void;
@@ -182,6 +218,21 @@ export function ensureNgNativeBridge(): NgNativeBridge {
     let clipboardText = '';
     const sqliteStore = new InMemorySqliteStore();
     const fsStore = new InMemoryFsStore();
+    let windowGeometry: NativeWindowGeometry = {
+      width: 1020,
+      height: 720,
+      x: null,
+      y: null,
+      maximized: false,
+    };
+    let appMenuItems: NativeMenuItem[] = [];
+    let trayState: NativeTrayState = {
+      visible: false,
+      icon: '',
+      tooltip: '',
+      menuItems: [],
+    };
+    let shortcuts: NativeShortcutBinding[] = [];
     let networkStatus: NativeNetworkStatus = {
       online: true,
       metered: false,
@@ -427,6 +478,82 @@ export function ensureNgNativeBridge(): NgNativeBridge {
       },
       fsPollChangedFiles() {
         return fsStore.pollChangedFiles();
+      },
+      getWindowGeometry() {
+        return { ...windowGeometry };
+      },
+      setWindowGeometry(geom) {
+        windowGeometry = {
+          width:
+            typeof geom.width === 'number' && geom.width >= 160
+              ? Math.trunc(geom.width)
+              : windowGeometry.width,
+          height:
+            typeof geom.height === 'number' && geom.height >= 120
+              ? Math.trunc(geom.height)
+              : windowGeometry.height,
+          x:
+            typeof geom.x === 'number'
+              ? Math.trunc(geom.x)
+              : geom.x === null
+                ? null
+                : (windowGeometry.x ?? null),
+          y:
+            typeof geom.y === 'number'
+              ? Math.trunc(geom.y)
+              : geom.y === null
+                ? null
+                : (windowGeometry.y ?? null),
+          maximized:
+            typeof geom.maximized === 'boolean' ? geom.maximized : windowGeometry.maximized,
+        };
+        return { ...windowGeometry };
+      },
+      getAppMenu() {
+        return appMenuItems.map((item) => ({ ...item }));
+      },
+      setAppMenu(items) {
+        appMenuItems = items.map((item) => ({
+          id: String(item.id),
+          label: String(item.label || item.id),
+          accelerator: item.accelerator ?? null,
+          enabled: item.enabled !== false,
+        }));
+        return appMenuItems.map((item) => ({ ...item }));
+      },
+      getTrayState() {
+        return { ...trayState, menuItems: [...(trayState.menuItems ?? [])] };
+      },
+      setTrayState(state) {
+        trayState = {
+          visible: typeof state.visible === 'boolean' ? state.visible : trayState.visible,
+          icon: typeof state.icon === 'string' ? state.icon : trayState.icon,
+          tooltip: typeof state.tooltip === 'string' ? state.tooltip : trayState.tooltip,
+          menuItems: state.menuItems ? [...state.menuItems] : [...(trayState.menuItems ?? [])],
+        };
+        return { ...trayState, menuItems: [...(trayState.menuItems ?? [])] };
+      },
+      registerShortcut(accelerator, actionId) {
+        const cleanAcc = accelerator.trim();
+        const cleanAction = actionId.trim();
+        if (!cleanAcc || !cleanAction) {
+          return shortcuts.map((s) => ({ ...s }));
+        }
+        const existing = shortcuts.find((s) => s.accelerator === cleanAcc);
+        if (existing) {
+          existing.actionId = cleanAction;
+        } else {
+          shortcuts.push({ accelerator: cleanAcc, actionId: cleanAction });
+        }
+        return shortcuts.map((s) => ({ ...s }));
+      },
+      unregisterShortcut(accelerator) {
+        const cleanAcc = accelerator.trim();
+        shortcuts = shortcuts.filter((s) => s.accelerator !== cleanAcc);
+        return shortcuts.map((s) => ({ ...s }));
+      },
+      getRegisteredShortcuts() {
+        return shortcuts.map((s) => ({ ...s }));
       },
       __dispatchEvent(id, eventName, eventPayload = {}) {
         const callbacks = listenersByNode.get(id)?.get(eventName);

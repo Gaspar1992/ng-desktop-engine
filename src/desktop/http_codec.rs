@@ -191,6 +191,74 @@ pub(crate) fn extract_json_u64(json: &str, key: &str) -> Option<u64> {
     digits.parse::<u64>().ok()
 }
 
+pub(crate) fn extract_json_i64(json: &str, key: &str) -> Option<i64> {
+    let val = find_json_value_start(json, key)?;
+    let mut chars = val.char_indices().peekable();
+    let mut end = 0usize;
+    if let Some((_, '-')) = chars.peek().copied() {
+        end = 1;
+        chars.next();
+    }
+    for (idx, ch) in chars {
+        if ch.is_ascii_digit() {
+            end = idx + ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+    if end == 0 || (end == 1 && val.starts_with('-')) {
+        return None;
+    }
+    val.get(..end)?.parse::<i64>().ok()
+}
+
+pub(crate) fn extract_json_object_array(json: &str, key: &str) -> Vec<String> {
+    let mut objects = Vec::new();
+    let Some(val) = find_json_value_start(json, key) else {
+        return objects;
+    };
+    let Some(slice) = val.strip_prefix('[') else {
+        return objects;
+    };
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut obj_start: Option<usize> = None;
+
+    for (idx, ch) in slice.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '{' => {
+                if depth == 0 {
+                    obj_start = Some(idx);
+                }
+                depth += 1;
+            }
+            '}' => {
+                depth -= 1;
+                if depth == 0
+                    && let Some(start_idx) = obj_start.take()
+                {
+                    objects.push(slice[start_idx..=idx].to_string());
+                }
+            }
+            ']' if depth == 0 => break,
+            _ => {}
+        }
+    }
+    objects
+}
+
 pub(super) fn extract_json_flat_map(json: &str, key: &str) -> HashMap<String, String> {
     let mut map = HashMap::new();
     let Some(val) = find_json_value_start(json, key) else {

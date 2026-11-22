@@ -5,16 +5,16 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
 
 use crate::config::AppPermissions;
-use crate::desktop::DesktopServices;
 use crate::desktop::compute_pool::NativeComputePool;
 use crate::desktop::fs_watcher::{NativeFsManager, XdgDirKind};
 use crate::desktop::http_codec::{
-    escape_json, extract_json_bool, extract_json_raw_value, extract_json_string,
-    extract_json_string_array, extract_json_u64,
+    escape_json, extract_json_bool, extract_json_i64, extract_json_object_array,
+    extract_json_raw_value, extract_json_string, extract_json_string_array, extract_json_u64,
 };
 use crate::desktop::http_native::NativeHttpEngine;
 use crate::desktop::sqlite_sys::{NativeSqliteDatabase, SqlParam, parse_json_params};
 use crate::desktop::system_env::NativeSystemEnv;
+use crate::desktop::{AppMenuItem, DesktopServices, ShortcutBinding, TrayState, WindowGeometry};
 
 use super::server_worker::{NativeServerWorker, is_local_api_url};
 
@@ -125,6 +125,14 @@ pub struct HostAsyncCompletion {
     pub payload_json: String,
 }
 
+#[derive(Debug, Clone)]
+struct DesktopUiState {
+    window_geometry: WindowGeometry,
+    app_menu: Vec<AppMenuItem>,
+    tray_state: TrayState,
+    shortcuts: Vec<ShortcutBinding>,
+}
+
 /// Thread-safe native desktop service multiplexer exposed to embedded JavaScript runtimes.
 pub struct HostBridge {
     app_id: String,
@@ -134,6 +142,7 @@ pub struct HostBridge {
     fs_manager: Mutex<NativeFsManager>,
     compute: NativeComputePool,
     system_env: Mutex<NativeSystemEnv>,
+    ui_state: Mutex<DesktopUiState>,
     async_completions: Arc<Mutex<Vec<HostAsyncCompletion>>>,
     server_worker: Mutex<Option<Arc<NativeServerWorker>>>,
     server_resolve: Mutex<Option<ServerResolveSlot>>,
@@ -152,6 +161,12 @@ impl HostBridge {
             fs_manager: Mutex::new(NativeFsManager::new(&app_id)),
             compute: NativeComputePool::new(),
             system_env: Mutex::new(NativeSystemEnv::detect_for_app(&app_id)),
+            ui_state: Mutex::new(DesktopUiState {
+                window_geometry: desktop.window_geometry().clone(),
+                app_menu: desktop.app_menu().to_vec(),
+                tray_state: desktop.tray_state().clone(),
+                shortcuts: desktop.shortcuts().to_vec(),
+            }),
             async_completions: Arc::new(Mutex::new(Vec::new())),
             server_worker: Mutex::new(None),
             server_resolve: Mutex::new(None),
@@ -206,6 +221,15 @@ impl HostBridge {
             "computeFuzzyFilter" | "computeHash" => self.handle_compute(&action, req_json),
             "systemEnv" => self.handle_system_env(req_json),
             "logError" => self.handle_log_error(req_json),
+            "windowGetGeometry" => self.handle_window_get_geometry(),
+            "windowSetGeometry" => self.handle_window_set_geometry(req_json),
+            "menuGetItems" => self.handle_menu_get_items(),
+            "menuSetItems" => self.handle_menu_set_items(req_json),
+            "trayGetState" => self.handle_tray_get_state(),
+            "traySetState" => self.handle_tray_set_state(req_json),
+            "shortcutRegister" => self.handle_shortcut_register(req_json),
+            "shortcutUnregister" => self.handle_shortcut_unregister(req_json),
+            "shortcutList" => self.handle_shortcut_list(),
             _ => Self::err_json("Unsupported host service action"),
         }
     }
@@ -614,6 +638,243 @@ impl HostBridge {
         }
         String::from(r#"{"ok":true}"#)
     }
+
+    fn encode_geometry_json(geom: &WindowGeometry, include_ok: bool) -> String {
+        let x_json = geom
+            .x
+            .map_or_else(|| String::from("null"), |v| v.to_string());
+        let y_json = geom
+            .y
+            .map_or_else(|| String::from("null"), |v| v.to_string());
+        let ok_prefix = if include_ok { r#""ok":true,"# } else { "" };
+        format!(
+            r#"{{{ok_prefix}"width":{},"height":{},"x":{x_json},"y":{y_json},"maximized":{}}}"#,
+            geom.width, geom.height, geom.maximized
+        )
+    }
+
+    fn apply_geometry_patch(base: &WindowGeometry, patch_json: &str) -> WindowGeometry {
+        let width = extract_json_u64(patch_json, "width")
+            .and_then(|v| u32::try_from(v).ok())
+            .filter(|v| *v >= 160)
+            .unwrap_or(base.width);
+        let height = extract_json_u64(patch_json, "height")
+            .and_then(|v| u32::try_from(v).ok())
+            .filter(|v| *v >= 120)
+            .unwrap_or(base.height);
+        let x = extract_json_i64(patch_json, "x")
+            .and_then(|v| i32::try_from(v).ok())
+            .or(base.x);
+        let y = extract_json_i64(patch_json, "y")
+            .and_then(|v| i32::try_from(v).ok())
+            .or(base.y);
+        let maximized = extract_json_bool(patch_json, "maximized").unwrap_or(base.maximized);
+        WindowGeometry {
+            width,
+            height,
+            x,
+            y,
+            maximized,
+        }
+    }
+
+    fn parse_menu_items(req_json: &str, key: &str) -> Vec<AppMenuItem> {
+        extract_json_object_array(req_json, key)
+            .into_iter()
+            .filter_map(|obj| {
+                let id = extract_json_string(&obj, "id")?;
+                let label = extract_json_string(&obj, "label").unwrap_or_else(|| id.clone());
+                let accelerator =
+                    extract_json_string(&obj, "accelerator").filter(|s| !s.trim().is_empty());
+                let enabled = extract_json_bool(&obj, "enabled").unwrap_or(true);
+                Some(AppMenuItem {
+                    id,
+                    label,
+                    accelerator,
+                    enabled,
+                })
+            })
+            .collect()
+    }
+
+    fn encode_menu_items(items: &[AppMenuItem]) -> String {
+        let encoded: Vec<String> = items
+            .iter()
+            .map(|item| {
+                let acc_json = item.accelerator.as_ref().map_or_else(
+                    || String::from("null"),
+                    |acc| format!(r#""{}""#, escape_json(acc)),
+                );
+                format!(
+                    r#"{{"id":"{}","label":"{}","accelerator":{acc_json},"enabled":{}}}"#,
+                    escape_json(&item.id),
+                    escape_json(&item.label),
+                    item.enabled
+                )
+            })
+            .collect();
+        format!("[{}]", encoded.join(","))
+    }
+
+    fn encode_shortcuts(shortcuts: &[ShortcutBinding]) -> String {
+        let encoded: Vec<String> = shortcuts
+            .iter()
+            .map(|s| {
+                format!(
+                    r#"{{"accelerator":"{}","actionId":"{}"}}"#,
+                    escape_json(&s.accelerator),
+                    escape_json(&s.action_id)
+                )
+            })
+            .collect();
+        format!("[{}]", encoded.join(","))
+    }
+
+    fn handle_window_get_geometry(&self) -> String {
+        let disk_json = if self.has_permission(self.permissions.filesystem_xdg)
+            && let Ok(fs_mgr) = self.fs_manager.lock()
+            && let Ok(path) = fs_mgr.resolve_xdg_path(XdgDirKind::Config, "window-state.json")
+        {
+            fs_mgr.read_text(&path).ok()
+        } else {
+            None
+        };
+        let Ok(mut state) = self.ui_state.lock() else {
+            return Self::err_json("Desktop UI mutex poisoned");
+        };
+        if let Some(raw) = disk_json {
+            state.window_geometry = Self::apply_geometry_patch(&state.window_geometry, &raw);
+        }
+        Self::encode_geometry_json(&state.window_geometry, true)
+    }
+
+    fn handle_window_set_geometry(&self, req_json: &str) -> String {
+        let updated = {
+            let Ok(mut state) = self.ui_state.lock() else {
+                return Self::err_json("Desktop UI mutex poisoned");
+            };
+            let next = Self::apply_geometry_patch(&state.window_geometry, req_json);
+            state.window_geometry = next.clone();
+            next
+        };
+        if self.has_permission(self.permissions.filesystem_xdg)
+            && let Ok(mut fs_mgr) = self.fs_manager.lock()
+            && let Ok(path) = fs_mgr.resolve_xdg_path(XdgDirKind::Config, "window-state.json")
+        {
+            let serialized = Self::encode_geometry_json(&updated, false);
+            let _ = fs_mgr.write_text_atomic(&path, &serialized);
+        }
+        Self::encode_geometry_json(&updated, true)
+    }
+
+    fn handle_menu_get_items(&self) -> String {
+        let Ok(state) = self.ui_state.lock() else {
+            return Self::err_json("Desktop UI mutex poisoned");
+        };
+        format!(
+            r#"{{"ok":true,"items":{}}}"#,
+            Self::encode_menu_items(&state.app_menu)
+        )
+    }
+
+    fn handle_menu_set_items(&self, req_json: &str) -> String {
+        let items = Self::parse_menu_items(req_json, "items");
+        let Ok(mut state) = self.ui_state.lock() else {
+            return Self::err_json("Desktop UI mutex poisoned");
+        };
+        state.app_menu = items;
+        format!(
+            r#"{{"ok":true,"items":{}}}"#,
+            Self::encode_menu_items(&state.app_menu)
+        )
+    }
+
+    fn handle_tray_get_state(&self) -> String {
+        let Ok(state) = self.ui_state.lock() else {
+            return Self::err_json("Desktop UI mutex poisoned");
+        };
+        Self::encode_tray_json(&state.tray_state)
+    }
+
+    fn handle_tray_set_state(&self, req_json: &str) -> String {
+        let Ok(mut state) = self.ui_state.lock() else {
+            return Self::err_json("Desktop UI mutex poisoned");
+        };
+        if let Some(visible) = extract_json_bool(req_json, "visible") {
+            state.tray_state.visible = visible;
+        }
+        if let Some(icon) = extract_json_string(req_json, "icon") {
+            state.tray_state.icon = icon;
+        }
+        if let Some(tooltip) = extract_json_string(req_json, "tooltip") {
+            state.tray_state.tooltip = tooltip;
+        }
+        if extract_json_raw_value(req_json, "menuItems").is_some() {
+            state.tray_state.menu_items = Self::parse_menu_items(req_json, "menuItems");
+        }
+        Self::encode_tray_json(&state.tray_state)
+    }
+
+    fn encode_tray_json(tray: &TrayState) -> String {
+        format!(
+            r#"{{"ok":true,"visible":{},"icon":"{}","tooltip":"{}","menuItems":{}}}"#,
+            tray.visible,
+            escape_json(&tray.icon),
+            escape_json(&tray.tooltip),
+            Self::encode_menu_items(&tray.menu_items)
+        )
+    }
+
+    fn handle_shortcut_register(&self, req_json: &str) -> String {
+        let acc = extract_json_string(req_json, "accelerator").unwrap_or_default();
+        let action_id = extract_json_string(req_json, "actionId").unwrap_or_default();
+        if acc.trim().is_empty() || action_id.trim().is_empty() {
+            return Self::err_json("Missing accelerator or actionId");
+        }
+        let Ok(mut state) = self.ui_state.lock() else {
+            return Self::err_json("Desktop UI mutex poisoned");
+        };
+        if let Some(existing) = state
+            .shortcuts
+            .iter_mut()
+            .find(|item| item.accelerator == acc.trim())
+        {
+            existing.action_id = action_id.trim().to_string();
+        } else {
+            state.shortcuts.push(ShortcutBinding {
+                accelerator: acc.trim().to_string(),
+                action_id: action_id.trim().to_string(),
+            });
+        }
+        format!(
+            r#"{{"ok":true,"shortcuts":{}}}"#,
+            Self::encode_shortcuts(&state.shortcuts)
+        )
+    }
+
+    fn handle_shortcut_unregister(&self, req_json: &str) -> String {
+        let acc = extract_json_string(req_json, "accelerator").unwrap_or_default();
+        let Ok(mut state) = self.ui_state.lock() else {
+            return Self::err_json("Desktop UI mutex poisoned");
+        };
+        state
+            .shortcuts
+            .retain(|item| item.accelerator != acc.trim());
+        format!(
+            r#"{{"ok":true,"shortcuts":{}}}"#,
+            Self::encode_shortcuts(&state.shortcuts)
+        )
+    }
+
+    fn handle_shortcut_list(&self) -> String {
+        let Ok(state) = self.ui_state.lock() else {
+            return Self::err_json("Desktop UI mutex poisoned");
+        };
+        format!(
+            r#"{{"ok":true,"shortcuts":{}}}"#,
+            Self::encode_shortcuts(&state.shortcuts)
+        )
+    }
 }
 
 #[cfg(test)]
@@ -728,6 +989,59 @@ mod tests {
         let _ = fs::remove_file(&cache_file);
         if let Some(parent) = cache_file.parent().and_then(|p| p.parent()) {
             let _ = fs::remove_dir_all(parent);
+        }
+    }
+
+    #[test]
+    fn host_bridge_supports_window_geometry_menus_tray_and_shortcuts() {
+        let app_id = format!("ng-host-bridge-ui-{}", process::id());
+        let desktop =
+            DesktopServices::with_app_config(&app_id, AppPermissions::allow_all_sandboxed());
+        let bridge = HostBridge::new(&desktop);
+
+        let set_geom = bridge.handle_service_call(
+            r#"{"action":"windowSetGeometry","width":1240,"height":820,"x":40,"y":60,"maximized":true}"#,
+        );
+        assert!(set_geom.contains(r#""width":1240"#));
+        assert!(set_geom.contains(r#""maximized":true"#));
+        let get_geom = bridge.handle_service_call(r#"{"action":"windowGetGeometry"}"#);
+        assert!(get_geom.contains(r#""width":1240"#));
+
+        let menu_res = bridge.handle_service_call(
+            r#"{"action":"menuSetItems","items":[{"id":"refresh","label":"Refresh","accelerator":"<Control>r","enabled":true}]}"#,
+        );
+        assert!(menu_res.contains(r#""id":"refresh""#));
+        let menu_get = bridge.handle_service_call(r#"{"action":"menuGetItems"}"#);
+        assert!(menu_get.contains(r#""accelerator":"<Control>r""#));
+
+        let tray_res = bridge.handle_service_call(
+            r#"{"action":"traySetState","visible":true,"icon":"app-tray","tooltip":"Running","menuItems":[{"id":"quit","label":"Quit","enabled":true}]}"#,
+        );
+        assert!(tray_res.contains(r#""visible":true"#));
+        assert!(tray_res.contains(r#""tooltip":"Running""#));
+        assert!(
+            bridge
+                .handle_service_call(r#"{"action":"trayGetState"}"#)
+                .contains("app-tray")
+        );
+
+        let sc_reg = bridge.handle_service_call(
+            r#"{"action":"shortcutRegister","accelerator":"<Control>f","actionId":"search"}"#,
+        );
+        assert!(sc_reg.contains(r#""actionId":"search""#));
+        let sc_unreg = bridge
+            .handle_service_call(r#"{"action":"shortcutUnregister","accelerator":"<Control>f"}"#);
+        assert!(sc_unreg.contains(r#""shortcuts":[]"#));
+
+        let cfg_res = bridge.handle_service_call(
+            r#"{"action":"fsResolvePath","kind":"config","relPath":"window-state.json"}"#,
+        );
+        if let Some(path) = extract_json_string(&cfg_res, "path") {
+            let p = PathBuf::from(path);
+            let _ = fs::remove_file(&p);
+            if let Some(parent) = p.parent() {
+                let _ = fs::remove_dir_all(parent);
+            }
         }
     }
 }
