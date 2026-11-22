@@ -90,6 +90,8 @@ pub const fn default_map_native_widget(tag: &str) -> &'static str {
         b"ng-search-entry" | b"gtk-search-entry" => "NativeSearchEntry",
         b"ng-spin-button" | b"gtk-spin-button" => "NativeSpinButton",
         b"ng-clamp" | b"adw-clamp" => "NativeClamp",
+        b"ng-list" | b"ng-table" | b"gtk-list-box" | b"gtk-list-view" => "NativeListView",
+        b"ng-popover" | b"gtk-popover" | b"ng-menu" => "NativePopover",
         b"ng-anchor" => "NativeAnchor",
         _ => "NativeWidget",
     }

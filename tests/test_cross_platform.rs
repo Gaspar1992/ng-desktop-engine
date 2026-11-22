@@ -17,86 +17,77 @@ use std::fs;
 #[test]
 fn cross_platform_factory_supports_linux_windows_and_macos() {
     let linux = AnyPlatformBackend::from_target("linux-gtk4").unwrap();
-    assert_eq!(linux.map_native_widget("ng-window"), "AdwApplicationWindow");
-    assert_eq!(linux.map_native_widget("ng-flow"), "GtkFlowBox");
-    assert_eq!(linux.map_native_widget("ng-spinner"), "GtkSpinner");
-    assert_eq!(linux.map_native_widget("ng-progress-bar"), "GtkProgressBar");
-    assert_eq!(linux.map_native_widget("ng-level-bar"), "GtkLevelBar");
-    assert_eq!(linux.map_native_widget("ng-paned"), "GtkPaned");
-    assert_eq!(linux.map_native_widget("ng-stack"), "GtkStack");
-    assert_eq!(linux.map_native_widget("ng-expander"), "GtkExpander");
-    assert_eq!(linux.map_native_widget("ng-text-view"), "GtkTextView");
-    assert_eq!(
-        linux.map_native_widget("ng-password-entry"),
-        "GtkPasswordEntry"
-    );
-    assert_eq!(linux.map_native_widget("ng-search-entry"), "GtkSearchEntry");
-    assert_eq!(linux.map_native_widget("ng-spin-button"), "GtkSpinButton");
-    assert_eq!(linux.map_native_widget("ng-clamp"), "AdwClamp");
-    assert_eq!(linux.map_native_widget("ng-dialog"), "AdwDialog");
+    for (tag, expected) in [
+        ("ng-window", "AdwApplicationWindow"),
+        ("ng-flow", "GtkFlowBox"),
+        ("ng-spinner", "GtkSpinner"),
+        ("ng-progress-bar", "GtkProgressBar"),
+        ("ng-level-bar", "GtkLevelBar"),
+        ("ng-paned", "GtkPaned"),
+        ("ng-stack", "GtkStack"),
+        ("ng-expander", "GtkExpander"),
+        ("ng-text-view", "GtkTextView"),
+        ("ng-password-entry", "GtkPasswordEntry"),
+        ("ng-search-entry", "GtkSearchEntry"),
+        ("ng-spin-button", "GtkSpinButton"),
+        ("ng-clamp", "AdwClamp"),
+        ("ng-dialog", "AdwDialog"),
+        ("ng-list", "GtkListBox"),
+        ("ng-table", "GtkListBox"),
+        ("ng-popover", "GtkPopover"),
+        ("ng-menu", "GtkPopover"),
+    ] {
+        assert_eq!(linux.map_native_widget(tag), expected);
+    }
 
     let windows = AnyPlatformBackend::from_target("windows-winui").unwrap();
-    assert_eq!(
-        windows.map_native_widget("ng-window"),
-        "Microsoft.UI.Xaml.Window"
-    );
-    assert_eq!(
-        windows.map_native_widget("ng-flow"),
-        "Microsoft.UI.Xaml.Controls.ItemsRepeater"
-    );
-    assert_eq!(
-        windows.map_native_widget("ng-paned"),
-        "Microsoft.UI.Xaml.Controls.SplitView"
-    );
-    assert_eq!(
-        windows.map_native_widget("ng-stack"),
-        "Microsoft.UI.Xaml.Controls.NavigationView"
-    );
-    assert_eq!(
-        windows.map_native_widget("ng-expander"),
-        "Microsoft.UI.Xaml.Controls.Expander"
-    );
-    assert_eq!(
-        windows.map_native_widget("ng-text-view"),
-        "Microsoft.UI.Xaml.Controls.RichEditBox"
-    );
-    assert_eq!(
-        windows.map_native_widget("ng-password-entry"),
-        "Microsoft.UI.Xaml.Controls.PasswordBox"
-    );
-    assert_eq!(
-        windows.map_native_widget("ng-search-entry"),
-        "Microsoft.UI.Xaml.Controls.AutoSuggestBox"
-    );
-    assert_eq!(
-        windows.map_native_widget("ng-spin-button"),
-        "Microsoft.UI.Xaml.Controls.NumberBox"
-    );
-    assert_eq!(
-        windows.map_native_widget("ng-clamp"),
-        "Microsoft.UI.Xaml.Controls.Grid"
-    );
-    assert_eq!(
-        windows.map_native_widget("ng-dialog"),
-        "Microsoft.UI.Xaml.Controls.ContentDialog"
-    );
+    for (tag, expected) in [
+        ("ng-window", "Microsoft.UI.Xaml.Window"),
+        ("ng-flow", "Microsoft.UI.Xaml.Controls.ItemsRepeater"),
+        ("ng-paned", "Microsoft.UI.Xaml.Controls.SplitView"),
+        ("ng-stack", "Microsoft.UI.Xaml.Controls.NavigationView"),
+        ("ng-expander", "Microsoft.UI.Xaml.Controls.Expander"),
+        ("ng-text-view", "Microsoft.UI.Xaml.Controls.RichEditBox"),
+        (
+            "ng-password-entry",
+            "Microsoft.UI.Xaml.Controls.PasswordBox",
+        ),
+        (
+            "ng-search-entry",
+            "Microsoft.UI.Xaml.Controls.AutoSuggestBox",
+        ),
+        ("ng-spin-button", "Microsoft.UI.Xaml.Controls.NumberBox"),
+        ("ng-clamp", "Microsoft.UI.Xaml.Controls.Grid"),
+        ("ng-dialog", "Microsoft.UI.Xaml.Controls.ContentDialog"),
+        ("ng-list", "Microsoft.UI.Xaml.Controls.ListView"),
+        ("ng-table", "Microsoft.UI.Xaml.Controls.ListView"),
+        ("ng-popover", "Microsoft.UI.Xaml.Controls.Flyout"),
+        ("ng-menu", "Microsoft.UI.Xaml.Controls.Flyout"),
+    ] {
+        assert_eq!(windows.map_native_widget(tag), expected);
+    }
 
     let macos = AnyPlatformBackend::from_target("macos-appkit").unwrap();
-    assert_eq!(macos.map_native_widget("ng-window"), "NSWindow");
-    assert_eq!(macos.map_native_widget("ng-flow"), "NSCollectionView");
-    assert_eq!(macos.map_native_widget("ng-spinner"), "NSProgressIndicator");
-    assert_eq!(macos.map_native_widget("ng-paned"), "NSSplitView");
-    assert_eq!(macos.map_native_widget("ng-stack"), "NSTabView");
-    assert_eq!(macos.map_native_widget("ng-expander"), "NSDisclosureButton");
-    assert_eq!(macos.map_native_widget("ng-text-view"), "NSTextView");
-    assert_eq!(
-        macos.map_native_widget("ng-password-entry"),
-        "NSSecureTextField"
-    );
-    assert_eq!(macos.map_native_widget("ng-search-entry"), "NSSearchField");
-    assert_eq!(macos.map_native_widget("ng-spin-button"), "NSStepper");
-    assert_eq!(macos.map_native_widget("ng-clamp"), "NSBox");
-    assert_eq!(macos.map_native_widget("ng-dialog"), "NSPanel");
+    for (tag, expected) in [
+        ("ng-window", "NSWindow"),
+        ("ng-flow", "NSCollectionView"),
+        ("ng-spinner", "NSProgressIndicator"),
+        ("ng-paned", "NSSplitView"),
+        ("ng-stack", "NSTabView"),
+        ("ng-expander", "NSDisclosureButton"),
+        ("ng-text-view", "NSTextView"),
+        ("ng-password-entry", "NSSecureTextField"),
+        ("ng-search-entry", "NSSearchField"),
+        ("ng-spin-button", "NSStepper"),
+        ("ng-clamp", "NSBox"),
+        ("ng-dialog", "NSPanel"),
+        ("ng-list", "NSTableView"),
+        ("ng-table", "NSTableView"),
+        ("ng-popover", "NSPopover"),
+        ("ng-menu", "NSPopover"),
+    ] {
+        assert_eq!(macos.map_native_widget(tag), expected);
+    }
 }
 
 #[test]
@@ -257,7 +248,7 @@ fn winui_and_appkit_retain_nested_grid_and_form_hierarchies() {
 }
 
 #[test]
-fn all_27_primitives_have_cross_platform_mapping_parity() {
+fn all_29_primitives_have_cross_platform_mapping_parity() {
     let primitives = [
         "ng-window",
         "ng-header-bar",
@@ -286,6 +277,8 @@ fn all_27_primitives_have_cross_platform_mapping_parity() {
         "ng-spin-button",
         "ng-clamp",
         "ng-dialog",
+        "ng-list",
+        "ng-popover",
         "ng-anchor",
     ];
 

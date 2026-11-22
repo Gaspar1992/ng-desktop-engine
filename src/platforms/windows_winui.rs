@@ -267,7 +267,13 @@ impl WinUiFfiDriver {
             30
         };
         win32.set_bounds(handle, 12, y, width, height);
-        if let Some(vis) = scene_node.attributes.get("visible") {
+        if binding.xaml_class == "Microsoft.UI.Xaml.Controls.Flyout" {
+            let is_open = scene_node
+                .attributes
+                .get("open")
+                .is_some_and(|v| NativeSceneState::parse_truthy_attr(v));
+            win32.set_visible(handle, is_open);
+        } else if let Some(vis) = scene_node.attributes.get("visible") {
             win32.set_visible(handle, NativeSceneState::parse_truthy_attr(vis));
         }
         if let Some(sens) = scene_node.attributes.get("sensitive") {
@@ -296,6 +302,14 @@ impl WinUiFfiDriver {
                         }
                         "visible" => {
                             if let Some(win32) = &self.win32 {
+                                win32.set_visible(h, NativeSceneState::parse_truthy_attr(value));
+                            }
+                        }
+                        "open" => {
+                            if self.bindings.get(node).is_some_and(|b| {
+                                b.xaml_class == "Microsoft.UI.Xaml.Controls.Flyout"
+                            }) && let Some(win32) = &self.win32
+                            {
                                 win32.set_visible(h, NativeSceneState::parse_truthy_attr(value));
                             }
                         }
@@ -499,6 +513,10 @@ impl WinUiBackend {
             "ng-password-entry" | "gtk-password-entry" => "Microsoft.UI.Xaml.Controls.PasswordBox",
             "ng-search-entry" | "gtk-search-entry" => "Microsoft.UI.Xaml.Controls.AutoSuggestBox",
             "ng-spin-button" | "gtk-spin-button" => "Microsoft.UI.Xaml.Controls.NumberBox",
+            "ng-list" | "ng-table" | "gtk-list-box" | "gtk-list-view" => {
+                "Microsoft.UI.Xaml.Controls.ListView"
+            }
+            "ng-popover" | "gtk-popover" | "ng-menu" => "Microsoft.UI.Xaml.Controls.Flyout",
             _ => "Microsoft.UI.Xaml.UIElement",
         }
     }

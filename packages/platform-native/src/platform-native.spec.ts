@@ -4,6 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { EVENT_MANAGER_PLUGINS, Title } from '@angular/platform-browser';
 import {
   bootstrapNativeApplication,
+  computeVirtualSliceRange,
   ensureNgNativeBridge,
   formatParsedStyleExtensions,
   matchesKeyboardEvent,
@@ -13,9 +14,12 @@ import {
   NativeRendererFactory2,
   NativeSystemErrorHandler,
   NativeTitleService,
+  NativeVirtualListComponent,
+  type NativeVirtualRowActivatedEvent,
   parseRuntimeStyles,
   provideNativePlatform,
   resolveNativeTag,
+  type VirtualSliceRange,
 } from '@ng-desktop/platform';
 
 class TestRootComponent {}
@@ -932,6 +936,209 @@ describe('@ng-desktop/platform — NativeRenderer2 & Bridge', () => {
 
     bridge.__dispatchEvent(dlgId, 'close-request', { value: '{"preventable":true}' });
     expect(fixture.componentInstance.closed()).toBe(true);
+    fixture.destroy();
+  });
+
+  it('resolves list, popover, HTML table/menu tags, and treats ng-virtual-list as virtual', () => {
+    expect(resolveNativeTag('ng-list')).toBe('ng-list');
+    expect(resolveNativeTag('ng-table')).toBe('ng-table');
+    expect(resolveNativeTag('table')).toBe('ng-list');
+    expect(resolveNativeTag('ng-popover')).toBe('ng-popover');
+    expect(resolveNativeTag('ng-menu')).toBe('ng-menu');
+    expect(resolveNativeTag('menu')).toBe('ng-popover');
+    expect(resolveNativeTag('ng-virtual-list')).toBeNull();
+  });
+
+  it('computes bounded virtual viewport ranges and spacer heights across scroll positions', () => {
+    expect(computeVirtualSliceRange(0, 0, 480, 48, 4)).toEqual({
+      startIndex: 0,
+      endIndex: 0,
+      totalItems: 0,
+      topSpacerHeight: 0,
+      bottomSpacerHeight: 0,
+    });
+
+    const top = computeVirtualSliceRange(1000, 0, 480, 48, 4);
+    expect(top).toEqual({
+      startIndex: 0,
+      endIndex: 14,
+      totalItems: 1000,
+      topSpacerHeight: 0,
+      bottomSpacerHeight: (1000 - 14) * 48,
+    });
+
+    const mid = computeVirtualSliceRange(1000, 4800, 480, 48, 4);
+    expect(mid).toEqual({
+      startIndex: 96,
+      endIndex: 114,
+      totalItems: 1000,
+      topSpacerHeight: 96 * 48,
+      bottomSpacerHeight: (1000 - 114) * 48,
+    });
+
+    const bottom = computeVirtualSliceRange(1000, 999999, 480, 48, 4);
+    expect(bottom).toEqual({
+      startIndex: 986,
+      endIndex: 1000,
+      totalItems: 1000,
+      topSpacerHeight: 986 * 48,
+      bottomSpacerHeight: 0,
+    });
+  });
+
+  it('virtualizes 1,000 items in <ng-virtual-list>, updates spacers on scroll, and resolves global activated rows', () => {
+    interface RowItem {
+      id: number;
+      name: string;
+    }
+
+    @Component({
+      standalone: true,
+      imports: [NATIVE_UI_DIRECTIVES, NativeVirtualListComponent],
+      template: `
+        <ng-window title="Virtualized List">
+          <ng-virtual-list
+            [items]="rows()"
+            [itemHeight]="40"
+            [viewportHeight]="200"
+            [overscan]="2"
+            selectionMode="single"
+            [showSeparators]="true"
+            (rangeChange)="lastRange.set($event)"
+            (rowActivated)="lastActivated.set($event)"
+          >
+            <ng-template let-row let-idx="index">
+              <ng-label [text]="idx + ':' + row.name"></ng-label>
+            </ng-template>
+          </ng-virtual-list>
+        </ng-window>
+      `,
+    })
+    class VirtualHost {
+      readonly rows = signal<RowItem[]>(
+        Array.from({ length: 1000 }, (_, i) => ({ id: i, name: `Entry ${i}` })),
+      );
+      readonly lastRange = signal<VirtualSliceRange | null>(null);
+      readonly lastActivated = signal<NativeVirtualRowActivatedEvent<RowItem> | null>(null);
+    }
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [VirtualHost],
+      providers: [provideNativePlatform()],
+    });
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+
+    const fixture = TestBed.createComponent(VirtualHost);
+    fixture.detectChanges();
+    const initialCmds = bridge.__drainQueue().split('\n');
+
+    expect(initialCmds.some((l) => l.includes('ng-virtual-list'))).toBe(false);
+    const listLine = initialCmds.find((l) => l.endsWith(' ng-list'));
+    const scrollLine = initialCmds.find((l) => l.endsWith(' ng-scroll'));
+    expect(listLine).toBeDefined();
+    expect(scrollLine).toBeDefined();
+
+    const initialLabels = initialCmds.filter((l) => l.endsWith(' ng-label'));
+    expect(initialLabels.length).toBeGreaterThan(0);
+    expect(initialLabels.length).toBeLessThan(30);
+    expect(fixture.componentInstance.lastRange()).toMatchObject({
+      startIndex: 0,
+      endIndex: 7,
+      totalItems: 1000,
+    });
+
+    const scrollId = scrollLine!.split(' ')[1]!;
+    const listId = listLine!.split(' ')[1]!;
+
+    bridge.__dispatchEvent(scrollId, 'scroll', {
+      value: '{"scrollTop":4000,"scrollHeight":40000,"clientHeight":200}',
+    });
+    fixture.detectChanges();
+    const scrolledCmds = bridge.__drainQueue().split('\n');
+    expect(fixture.componentInstance.lastRange()).toMatchObject({
+      startIndex: 98,
+      endIndex: 107,
+      topSpacerHeight: 98 * 40,
+      bottomSpacerHeight: (1000 - 107) * 40,
+    });
+    expect(scrolledCmds.some((l) => l.includes(`height ${98 * 40}`))).toBe(true);
+
+    bridge.__dispatchEvent(listId, 'row-activated', 2);
+    expect(fixture.componentInstance.lastActivated()).toEqual({
+      index: 100,
+      item: { id: 100, name: 'Entry 100' },
+    });
+    fixture.destroy();
+  });
+
+  it('binds <ng-list> and <ng-popover> typed directives without CUSTOM_ELEMENTS_SCHEMA', () => {
+    @Component({
+      standalone: true,
+      imports: [NATIVE_UI_DIRECTIVES],
+      template: `
+        <ng-window title="Menus">
+          <ng-box orientation="vertical">
+            <ng-button id="anchor_btn" label="Options"></ng-button>
+            <ng-popover
+              id="opts_pop"
+              anchor="anchor_btn"
+              [open]="popOpen()"
+              position="bottom"
+              [autohide]="true"
+              [hasArrow]="false"
+              (closed)="popClosed.set(true)"
+            >
+              <ng-list
+                selectionMode="multiple"
+                [showSeparators]="true"
+                (rowActivated)="selectedRow.set($any($event).value)"
+              >
+                <ng-label text="Action 1"></ng-label>
+              </ng-list>
+            </ng-popover>
+          </ng-box>
+        </ng-window>
+      `,
+    })
+    class PopoverHost {
+      readonly popOpen = signal(false);
+      readonly popClosed = signal(false);
+      readonly selectedRow = signal<number | null>(null);
+    }
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [PopoverHost],
+      providers: [provideNativePlatform()],
+    });
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+
+    const fixture = TestBed.createComponent(PopoverHost);
+    fixture.detectChanges();
+    const cmds = bridge.__drainQueue().split('\n');
+    const popId = cmds.find((l) => l.endsWith(' ng-popover'))!.split(' ')[1]!;
+    const listId = cmds.find((l) => l.endsWith(' ng-list'))!.split(' ')[1]!;
+
+    expect(cmds).toContain(`attr ${popId} anchor anchor_btn`);
+    expect(cmds).toContain(`attr ${popId} open false`);
+    expect(cmds).toContain(`attr ${popId} position bottom`);
+    expect(cmds).toContain(`attr ${popId} autohide true`);
+    expect(cmds).toContain(`attr ${popId} has-arrow false`);
+    expect(cmds).toContain(`attr ${listId} selection-mode multiple`);
+    expect(cmds).toContain(`attr ${listId} show-separators true`);
+
+    fixture.componentInstance.popOpen.set(true);
+    fixture.detectChanges();
+    expect(bridge.__drainQueue().split('\n')).toContain(`attr ${popId} open true`);
+
+    bridge.__dispatchEvent(listId, 'row-activated', 0);
+    expect(fixture.componentInstance.selectedRow()).toBe(0);
+
+    bridge.__dispatchEvent(popId, 'closed');
+    expect(fixture.componentInstance.popClosed()).toBe(true);
     fixture.destroy();
   });
 });

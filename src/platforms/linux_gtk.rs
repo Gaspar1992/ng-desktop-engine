@@ -4,8 +4,9 @@ use super::PlatformBackend;
 use super::gtk4_callbacks::{
     drain_pending_events, on_gtk_button_clicked, on_gtk_check_toggled,
     on_gtk_drop_down_selected_notify, on_gtk_entry_activate, on_gtk_entry_changed,
-    on_gtk_scale_value_changed, on_gtk_scroll_edge_reached, on_gtk_scroll_value_changed,
-    on_gtk_search_stop, on_gtk_switch_active_notify, pack_node_id, set_window_prevent_close,
+    on_gtk_list_box_row_activated, on_gtk_popover_closed, on_gtk_scale_value_changed,
+    on_gtk_scroll_edge_reached, on_gtk_scroll_value_changed, on_gtk_search_stop,
+    on_gtk_switch_active_notify, pack_node_id, set_window_prevent_close,
 };
 use super::gtk4_sys::{Gtk4Sys, GtkHandle};
 use crate::engine::{
@@ -42,6 +43,8 @@ pub(super) enum GtkWidgetType {
     SearchEntry,
     SpinButton,
     Clamp,
+    ListView,
+    Popover,
     Anchor,
 }
 
@@ -79,6 +82,8 @@ impl GtkWidgetType {
             "ng-search-entry" | "gtk-search-entry" => Some(Self::SearchEntry),
             "ng-spin-button" | "gtk-spin-button" => Some(Self::SpinButton),
             "ng-clamp" | "adw-clamp" => Some(Self::Clamp),
+            "ng-list" | "ng-table" | "gtk-list-box" | "gtk-list-view" => Some(Self::ListView),
+            "ng-popover" | "gtk-popover" | "ng-menu" => Some(Self::Popover),
             "ng-anchor" | "#comment" => Some(Self::Anchor),
             _ => None,
         }
@@ -89,6 +94,12 @@ impl GtkWidgetType {
 pub(super) struct DialogConfig {
     pub(super) modal: bool,
     pub(super) transient_for: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(super) struct PopoverConfig {
+    pub(super) open: bool,
+    pub(super) anchor: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -126,6 +137,8 @@ pub(super) struct NativeGtkWidget {
     pub(super) prevent_close: bool,
     /// Dialog modality and transient parent metadata.
     pub(super) dialog: DialogConfig,
+    /// Popover open state and optional anchor ID metadata.
+    pub(super) popover: PopoverConfig,
     /// Tracks explicit visibility flag (notably to defer presenting hidden dialogs until visible=true).
     pub(super) visibility: WidgetVisibility,
 }
@@ -158,6 +171,13 @@ impl Drop for GtkLinuxBackend {
         let Some(gtk) = &self.gtk else {
             return;
         };
+        for (_, widget) in &drained {
+            if widget.kind == GtkWidgetType::Popover
+                && let Some(handle) = widget.handle
+            {
+                gtk.popover_detach(handle);
+            }
+        }
         let has_open_windows = gtk.open_window_count() > 0;
         if has_open_windows {
             for (_, widget) in &drained {
@@ -297,6 +317,18 @@ impl GtkLinuxBackend {
         self.widgets
             .get(&node)
             .and_then(|w| w.dialog.transient_for.as_deref())
+    }
+
+    #[must_use]
+    pub fn is_popover_open(&self, node: NodeId) -> bool {
+        self.widgets.get(&node).is_some_and(|w| w.popover.open)
+    }
+
+    #[must_use]
+    pub fn popover_anchor(&self, node: NodeId) -> Option<&str> {
+        self.widgets
+            .get(&node)
+            .and_then(|w| w.popover.anchor.as_deref())
     }
 
     #[must_use]
@@ -470,6 +502,7 @@ impl GtkLinuxBackend {
                         attached_events: EventMask::NONE,
                         prevent_close: false,
                         dialog: DialogConfig::default(),
+                        popover: PopoverConfig::default(),
                         visibility: WidgetVisibility::Visible,
                     },
                 );
@@ -532,6 +565,9 @@ impl GtkLinuxBackend {
                 if let Some(widget) = self.widgets.remove(id)
                     && let (Some(gtk), Some(handle)) = (&self.gtk, widget.handle)
                 {
+                    if widget.kind == GtkWidgetType::Popover {
+                        gtk.popover_detach(handle);
+                    }
                     if widget.kind.is_toplevel() {
                         gtk.destroy_window(handle);
                     } else {
@@ -570,6 +606,7 @@ impl GtkLinuxBackend {
                     modal: kind == GtkWidgetType::Dialog,
                     transient_for: None,
                 },
+                popover: PopoverConfig::default(),
                 visibility: WidgetVisibility::Visible,
             },
         );
@@ -735,9 +772,58 @@ impl GtkLinuxBackend {
             "ng-dialog" | "gtk-dialog" | "adw-dialog" => {
                 (Some(gtk.create_dialog()), GtkWidgetType::Dialog)
             }
+            "ng-list" | "ng-table" | "gtk-list-box" | "gtk-list-view" => {
+                let list_box = gtk.create_list_box();
+                gtk.connect_list_box_row_activated(
+                    list_box,
+                    on_gtk_list_box_row_activated,
+                    pack_node_id(id),
+                );
+                (Some(list_box), GtkWidgetType::ListView)
+            }
+            "ng-popover" | "gtk-popover" | "ng-menu" => {
+                let pop = gtk.create_popover();
+                gtk.connect_signal(pop, c"closed", on_gtk_popover_closed, pack_node_id(id));
+                (Some(pop), GtkWidgetType::Popover)
+            }
             _ => return None,
         };
         Some(pair)
+    }
+
+    pub(super) fn sync_popover_anchor(
+        &self,
+        popover_node: NodeId,
+        fallback_parent: Option<NodeId>,
+    ) {
+        let (Some(gtk), Some(pop_w)) = (&self.gtk, self.widgets.get(&popover_node)) else {
+            return;
+        };
+        if pop_w.kind != GtkWidgetType::Popover {
+            return;
+        }
+        let Some(pop_h) = pop_w.handle else { return };
+        let anchor_handle = pop_w
+            .popover
+            .anchor
+            .as_deref()
+            .and_then(|dom_id| self.dom_id_to_node.get(dom_id))
+            .filter(|&&nid| nid != popover_node)
+            .and_then(|nid| self.widgets.get(nid))
+            .and_then(|w| w.handle)
+            .or_else(|| {
+                fallback_parent
+                    .or_else(|| self.parent_of.get(&popover_node).copied())
+                    .filter(|&nid| nid != popover_node)
+                    .and_then(|nid| self.widgets.get(&nid))
+                    .and_then(|w| w.handle)
+            });
+        if let Some(target_h) = anchor_handle {
+            gtk.popover_attach(pop_h, target_h);
+            if pop_w.popover.open {
+                gtk.popover_popup(pop_h);
+            }
+        }
     }
 
     pub(super) fn resolve_transient_window_handle(
@@ -826,6 +912,15 @@ impl GtkLinuxBackend {
             self.sync_dialog_transient_and_present(child);
             return;
         }
+        if child_w.kind == GtkWidgetType::Popover {
+            if let Some(pw) = self.widgets.get_mut(&parent)
+                && !pw.children.contains(&child)
+            {
+                pw.children.push(child);
+            }
+            self.sync_popover_anchor(child, Some(parent));
+            return;
+        }
         if parent_kind == GtkWidgetType::Paned {
             if let Some(pw) = self.widgets.get_mut(&parent) {
                 pw.children.push(child);
@@ -847,6 +942,8 @@ impl GtkLinuxBackend {
                 GtkWidgetType::Scroll => gtk.set_scrolled_child(p_h, c_h),
                 GtkWidgetType::Box => gtk.box_append(p_h, c_h),
                 GtkWidgetType::FlowBox => gtk.flow_box_append(p_h, c_h),
+                GtkWidgetType::ListView => gtk.list_box_append(p_h, c_h),
+                GtkWidgetType::Popover => gtk.set_popover_child(p_h, Some(c_h)),
                 GtkWidgetType::Stack => {
                     gtk.stack_add_named(p_h, c_h, &format!("page_{child_index}"));
                 }
@@ -882,6 +979,20 @@ impl GtkLinuxBackend {
                 }
             }
             self.sync_dialog_transient_and_present(child);
+            return;
+        }
+        if child_w.kind == GtkWidgetType::Popover {
+            if let Some(pw) = self.widgets.get_mut(&parent) {
+                pw.children.retain(|c| *c != child);
+                if let Some(ref_id) = ref_child
+                    && let Some(pos) = pw.children.iter().position(|c| *c == ref_id)
+                {
+                    pw.children.insert(pos, child);
+                } else {
+                    pw.children.push(child);
+                }
+            }
+            self.sync_popover_anchor(child, Some(parent));
             return;
         }
 
@@ -985,6 +1096,16 @@ impl GtkLinuxBackend {
                     gtk.flow_box_append(p_h, c_h);
                 }
             }
+            GtkWidgetType::ListView => {
+                if is_existing_child {
+                    gtk.list_box_reorder(p_h, c_h, target_idx, has_ref);
+                } else if has_ref {
+                    gtk.list_box_insert(p_h, c_h, target_idx);
+                } else {
+                    gtk.list_box_append(p_h, c_h);
+                }
+            }
+            GtkWidgetType::Popover => gtk.set_popover_child(p_h, Some(c_h)),
             GtkWidgetType::Grid => gtk.grid_attach(p_h, c_h, target_idx % 2, target_idx / 2),
             GtkWidgetType::Stack => gtk.stack_add_named(p_h, c_h, &format!("page_{target_idx}")),
             _ => {}
@@ -1000,7 +1121,11 @@ impl GtkLinuxBackend {
             self.widgets.get(&child),
         ) && let Some(p_h) = parent_w.handle
         {
-            if parent_w.kind == GtkWidgetType::Paned {
+            if child_w.kind == GtkWidgetType::Popover {
+                if let Some(c_h) = child_w.handle {
+                    gtk.popover_detach(c_h);
+                }
+            } else if parent_w.kind == GtkWidgetType::Paned {
                 is_paned = true;
             } else if !child_w.kind.is_toplevel() && child_w.handle.is_some() {
                 match parent_w.kind {
@@ -1032,6 +1157,12 @@ impl GtkLinuxBackend {
                             gtk.flow_box_remove(p_h, c_h);
                         }
                     }
+                    GtkWidgetType::ListView => {
+                        if let Some(c_h) = child_w.handle {
+                            gtk.list_box_remove(p_h, c_h);
+                        }
+                    }
+                    GtkWidgetType::Popover => gtk.set_popover_child(p_h, None),
                     GtkWidgetType::Stack => {
                         if let Some(c_h) = child_w.handle {
                             gtk.stack_remove(p_h, c_h);
@@ -1090,6 +1221,8 @@ impl PlatformBackend for GtkLinuxBackend {
             "ng-search-entry" | "gtk-search-entry" => "GtkSearchEntry",
             "ng-spin-button" | "gtk-spin-button" => "GtkSpinButton",
             "ng-clamp" | "adw-clamp" => "AdwClamp",
+            "ng-list" | "ng-table" | "gtk-list-box" | "gtk-list-view" => "GtkListBox",
+            "ng-popover" | "gtk-popover" | "ng-menu" => "GtkPopover",
             "ng-anchor" | "#comment" => "GtkAnchorComment",
             _ => "GtkWidget",
         }

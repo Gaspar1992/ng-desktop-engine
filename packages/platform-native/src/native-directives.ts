@@ -102,7 +102,7 @@ function isTruthyDisabledInput(value: NativeBoolInput): boolean {
  */
 @Directive({
   selector:
-    'ng-window,adw-window,ng-dialog,gtk-dialog,adw-dialog,ng-header-bar,adw-header-bar,gtk-header-bar,ng-scroll,gtk-scrolled-window,ng-box,gtk-box,ng-grid,gtk-grid,ng-separator,gtk-separator,ng-button,gtk-button,ng-label,gtk-label,ng-entry,gtk-entry,ng-switch,gtk-switch,ng-checkbox,ng-check,ng-check-button,gtk-check-button,ng-slider,ng-scale,gtk-scale,ng-select,ng-dropdown,gtk-dropdown,gtk-drop-down,ng-image,adw-image,gtk-picture,ng-picture,ng-level-bar,gtk-level-bar,ng-flow,ng-flow-box,gtk-flow-box,ng-spinner,gtk-spinner,ng-progress-bar,gtk-progress-bar,ng-paned,gtk-paned,ng-stack,gtk-stack,adw-navigation-view,ng-expander,gtk-expander,ng-text-view,gtk-text-view,ng-password-entry,gtk-password-entry,ng-spin-button,gtk-spin-button,ng-search-entry,gtk-search-entry,ng-clamp,adw-clamp,adw-entry-row,adw-password-entry-row,adw-switch-row,adw-combo-row,adw-spin-row',
+    'ng-window,adw-window,ng-dialog,gtk-dialog,adw-dialog,ng-header-bar,adw-header-bar,gtk-header-bar,ng-scroll,gtk-scrolled-window,ng-box,gtk-box,ng-grid,gtk-grid,ng-separator,gtk-separator,ng-button,gtk-button,ng-label,gtk-label,ng-entry,gtk-entry,ng-switch,gtk-switch,ng-checkbox,ng-check,ng-check-button,gtk-check-button,ng-slider,ng-scale,gtk-scale,ng-select,ng-dropdown,gtk-dropdown,gtk-drop-down,ng-image,adw-image,gtk-picture,ng-picture,ng-level-bar,gtk-level-bar,ng-flow,ng-flow-box,gtk-flow-box,ng-spinner,gtk-spinner,ng-progress-bar,gtk-progress-bar,ng-paned,gtk-paned,ng-stack,gtk-stack,adw-navigation-view,ng-expander,gtk-expander,ng-text-view,gtk-text-view,ng-password-entry,gtk-password-entry,ng-spin-button,gtk-spin-button,ng-search-entry,gtk-search-entry,ng-clamp,adw-clamp,ng-list,ng-table,gtk-list-box,gtk-list-view,ng-popover,gtk-popover,ng-menu,adw-entry-row,adw-password-entry-row,adw-switch-row,adw-combo-row,adw-spin-row',
   standalone: true,
 })
 export class NativeElementDirective {
@@ -436,6 +436,68 @@ export class NativeInputWidgetDirective {
 }
 
 /**
+ * Typed directive for native virtualized lists and tables (`<ng-list>`, `<ng-table>`).
+ */
+@Directive({
+  selector: 'ng-list,ng-table,gtk-list-box,gtk-list-view',
+  standalone: true,
+})
+export class NativeListDirective {
+  private readonly renderer = inject(Renderer2);
+  private readonly el = inject<ElementRef<unknown>>(ElementRef).nativeElement;
+
+  @Input('selection-mode') set selectionModeAttr(val: NativeAttrInput) {
+    syncNativeAttr(this.renderer, this.el, 'selection-mode', val);
+  }
+  @Input() set selectionMode(val: NativeAttrInput) {
+    syncNativeAttr(this.renderer, this.el, 'selection-mode', val);
+  }
+  @Input('show-separators') set showSeparatorsAttr(val: NativeBoolInput) {
+    syncNativeAttr(this.renderer, this.el, 'show-separators', val);
+  }
+  @Input() set showSeparators(val: NativeBoolInput) {
+    syncNativeAttr(this.renderer, this.el, 'show-separators', val);
+  }
+  @Input() set separators(val: NativeBoolInput) {
+    syncNativeAttr(this.renderer, this.el, 'separators', val);
+  }
+}
+
+/**
+ * Typed directive for native anchored popovers and context menus (`<ng-popover>`, `<ng-menu>`).
+ */
+@Directive({
+  selector: 'ng-popover,gtk-popover,ng-menu',
+  standalone: true,
+})
+export class NativePopoverDirective {
+  private readonly renderer = inject(Renderer2);
+  private readonly el = inject<ElementRef<unknown>>(ElementRef).nativeElement;
+
+  @Input() set open(val: NativeBoolInput) {
+    syncNativeAttr(this.renderer, this.el, 'open', val);
+  }
+  @Input() set position(val: NativeAttrInput) {
+    syncNativeAttr(this.renderer, this.el, 'position', val);
+  }
+  @Input() set placement(val: NativeAttrInput) {
+    syncNativeAttr(this.renderer, this.el, 'placement', val);
+  }
+  @Input() set autohide(val: NativeBoolInput) {
+    syncNativeAttr(this.renderer, this.el, 'autohide', val);
+  }
+  @Input('has-arrow') set hasArrowAttr(val: NativeBoolInput) {
+    syncNativeAttr(this.renderer, this.el, 'has-arrow', val);
+  }
+  @Input() set hasArrow(val: NativeBoolInput) {
+    syncNativeAttr(this.renderer, this.el, 'has-arrow', val);
+  }
+  @Input() set anchor(val: NativeAttrInput) {
+    syncNativeAttr(this.renderer, this.el, 'anchor', val);
+  }
+}
+
+/**
  * Convenience directive bundle enabling typed bindings on `<ng-*>`, `<gtk-*>`, and `<adw-*>` tags
  * in standalone Angular components without `CUSTOM_ELEMENTS_SCHEMA`.
  */
@@ -446,4 +508,6 @@ export const NATIVE_UI_DIRECTIVES = [
   NativeTextWidgetDirective,
   NativeMediaAndMeterDirective,
   NativeInputWidgetDirective,
+  NativeListDirective,
+  NativePopoverDirective,
 ] as const;

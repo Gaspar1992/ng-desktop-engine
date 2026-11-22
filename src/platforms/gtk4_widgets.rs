@@ -543,6 +543,153 @@ impl Gtk4Sys {
         }
     }
 
+    pub fn create_list_box(&self) -> GtkHandle {
+        unsafe {
+            let lb = (self.gtk_list_box_new)();
+            (self.gtk_list_box_set_selection_mode)(lb, 1);
+            (self.gtk_widget_set_hexpand)(lb, 1);
+            GtkHandle(lb)
+        }
+    }
+
+    pub fn list_box_append(&self, list_box: GtkHandle, child: GtkHandle) {
+        unsafe {
+            (self.gtk_list_box_append)(list_box.0, child.0);
+        }
+    }
+
+    pub fn list_box_insert(&self, list_box: GtkHandle, child: GtkHandle, position: i32) {
+        unsafe {
+            (self.gtk_list_box_insert)(list_box.0, child.0, position);
+        }
+    }
+
+    pub fn list_box_remove(&self, list_box: GtkHandle, child: GtkHandle) {
+        unsafe {
+            let parent = (self.gtk_widget_get_parent)(child.0);
+            if parent == list_box.0 {
+                (self.gtk_list_box_remove)(list_box.0, child.0);
+            } else if !parent.is_null() && (self.gtk_widget_get_parent)(parent) == list_box.0 {
+                (self.gtk_list_box_row_set_child)(parent, std::ptr::null_mut());
+                (self.gtk_list_box_remove)(list_box.0, parent);
+            }
+        }
+    }
+
+    /// Reorders an existing `GtkListBox` child safely by retaining a strong reference across removal.
+    pub fn list_box_reorder(
+        &self,
+        list_box: GtkHandle,
+        child: GtkHandle,
+        position: i32,
+        has_ref: bool,
+    ) {
+        unsafe {
+            let parent = (self.gtk_widget_get_parent)(child.0);
+            let row_or_child = if !parent.is_null()
+                && parent != list_box.0
+                && (self.gtk_widget_get_parent)(parent) == list_box.0
+            {
+                parent
+            } else {
+                child.0
+            };
+            (self.g_object_ref)(row_or_child);
+            (self.gtk_list_box_remove)(list_box.0, row_or_child);
+            if has_ref {
+                (self.gtk_list_box_insert)(list_box.0, row_or_child, position);
+            } else {
+                (self.gtk_list_box_append)(list_box.0, row_or_child);
+            }
+            (self.g_object_unref)(row_or_child);
+        }
+    }
+
+    pub fn set_list_box_selection_mode(&self, list_box: GtkHandle, mode: &str) {
+        let code = match mode.trim() {
+            "none" => 0,
+            "browse" => 2,
+            "multiple" => 3,
+            _ => 1,
+        };
+        unsafe {
+            (self.gtk_list_box_set_selection_mode)(list_box.0, code);
+        }
+    }
+
+    pub fn set_list_box_show_separators(&self, list_box: GtkHandle, show: bool) {
+        unsafe {
+            (self.gtk_list_box_set_show_separators)(list_box.0, i32::from(show));
+        }
+    }
+
+    pub fn create_popover(&self) -> GtkHandle {
+        unsafe { GtkHandle((self.gtk_popover_new)()) }
+    }
+
+    pub fn set_popover_child(&self, popover: GtkHandle, child: Option<GtkHandle>) {
+        let ptr = child.map_or(std::ptr::null_mut(), |h| h.0);
+        unsafe {
+            (self.gtk_popover_set_child)(popover.0, ptr);
+        }
+    }
+
+    pub fn popover_attach(&self, popover: GtkHandle, anchor: GtkHandle) {
+        unsafe {
+            if !(self.gtk_widget_get_parent)(popover.0).is_null() {
+                (self.gtk_widget_unparent)(popover.0);
+            }
+            (self.gtk_widget_set_parent)(popover.0, anchor.0);
+        }
+    }
+
+    pub fn popover_detach(&self, popover: GtkHandle) {
+        unsafe {
+            if !(self.gtk_widget_get_parent)(popover.0).is_null() {
+                (self.gtk_popover_popdown)(popover.0);
+                (self.gtk_widget_unparent)(popover.0);
+            }
+        }
+    }
+
+    pub fn popover_popup(&self, popover: GtkHandle) {
+        unsafe {
+            if !(self.gtk_widget_get_parent)(popover.0).is_null() {
+                (self.gtk_popover_popup)(popover.0);
+            }
+        }
+    }
+
+    pub fn popover_popdown(&self, popover: GtkHandle) {
+        unsafe {
+            (self.gtk_popover_popdown)(popover.0);
+        }
+    }
+
+    pub fn set_popover_position(&self, popover: GtkHandle, pos: &str) {
+        let code = match pos.trim() {
+            "left" => 0,
+            "right" => 1,
+            "top" => 2,
+            _ => 3,
+        };
+        unsafe {
+            (self.gtk_popover_set_position)(popover.0, code);
+        }
+    }
+
+    pub fn set_popover_autohide(&self, popover: GtkHandle, autohide: bool) {
+        unsafe {
+            (self.gtk_popover_set_autohide)(popover.0, i32::from(autohide));
+        }
+    }
+
+    pub fn set_popover_has_arrow(&self, popover: GtkHandle, has_arrow: bool) {
+        unsafe {
+            (self.gtk_popover_set_has_arrow)(popover.0, i32::from(has_arrow));
+        }
+    }
+
     pub fn set_window_title(&self, win: GtkHandle, title: &str) {
         if let Ok(c_str) = CString::new(title) {
             unsafe {

@@ -7,8 +7,8 @@ use super::gtk4_callbacks::{
 };
 use super::gtk4_sys::{
     Gtk4Sys, GtkClickCallback, GtkCloseRequestCallback, GtkEdgeReachedCallback,
-    GtkGestureClickCallback, GtkHandle, GtkKeyCallback, GtkMotionCallback, GtkNotifyCallback,
-    GtkScrollControllerCallback,
+    GtkGestureClickCallback, GtkHandle, GtkKeyCallback, GtkListBoxRowCallback, GtkMotionCallback,
+    GtkNotifyCallback, GtkScrollControllerCallback,
 };
 use std::ffi::{CStr, CString, c_void};
 
@@ -283,6 +283,22 @@ impl Gtk4Sys {
         let cb: GtkCloseRequestCallback = on_gtk_window_close_request;
         unsafe {
             self.connect_raw(win.0, c"close-request", cb as *const c_void, packed_node_id);
+        }
+    }
+
+    pub fn connect_list_box_row_activated(
+        &self,
+        list_box: GtkHandle,
+        callback: GtkListBoxRowCallback,
+        packed_node_id: usize,
+    ) {
+        unsafe {
+            self.connect_raw(
+                list_box.0,
+                c"row-activated",
+                callback as *const c_void,
+                packed_node_id,
+            );
         }
     }
 
