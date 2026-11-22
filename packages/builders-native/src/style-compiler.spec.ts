@@ -1,4 +1,8 @@
-import { emitStyleInstruction, parseStylesCss } from './style-compiler.mjs';
+import {
+  emitStyleInstruction,
+  formatStyleRuleExtensions,
+  parseStylesCss,
+} from './style-compiler.mjs';
 
 describe('Native style compiler (postcss AST)', () => {
   it('maps standard CSS units, gap, radius and typography into the Style IR', () => {
@@ -65,8 +69,14 @@ describe('Native style compiler (postcss AST)', () => {
       }
     `);
 
+    expect(formatStyleRuleExtensions(gridRule)).toBe(
+      'min-width=160 hexpand=true min-children=1 max-children=12 homogeneous=true',
+    );
     expect(emitStyleInstruction(gridRule)).toBe(
       'style pokemon-grid none none 0 12 min-width=160 hexpand=true min-children=1 max-children=12 homogeneous=true',
+    );
+    expect(formatStyleRuleExtensions(cardRule)).toBe(
+      'min-width=160 orientation=vertical hexpand=true',
     );
     expect(emitStyleInstruction(cardRule)).toBe(
       'style grid-card none none 0 0 min-width=160 orientation=vertical hexpand=true',

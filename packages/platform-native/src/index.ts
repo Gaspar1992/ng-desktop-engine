@@ -15,6 +15,11 @@ export {
   type NgNativeBridge,
 } from './bridge';
 export {
+  formatParsedStyleExtensions,
+  parseRuntimeStyles,
+  type ParsedStyleRule,
+} from './css-style-parser';
+export {
   createNativeDocument,
   NATIVE_BRIDGE,
   NATIVE_DEVTOOLS_HOOK,

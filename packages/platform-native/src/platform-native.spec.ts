@@ -5,6 +5,7 @@ import { EVENT_MANAGER_PLUGINS, Title } from '@angular/platform-browser';
 import {
   bootstrapNativeApplication,
   ensureNgNativeBridge,
+  formatParsedStyleExtensions,
   matchesKeyboardEvent,
   NATIVE_UI_DIRECTIVES,
   NativeElementNode,
@@ -12,6 +13,7 @@ import {
   NativeRendererFactory2,
   NativeSystemErrorHandler,
   NativeTitleService,
+  parseRuntimeStyles,
   provideNativePlatform,
   resolveNativeTag,
 } from '@ng-desktop/platform';
@@ -845,5 +847,39 @@ describe('@ng-desktop/platform — NativeRenderer2 & Bridge', () => {
     expect(bridge.__drainQueue()).toContain(`attr ${winId} prevent-close false`);
 
     fixture.destroy();
+  });
+
+  it('parses runtime styles and formats layout/typography extensions via @ng-desktop/platform css-style-parser', () => {
+    const parsed = parseRuntimeStyles(`
+      .toolbar-row {
+        background-color: #1e293b;
+        color: #f8fafc;
+        padding: 12px;
+        gap: 8px;
+        border-radius: 10px;
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        min-height: 44px;
+      }
+    `);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]).toMatchObject({
+      className: 'toolbar-row',
+      background: '#1e293b',
+      color: '#f8fafc',
+      padding: 12,
+      spacing: 8,
+      borderRadius: 10,
+      minHeight: 44,
+      orientation: 'horizontal',
+      hexpand: true,
+      minChildren: 1,
+      maxChildren: 12,
+      homogeneous: true,
+    });
+    expect(formatParsedStyleExtensions(parsed[0]!)).toBe(
+      'radius=10 min-height=44 orientation=horizontal hexpand=true min-children=1 max-children=12 homogeneous=true',
+    );
   });
 });

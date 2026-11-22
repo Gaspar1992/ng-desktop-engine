@@ -217,25 +217,42 @@ export function parseStylesCss(cssSource, from = 'app.css') {
   return [...rulesByClass.values()];
 }
 
+const STYLE_EXTENSION_FIELDS = [
+  ['borderRadius', 'radius'],
+  ['fontSize', 'font-size'],
+  ['fontWeight', 'font-weight'],
+  ['minWidth', 'min-width'],
+  ['minHeight', 'min-height'],
+  ['orientation', 'orientation'],
+  ['hexpand', 'hexpand'],
+  ['vexpand', 'vexpand'],
+  ['halign', 'halign'],
+  ['valign', 'valign'],
+  ['minChildren', 'min-children'],
+  ['maxChildren', 'max-children'],
+  ['homogeneous', 'homogeneous'],
+];
+
+/**
+ * Formats optional Style IR typography/layout extensions as space-separated `key=value` tokens.
+ */
+export function formatStyleRuleExtensions(rule) {
+  const extensions = [];
+  for (const [prop, key] of STYLE_EXTENSION_FIELDS) {
+    const value = rule?.[prop];
+    if (value !== null && value !== undefined) {
+      extensions.push(`${key}=${value}`);
+    }
+  }
+  return extensions.join(' ');
+}
+
 /**
  * Serializes a Style IR rule into a `.ngb` `style` instruction, appending optional
  * `key=value` extensions only when declared (keeps legacy bundles byte-identical).
  */
 export function emitStyleInstruction(rule) {
   const base = `style ${rule.className} ${rule.background} ${rule.color} ${rule.padding} ${rule.spacing}`;
-  const extensions = [];
-  if (rule.borderRadius !== null) extensions.push(`radius=${rule.borderRadius}`);
-  if (rule.fontSize !== null) extensions.push(`font-size=${rule.fontSize}`);
-  if (rule.fontWeight !== null) extensions.push(`font-weight=${rule.fontWeight}`);
-  if (rule.minWidth !== null) extensions.push(`min-width=${rule.minWidth}`);
-  if (rule.minHeight !== null) extensions.push(`min-height=${rule.minHeight}`);
-  if (rule.orientation !== null) extensions.push(`orientation=${rule.orientation}`);
-  if (rule.hexpand !== null) extensions.push(`hexpand=${rule.hexpand}`);
-  if (rule.vexpand !== null) extensions.push(`vexpand=${rule.vexpand}`);
-  if (rule.halign !== null) extensions.push(`halign=${rule.halign}`);
-  if (rule.valign !== null) extensions.push(`valign=${rule.valign}`);
-  if (rule.minChildren !== null) extensions.push(`min-children=${rule.minChildren}`);
-  if (rule.maxChildren !== null) extensions.push(`max-children=${rule.maxChildren}`);
-  if (rule.homogeneous !== null) extensions.push(`homogeneous=${rule.homogeneous}`);
-  return extensions.length > 0 ? `${base} ${extensions.join(' ')}` : base;
+  const extras = formatStyleRuleExtensions(rule);
+  return extras.length > 0 ? `${base} ${extras}` : base;
 }
