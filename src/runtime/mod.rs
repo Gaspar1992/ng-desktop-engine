@@ -130,6 +130,20 @@ impl JsRuntime {
         Ok(worker)
     }
 
+    /// Hot-reloads the attached isolated `NativeServerWorker` in-place (preserving SQLite state),
+    /// or starts a new worker if none was attached yet.
+    pub fn reload_server_bundle(
+        &self,
+        bundle_js: &str,
+        persistent_sqlite: bool,
+    ) -> Result<(), String> {
+        if self.host_bridge.reload_server_worker(bundle_js)? {
+            return Ok(());
+        }
+        self.attach_server_bundle(bundle_js, persistent_sqlite)
+            .map(|_| ())
+    }
+
     pub fn signal_value(&self, name: &str) -> Option<i64> {
         self.signals.get(name).copied()
     }

@@ -2,9 +2,14 @@
   "$schema": "../../node_modules/@angular-devkit/architect/src/builders-schema.json",
   "builders": {
     "application": {
-      "implementation": "./fesm2022/index.js",
+      "implementation": "./fesm2022/application-builder.mjs",
       "schema": "./schema/native-builder-schema.json",
-      "description": "Compile Angular templates/signals to native OS .ngb bundle with static least-privilege permissions."
+      "description": "Compile Angular templates, Ivy bundles, Analog server routes, and least-privilege manifests for native desktop targets."
+    },
+    "dev-server": {
+      "implementation": "./fesm2022/dev-server-builder.mjs",
+      "schema": "./schema/native-builder-schema.json",
+      "description": "Run incremental native watch builds and push live frontend/server HMR updates to the running desktop window."
     }
   }
 }
