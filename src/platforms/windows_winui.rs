@@ -1,17 +1,164 @@
+#![allow(unsafe_code)]
+
 use super::PlatformBackend;
 use super::scene_state::{NativeSceneNode, NativeSceneState};
 use crate::engine::{NativeEvent, NodeId, RenderCommand};
+#[cfg(target_os = "windows")]
+use crate::ffi_dl::DynLib;
+use std::collections::{HashMap, HashSet};
+#[cfg(target_os = "windows")]
+use std::ffi::c_void;
+
+/// Win32 / WinUI 3 runtime binding metadata recorded per live control node.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WinUiControlBinding {
+    pub xaml_class: &'static str,
+    pub win32_class: &'static str,
+    pub symbol_bound: bool,
+}
+
+struct WinUiFfiDriver {
+    ffi_loaded: bool,
+    resolved_symbols: HashSet<&'static str>,
+    bindings: HashMap<NodeId, WinUiControlBinding>,
+}
+
+impl WinUiFfiDriver {
+    fn new() -> Self {
+        #[cfg(target_os = "windows")]
+        {
+            Self::init_windows_driver()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            Self {
+                ffi_loaded: false,
+                resolved_symbols: HashSet::new(),
+                bindings: HashMap::new(),
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn init_windows_driver() -> Self {
+        let Some(user32) = (unsafe { DynLib::open(c"user32.dll") }) else {
+            return Self {
+                ffi_loaded: false,
+                resolved_symbols: HashSet::new(),
+                bindings: HashMap::new(),
+            };
+        };
+
+        let mut resolved_symbols = HashSet::new();
+        for (name, c_name) in [
+            ("CreateWindowExW", c"CreateWindowExW"),
+            ("DestroyWindow", c"DestroyWindow"),
+            ("ShowWindow", c"ShowWindow"),
+            ("SetWindowTextW", c"SetWindowTextW"),
+            ("MoveWindow", c"MoveWindow"),
+            ("IsWindow", c"IsWindow"),
+        ] {
+            if unsafe { user32.sym::<*mut c_void>(c_name) }.is_some() {
+                resolved_symbols.insert(name);
+            }
+        }
+
+        let ffi_loaded = resolved_symbols.contains("CreateWindowExW")
+            && resolved_symbols.contains("DestroyWindow")
+            && resolved_symbols.contains("SetWindowTextW");
+
+        Self {
+            ffi_loaded,
+            resolved_symbols,
+            bindings: HashMap::new(),
+        }
+    }
+
+    fn win32_class_for(xaml_class: &str) -> &'static str {
+        match xaml_class {
+            "Microsoft.UI.Xaml.Window" => "Window",
+            "Microsoft.UI.Xaml.Controls.Button"
+            | "Microsoft.UI.Xaml.Controls.CheckBox"
+            | "Microsoft.UI.Xaml.Controls.ToggleSwitch" => "BUTTON",
+            "Microsoft.UI.Xaml.Controls.TextBox"
+            | "Microsoft.UI.Xaml.Controls.RichEditBox"
+            | "Microsoft.UI.Xaml.Controls.PasswordBox"
+            | "Microsoft.UI.Xaml.Controls.AutoSuggestBox" => "EDIT",
+            "Microsoft.UI.Xaml.Controls.ComboBox" => "COMBOBOX",
+            "Microsoft.UI.Xaml.Controls.ScrollViewer" => "SCROLLBAR",
+            _ => "STATIC",
+        }
+    }
+
+    fn register_node(&mut self, id: NodeId, xaml_class: &'static str) {
+        let win32_class = Self::win32_class_for(xaml_class);
+        let symbol_bound = if xaml_class == "Microsoft.UI.Xaml.Window" {
+            self.resolved_symbols.contains("CreateWindowExW")
+                && self.resolved_symbols.contains("ShowWindow")
+        } else {
+            self.resolved_symbols.contains("CreateWindowExW")
+                && self.resolved_symbols.contains("SetWindowTextW")
+        };
+        self.bindings.insert(
+            id,
+            WinUiControlBinding {
+                xaml_class,
+                win32_class,
+                symbol_bound,
+            },
+        );
+    }
+
+    fn unregister_node(&mut self, id: NodeId) {
+        self.bindings.remove(&id);
+    }
+
+    fn open_window_count(&self) -> u32 {
+        let count = self
+            .bindings
+            .values()
+            .filter(|b| b.xaml_class == "Microsoft.UI.Xaml.Window")
+            .count();
+        u32::try_from(count).unwrap_or(u32::MAX)
+    }
+}
 
 /// Concrete Windows WinUI 3 (`Microsoft.UI.Xaml`) platform adapter.
-#[derive(Default)]
 pub struct WinUiBackend {
     pub flushed_frames: u64,
     state: NativeSceneState,
+    ffi_driver: WinUiFfiDriver,
+}
+
+impl Default for WinUiBackend {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl WinUiBackend {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            flushed_frames: 0,
+            state: NativeSceneState::default(),
+            ffi_driver: WinUiFfiDriver::new(),
+        }
+    }
+
+    pub const fn is_ffi_loaded(&self) -> bool {
+        self.ffi_driver.ffi_loaded
+    }
+
+    pub fn resolved_symbol_count(&self) -> usize {
+        self.ffi_driver.resolved_symbols.len()
+    }
+
+    pub fn open_window_count(&self) -> u32 {
+        self.ffi_driver.open_window_count()
+    }
+
+    pub fn get_control_binding(&self, id: NodeId) -> Option<&WinUiControlBinding> {
+        self.ffi_driver.bindings.get(&id)
     }
 
     pub const fn scene_state(&self) -> &NativeSceneState {
@@ -97,6 +244,15 @@ impl PlatformBackend for WinUiBackend {
             Self::map_winui_tag,
         );
         for cmd in commands {
+            match cmd {
+                RenderCommand::CreateWidget { id, tag } => {
+                    self.ffi_driver.register_node(*id, Self::map_winui_tag(tag));
+                }
+                RenderCommand::DestroyWidget { id } => {
+                    self.ffi_driver.unregister_node(*id);
+                }
+                _ => {}
+            }
             self.state
                 .apply_command(cmd, "Microsoft.UI.Xaml.AnchorComment", Self::map_winui_tag);
         }

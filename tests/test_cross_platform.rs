@@ -403,3 +403,65 @@ fn nivel3_attributes_events_and_os_drivers_have_cross_platform_parity() {
     );
     assert_ne!(desktop.system_env().backend().as_str(), "");
 }
+
+#[test]
+fn macos_appkit_and_windows_winui_dynamic_ffi_drivers_and_window_lifecycle() {
+    let create_and_destroy_script = r"
+        create win ng-window
+        create lbl ng-label
+        text lbl Ready
+        create btn ng-button
+        text btn Run
+        append win lbl
+        append win btn
+    ";
+
+    let mut winui = RenderEngine::new(WinUiBackend::new());
+    let mut win_rt = JsRuntime::new();
+    win_rt
+        .eval_tick(&mut winui, create_and_destroy_script)
+        .unwrap();
+    let win_id = win_rt.resolve_var("win").unwrap();
+    let btn_id = win_rt.resolve_var("btn").unwrap();
+    assert_eq!(winui.backend().open_window_count(), 1);
+    let win_binding = winui.backend().get_control_binding(win_id).unwrap();
+    assert_eq!(win_binding.xaml_class, "Microsoft.UI.Xaml.Window");
+    assert_eq!(win_binding.win32_class, "Window");
+    let btn_binding = winui.backend().get_control_binding(btn_id).unwrap();
+    assert_eq!(btn_binding.win32_class, "BUTTON");
+
+    if cfg!(target_os = "windows") {
+        assert!(winui.backend().is_ffi_loaded());
+        assert!(winui.backend().resolved_symbol_count() >= 6);
+        assert!(win_binding.symbol_bound);
+    }
+
+    win_rt.eval_tick(&mut winui, "destroy win").unwrap();
+    assert_eq!(winui.backend().open_window_count(), 0);
+    assert!(winui.backend().get_control_binding(win_id).is_none());
+
+    let mut appkit = RenderEngine::new(MacOsAppKitBackend::new());
+    let mut mac_rt = JsRuntime::new();
+    mac_rt
+        .eval_tick(&mut appkit, create_and_destroy_script)
+        .unwrap();
+    let mac_win = mac_rt.resolve_var("win").unwrap();
+    let mac_btn = mac_rt.resolve_var("btn").unwrap();
+    assert_eq!(appkit.backend().open_window_count(), 1);
+    let mac_win_binding = appkit.backend().get_view_binding(mac_win).unwrap();
+    assert_eq!(mac_win_binding.objc_class, "NSWindow");
+    let mac_btn_binding = appkit.backend().get_view_binding(mac_btn).unwrap();
+    assert_eq!(mac_btn_binding.objc_class, "NSButton");
+    assert_eq!(mac_btn_binding.primary_selector, "setTitle:");
+
+    if cfg!(target_os = "macos") {
+        assert!(appkit.backend().is_ffi_loaded());
+        assert!(appkit.backend().resolved_class_count() >= 10);
+        assert!(mac_win_binding.class_resolved);
+        assert!(mac_btn_binding.selector_resolved);
+    }
+
+    mac_rt.eval_tick(&mut appkit, "destroy win").unwrap();
+    assert_eq!(appkit.backend().open_window_count(), 0);
+    assert!(appkit.backend().get_view_binding(mac_win).is_none());
+}
