@@ -4,6 +4,22 @@ This document defines the deep technical analysis and phased engineering roadmap
 
 ---
 
+## 📍 Current Status Snapshot (`v0.4.0`)
+
+**At a glance:** Release **`v0.4.0`** | **`29` native widget primitives + `<ng-anchor>`** | **`7` `@ng-desktop/*` npm packages + `5` prebuilt `@ng-desktop/engine-*` binaries** | **`195` automated tests** (`87` Vitest across `16` suites, `65` Rust unit, `43` Rust integration across `8` suites).
+
+### Platform Maturity Matrix (`v0.4.0`)
+
+| Area                   | Linux (`GTK4 / Libadwaita`)                                                                                                           | Windows (`Win32 / WinUI`)                                                                                                      | macOS (`AppKit`)                                                                                                               |
+| :--------------------- | :------------------------------------------------------------------------------------------------------------------------------------ | :----------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------- |
+| **Embedded JS Engine** | Full Ivy runtime via `libjavascriptcoregtk-6.0.so.1` (`src/runtime/jsc_sys.rs`) + minimal QuickJS fallback                            | Compiled Angular JS blocked (`src/runtime/quickjs_engine.rs` lacks ES2024; `jsc_sys.rs` is Linux-only)                         | Compiled Angular JS blocked (`src/runtime/quickjs_engine.rs` lacks ES2024; `jsc_sys.rs` is Linux-only)                         |
+| **Native UI & Layout** | 29 primitives + `GtkBox`/`GtkGrid`/`GtkFlowBox` layout + Flexbox/Grid CSS projector                                                   | Live `user32.dll` window/control FFI (`src/platforms/win32_sys.rs`), fixed-coordinate fallback layout, partial event callbacks | Live Objective-C runtime FFI (`src/platforms/appkit_sys.rs`), fixed-coordinate fallback layout, native event delegates pending |
+| **OS Services**        | Real FFI (`libsoup-3.0`, `libsqlite3`, XDG + `inotify`, `GNetworkMonitor`) + in-memory `DesktopServices` dialog/clipboard/theme stubs | In-memory `DesktopServices` + host staging enums; native Win32 OS drivers pending                                              | In-memory `DesktopServices` + host staging enums; native Cocoa/macOS OS drivers pending                                        |
+| **HMR IPC**            | Non-blocking Unix Domain Socket (`src/ipc/mod.rs` + `hmr-client.mjs`)                                                                 | Not available (requires Named Pipes or loopback TCP)                                                                           | Non-blocking Unix Domain Socket (`src/ipc/mod.rs`)                                                                             |
+| **Build & Release**    | Green CI + `.deb`/`AppImage`/`Flatpak` staging + npm/crates release artifacts                                                         | Green CI (`win32-x64` binary build + `AppxManifest.xml` staging)                                                               | Green CI (`darwin-arm64`/`darwin-x64` binary builds + `.app` bundle staging)                                                   |
+
+---
+
 ## 🧠 Deep Technical Gap Analysis: What Angular Needs Without a Browser
 
 When `@angular/platform-browser` is removed, Angular's Ivy runtime still requires **seven foundational pillars** to operate at 100% parity:
@@ -31,7 +47,7 @@ When `@angular/platform-browser` is removed, Angular's Ivy runtime still require
 
 - **Why:** Angular `FormsModule` and `ReactiveFormsModule` (`FormControl`, `FormGroup`, `Validators`) do not depend on HTML `<input>` directly — they depend on **`ControlValueAccessor` (`CVA`)** directives.
 - **What Must Be Implemented:**
-  - Native input widgets in Rust/GTK4: `<ng-entry>` (`GtkEntry` / `GtkPasswordEntry`), `<ng-switch>` (`GtkSwitch`), `<ng-check>` (`GtkCheckButton`), `<ng-Scale>` (`GtkScale`), `<ng-dropdown>` (`GtkDropDown`), `<ng-text-view>` (`GtkTextView`).
+  - Native input widgets in Rust/GTK4: `<ng-entry>` (`GtkEntry` / `GtkPasswordEntry`), `<ng-switch>` (`GtkSwitch`), `<ng-check>` (`GtkCheckButton`), `<ng-slider>` (`GtkScale`), `<ng-dropdown>` (`GtkDropDown`), `<ng-text-view>` (`GtkTextView`).
   - Default `ControlValueAccessor` directives in `@ng-desktop/forms` that listen to native GTK4 signals (`notify::text`, `notify::active`, `notify::selected`) and call `onChange` / `onTouched`.
 
 ### 5. Navigation & Multi-Window Routing (`@angular/router`)
@@ -227,10 +243,58 @@ When `@angular/platform-browser` is removed, Angular's Ivy runtime still require
 
 ---
 
-### Phase 13: Official Documentation Website on GitHub Pages (Planned 🌐)
+### Phase 13 (`v0.4.0`): Full Ivy Runtime, Flexbox/Grid CSS, Scalable Events, Zero-`CUSTOM_ELEMENTS_SCHEMA` DX, Live Win32/AppKit FFI, Virtualized Lists, Popovers, `@ng-desktop/server`, & Consolidated Release Pipeline (Completed ✅)
+
+- [x] **Full Ivy Runtime Bridge & `@ng-desktop/server` (`src/runtime/host_bridge.rs`, `src/runtime/server_worker.rs`, `packages/server-native`):** Added host bridge primitives for compiled Angular Ivy execution and an in-process worker supporting Analog/Nitro-style local server routes and event handlers.
+- [x] **CSS Flexbox/Grid Translator (`packages/platform-native/src/css-style-parser.ts`, `packages/builders-native/src/style-compiler.mjs`):** Unified `formatParsedStyleExtensions` between the platform renderer and build compiler so `display: flex`, `display: grid`, `flex-direction`, `flex-wrap`, `gap`, `min-width`, `min-height`, and `border-radius` project directly onto `GtkFlowBox`, `GtkBox`, and `GtkGrid`.
+- [x] **Scalable `EventMask`, Frame Coalescing & `(closeRequest)` / `(beforeunload)` Lifecycle (`src/engine/events.rs`, `src/platforms/gtk4_callbacks.rs`):** Added bitflag `EventMask`, `coalesce_frame_events`, lazy OS controller attachment (`click`, `contextmenu`, `motion`, `focus`, `keyboard`, `wheel`, `close-request`), scroll edge/position telemetry (`scrollTop`, `scrollBottom`, `scrollEdge`), and `(closeRequest)`/`(beforeunload)` hooks with `prevent-close` and `close-window`.
+- [x] **Zero-`CUSTOM_ELEMENTS_SCHEMA` Angular DX (`packages/platform-native/src/native-directives.ts`, `native-renderer.ts`):** Added `NATIVE_UI_DIRECTIVES` and 1:1 `HTML_TO_NATIVE_TAG` mappings (`div` -> `ng-box`, `p`/`span`/`h1`..`h6` -> `ng-label`, `button` -> `ng-button`, `img` -> `ng-image`, `table` -> `ng-list`, `menu` -> `ng-popover`, `dialog` -> `ng-dialog`, etc.).
+- [x] **Real `<router-outlet />`, Native `<ng-dialog>` & Multi-Window Lifecycle (`examples/counter-app`, `@ng-desktop/desktop`):** Migrated the showcase app to real `<router-outlet />` navigation (`CatalogRouteComponent`, `DetailRouteComponent` with `withComponentInputBinding`), added native `<ng-dialog>` (`AdwDialog` / `ContentDialog` / `NSPanel`) with `modal` and `transient-for`, added `confirmDialog` host service, and serialized GTK/Adwaita initialization with `OnceLock`.
+- [x] **Live Windows Win32 & macOS AppKit FFI Drivers (`src/platforms/win32_sys.rs`, `src/platforms/appkit_sys.rs`):** Implemented dynamic `user32.dll`/`kernel32.dll` (`Win32Sys`) and Objective-C runtime (`AppKitSys`) live window/control realization with recursive `IsWindow` `HWND` cleanup, non-blocking event pumping, and headless CI guards across `windows-latest` and `macos-latest`.
+- [x] **29 Primitives, `<ng-anchor>`, Virtualized Lists & Anchored Popovers (`src/engine/widget.rs`, `packages/platform-native/src/virtual-list.component.ts`):** Added `<ng-list>`/`<ng-table>` (`WidgetKind::ListView` with `GtkListBoxRow` wrapper handling), `<ng-popover>`/`<ng-menu>` (`WidgetKind::Popover`), and standalone `<ng-virtual-list>` (`NativeVirtualListComponent` + `computeVirtualSliceRange`).
+- [x] **Generic Engine Decoupling, CI Packaging & Consolidated OIDC Release (`src/engine/default_icon.ico`, `tests/fixtures/sample-app/`, `.github/workflows/release.yml`):** Replaced showcase defaults with `resolve_primary_window()` and self-contained test fixtures, wired `build:packages` + `test:pack` into `.github/workflows/ci.yml`, and consolidated all 5 engine targets, 7 `@ng-desktop/*` packages, and `crates.io` publishing under OIDC Trusted Publishing + SLSA attestations across **195 passing tests** (`87` Vitest + `65` Rust unit + `43` Rust integration).
+
+---
+
+## 🔍 Current Architectural Gaps & Known Weak Spots (`v0.4.0` Audit)
+
+The audit of `v0.4.0` on `main` identified six concrete engineering gaps that drive the next milestones:
+
+1. **Linux-Only Production JS Engine:** `src/runtime/jsc_sys.rs` dynamically loads `libjavascriptcoregtk-6.0.so.1` only on Linux, while the cross-platform fallback in `src/runtime/quickjs_engine.rs` implements an opcode/state-machine interpreter rather than a full ES2024+ JS engine. Compiled Angular Ivy bundles cannot execute natively on Windows or macOS yet.
+2. **Incomplete Layout & Native Event Delegates on Win32 / AppKit:** `src/platforms/win32_sys.rs` and `src/platforms/appkit_sys.rs` realize real OS windows and controls, but still rely on simplified fixed-coordinate layout rather than a full constraint/Flexbox solver and lack complete event delegate wiring (`WM_COMMAND`/`WM_CLOSE`/`WM_MOUSEWHEEL`, Cocoa `NSWindowDelegate`/target-action callbacks) compared to GTK4.
+3. **In-Memory `DesktopServices` Stubs & Linux-Only System Drivers:** Interactive dialogs (`openFileDialog`/`saveFileDialog`/`confirmDialog`), clipboard, desktop notifications, and OS theme reactivity still rely on in-memory `DesktopServices` state in `src/desktop/mod.rs` rather than OS-native portals (`GtkFileDialog`/XDG Desktop Portal, Win32 Common Item Dialog/WinRT notifications, macOS `NSOpenPanel`/`NSSavePanel`/`UNUserNotificationCenter`), while `libsoup_sys.rs`, `sqlite_sys.rs`, `fs_watcher.rs`, and `system_env.rs` only wire Linux shared libraries today.
+4. **Unix-Only HMR IPC:** `src/ipc/mod.rs` and `packages/builders-native/src/hmr-client.mjs` communicate exclusively over Unix Domain Sockets (`hmr.sock`), leaving Windows without hot-reload IPC during `ng-desktop run` / `pnpm run dev`.
+5. **1D Fixed-Height Virtualization & Partial CSS Coverage:** `<ng-virtual-list>` (`packages/platform-native/src/virtual-list.component.ts`) assumes fixed row heights in a single vertical dimension; responsive 2D grids and dynamic/variable item heights are not supported yet, and the CSS projector does not yet handle interactive pseudo-classes (`:hover`, `:focus`, `:active`, `:disabled`), media queries, or full `ViewEncapsulation.Emulated` host scoping.
+6. **Staging-Only Packager, Onboarding Documentation Gaps & npm Dry-Run Bug:** `src/packager/mod.rs` stages manifests and bundles (`.deb` metadata, `AppxManifest.xml`, `.app/Contents`, Flatpak YAML) without compiling signed final installers (`.msix`/`.exe`, notarized `.dmg`, `.deb`/`AppImage`); external-app tutorials and per-package `packages/*/README.md` files for npmjs.com do not exist yet; and the offline verification fallback in `.github/workflows/release.yml` fails with `ENEEDAUTH` under `npm 11+` when `vars.NPM_TRUSTED_PUBLISHING != 'true'`.
+
+---
+
+## 🚀 Upcoming Roadmap
+
+### Phase 14 (`v0.4.x`): Documentation Refresh, External-App Tutorial & Release Polish (Next Up 🔜)
+
+- [ ] **Refresh Core Repository Documentation to `v0.4.0`:** Bring `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, and `SUPPORT.md` into alignment with the 29 primitives + `<ng-anchor>`, all 7 `@ng-desktop/*` packages (including `@ng-desktop/server`), Flexbox/Grid CSS, `(closeRequest)`, `NATIVE_UI_DIRECTIVES`, live Win32/AppKit FFI, and the 195-test suite.
+- [ ] **External Angular 22+ / Nx Tutorial (`docs/GETTING_STARTED.md`):** Publish a step-by-step integration guide for external applications covering OS maturity expectations, `ng add @ng-desktop/builders` vs manual setup, `bootstrapNativeApplication` / `provideNativePlatform`, zero-`CUSTOM_ELEMENTS_SCHEMA` templates (`NATIVE_UI_DIRECTIVES`), forms, `<router-outlet>`, `<ng-virtual-list>`, `<ng-popover>`/`<ng-dialog>`, `(closeRequest)`, `@ng-desktop/desktop`, `@ng-desktop/server`, and `ng-desktop permissions` / `package`.
+- [ ] **Per-Package npm Documentation (`packages/*/README.md`):** Add concise `README.md` pages to all 7 `@ng-desktop/*` packages so npmjs.com listings show install commands, minimal examples, and links back to `docs/GETTING_STARTED.md`.
+- [ ] **Finish OIDC Publishing Polish (`.github/workflows/release.yml`):** Replace `npm publish --dry-run` in the non-OIDC offline branch so `release.yml` validates tarballs without `ENEEDAUTH` when `NPM_TRUSTED_PUBLISHING` is unset, and complete Trusted Publisher enrollment on npmjs.org.
+
+### Phase 15 (`v0.5.0`): Cross-Platform Runtime Parity — Windows & macOS (Planned 🎯)
+
+- [ ] **Multi-OS ES2024+ JavaScript Engine:** Wire `JavaScriptCore.framework` on macOS and embed QuickJS-NG (`rquickjs`) or a V8-class engine on Windows so compiled `@angular/build:application` Ivy bundles run identically across Linux, Windows, and macOS.
+- [ ] **Shared Native Layout Engine & Full Win32 / AppKit Event Callbacks:** Introduce a cross-platform Flexbox/Grid/Box layout solver (e.g. Taffy-style Rust layout pass) feeding `Win32Sys` (`MoveWindow` / WinUI measure-arrange) and `AppKitSys` (`NSStackView` / Auto Layout constraints), plus full Win32 window/control subclass callbacks and Cocoa `NSWindowDelegate` / target-action event wiring.
+- [ ] **Native OS Service Parity Across Platforms:** Replace in-memory `DesktopServices` dialog/clipboard/notification/theme stubs with real GTK4/XDG Desktop Portals, Win32/WinRT adapters, and Cocoa/UserNotifications bridges, alongside Windows and macOS drivers for HTTP (`WinHTTP` / `NSURLSession`), SQLite (`sqlite3.dll` / `libsqlite3.dylib`), FS watching (`ReadDirectoryChangesW` / `FSEvents`), and locale/network probes.
+- [ ] **Cross-Platform HMR IPC:** Add Windows Named Pipes or framed loopback TCP transport alongside Unix Domain Sockets in `src/ipc/mod.rs` and `packages/builders-native/src/hmr-client.mjs`.
+
+### Phase 16 (`v0.6.0`): High-Density UI, CSS Completeness & Signed Installers (Planned 🚀)
+
+- [ ] **Variable-Height & 2D Virtualization:** Extend `<ng-virtual-list>` (`NativeVirtualListComponent`) with dynamic measured row heights and 2D virtualized grid support (`computeVirtualSliceRange` 2D / Fenwick-tree offset index).
+- [ ] **Complete CSS & Animation Parity:** Add `:hover`, `:focus`, `:active`, and `:disabled` pseudo-classes, CSS custom properties (`--var`), responsive breakpoints/media queries, full `ViewEncapsulation.Emulated` style scoping, and `GdkFrameClock` / `AdwTimedAnimation` / `CoreAnimation` transition hooks.
+- [ ] **Compiled & Signed Native Installers:** Upgrade `src/packager/mod.rs` and release pipelines from directory staging to reproducible native packages: `.deb` (`dpkg-deb`), `AppImage`, `Flatpak`, signed Windows `.msix`/`.exe`, and notarized macOS `.dmg`.
+
+### Phase 17: Official Interactive Documentation Website on GitHub Pages (Planned 🌐)
 
 1. **Angular 22 Interactive Docs Portal (`docs-site/` -> `dist/ng-native-docs`):**
-   - [ ] Create the `ng-native-docs` Angular 22 application (`--base-href /ng-native-engine/`) featuring an interactive 27-primitive explorer, live `.ngb` template compiler playground, architecture guides, and Pokédex tutorial.
+   - [ ] Create the `ng-native-docs` Angular 22 application (`--base-href /ng-native-engine/`) featuring an interactive 29-primitive explorer, live `.ngb` template compiler playground, architecture guides, and external-app tutorials.
 2. **Automated TypeScript & Rust API Reference (`scripts/build-api-docs.mjs`):**
    - [ ] Bundle `@ng-desktop/*` TypeScript API reference (`/api-ts/`), `cargo doc --no-deps` Rust engine documentation (`/api-rust/`), `.nojekyll`, and `404.html` SPA routing fallback into `dist/ng-native-docs/browser`.
 3. **GitHub Pages Continuous Deployment (`.github/workflows/docs-pages.yml`):**
