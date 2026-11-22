@@ -9,6 +9,7 @@ import { NativeSqliteService } from './sqlite-service';
 
 describe('@ng-desktop/desktop Nivel 1-3 services', () => {
   beforeEach(() => {
+    globalThis.__NG_NATIVE__ = undefined;
     ensureNgNativeBridge().__drainQueue();
     TestBed.configureTestingModule({
       providers: [provideNativeDesktop()],

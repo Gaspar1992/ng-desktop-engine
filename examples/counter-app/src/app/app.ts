@@ -122,6 +122,9 @@ export class App implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.unlistenPopState?.();
     this.unlistenPopState = null;
+    this.desktop.unregisterShortcut('<Control>f');
+    this.desktop.unregisterShortcut('<Control>b');
+    this.desktop.unregisterShortcut('Escape');
   }
 
   toggleFavoritesFilter(): void {
