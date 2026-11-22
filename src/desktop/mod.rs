@@ -394,7 +394,8 @@ impl DesktopServices {
 
     pub fn unregister_shortcut(&mut self, accelerator: &str) -> bool {
         let before = self.shortcuts.len();
-        self.shortcuts.retain(|item| item.accelerator != accelerator);
+        self.shortcuts
+            .retain(|item| item.accelerator != accelerator);
         self.shortcuts.len() < before
     }
 

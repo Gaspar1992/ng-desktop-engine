@@ -14,9 +14,7 @@ use crate::desktop::http_codec::{
 use crate::desktop::http_native::NativeHttpEngine;
 use crate::desktop::sqlite_sys::{NativeSqliteDatabase, SqlParam, parse_json_params};
 use crate::desktop::system_env::NativeSystemEnv;
-use crate::desktop::{
-    AppMenuItem, DesktopServices, ShortcutBinding, TrayState, WindowGeometry,
-};
+use crate::desktop::{AppMenuItem, DesktopServices, ShortcutBinding, TrayState, WindowGeometry};
 
 use super::server_worker::{NativeServerWorker, is_local_api_url};
 
@@ -859,7 +857,9 @@ impl HostBridge {
         let Ok(mut state) = self.ui_state.lock() else {
             return Self::err_json("Desktop UI mutex poisoned");
         };
-        state.shortcuts.retain(|item| item.accelerator != acc.trim());
+        state
+            .shortcuts
+            .retain(|item| item.accelerator != acc.trim());
         format!(
             r#"{{"ok":true,"shortcuts":{}}}"#,
             Self::encode_shortcuts(&state.shortcuts)
@@ -1019,14 +1019,18 @@ mod tests {
         );
         assert!(tray_res.contains(r#""visible":true"#));
         assert!(tray_res.contains(r#""tooltip":"Running""#));
-        assert!(bridge.handle_service_call(r#"{"action":"trayGetState"}"#).contains("app-tray"));
+        assert!(
+            bridge
+                .handle_service_call(r#"{"action":"trayGetState"}"#)
+                .contains("app-tray")
+        );
 
         let sc_reg = bridge.handle_service_call(
             r#"{"action":"shortcutRegister","accelerator":"<Control>f","actionId":"search"}"#,
         );
         assert!(sc_reg.contains(r#""actionId":"search""#));
-        let sc_unreg =
-            bridge.handle_service_call(r#"{"action":"shortcutUnregister","accelerator":"<Control>f"}"#);
+        let sc_unreg = bridge
+            .handle_service_call(r#"{"action":"shortcutUnregister","accelerator":"<Control>f"}"#);
         assert!(sc_unreg.contains(r#""shortcuts":[]"#));
 
         let cfg_res = bridge.handle_service_call(
