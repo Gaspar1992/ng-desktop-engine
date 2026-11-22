@@ -558,4 +558,73 @@ export default defineNativeEventHandler(() => ({ ok: true, rev: 2 }));`,
       rmSync(tmpRoot, { recursive: true, force: true });
     }
   });
+
+  it('compiles nested feature components with inline template/styles or omitted styleUrl and deduplicates CSS rules', () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), 'ng-desktop-nested-features-'));
+    try {
+      mkdirSync(join(tmpRoot, 'src/app/features/home'), { recursive: true });
+      mkdirSync(join(tmpRoot, 'src/app/shared/badge'), { recursive: true });
+      writeFileSync(
+        join(tmpRoot, 'angular.json'),
+        JSON.stringify({
+          projects: {
+            'feature-app': {
+              projectType: 'application',
+              root: '.',
+              sourceRoot: 'src',
+              architect: {
+                native: {
+                  builder: '@ng-desktop/builders:application',
+                  options: { outputPath: 'dist/feature-app' },
+                },
+              },
+            },
+          },
+        }),
+      );
+      writeFileSync(
+        join(tmpRoot, 'src/app/app.ts'),
+        `import { Component } from '@angular/core';
+@Component({ selector: 'app-root', templateUrl: './app.html', styleUrl: './app.css' })
+export class App {}`,
+      );
+      writeFileSync(
+        join(tmpRoot, 'src/app/app.html'),
+        `<ng-window id="win" title="Nested Features"><app-home /><app-inline-badge /></ng-window>`,
+      );
+      writeFileSync(
+        join(tmpRoot, 'src/app/app.css'),
+        `.card { background: #111111; padding: 8px; }`,
+      );
+      writeFileSync(
+        join(tmpRoot, 'src/app/features/home/home.ts'),
+        `import { Component } from '@angular/core';
+@Component({
+  selector: 'app-home',
+  template: '<ng-box class="card"><ng-label id="home_lbl">Home Feature</ng-label></ng-box>',
+  styles: ['.card { background: #1e293b; padding: 14px; border-radius: 12px; }'],
+})
+export class HomeComponent {}`,
+      );
+      writeFileSync(
+        join(tmpRoot, 'src/app/shared/badge/badge.ts'),
+        `import { Component } from '@angular/core';
+@Component({
+  selector: 'app-inline-badge',
+  template: '<ng-label id="badge_lbl">OK</ng-label>',
+})
+export class InlineBadgeComponent {}`,
+      );
+
+      const res = compileBundle({ cwd: tmpRoot, projectName: 'feature-app', rebuildIcons: false });
+      const ngb = readFileSync(res.bundleFile, 'utf8');
+      expect(ngb).toContain('Home Feature');
+      expect(ngb).toContain('OK');
+      const cardMatches = ngb.match(/^style card /gm) ?? [];
+      expect(cardMatches).toHaveLength(1);
+      expect(ngb).toContain('style card #1e293b none 14 0 radius=12');
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
 });

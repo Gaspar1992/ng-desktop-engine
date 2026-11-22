@@ -1,4 +1,5 @@
 .type-badge-text {
   font-weight: 700;
-  font-size: 13px;
+  font-size: 12px;
+  border-radius: 6px;
 }

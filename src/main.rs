@@ -308,6 +308,7 @@ fn boot_application(
             .map_err(|e| format!("{e:?}"))?;
         for _ in 0..100 {
             if js_runtime.resolve_primary_window().is_ok() {
+                js_runtime.tick(engine).map_err(|e| format!("{e:?}"))?;
                 break;
             }
             js_runtime.tick(engine).map_err(|e| format!("{e:?}"))?;

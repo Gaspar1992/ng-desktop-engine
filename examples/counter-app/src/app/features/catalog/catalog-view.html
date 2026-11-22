@@ -1,0 +1,55 @@
+<ng-box id="list_view" orientation="vertical" spacing="14px">
+  <ng-box id="list_header" class="hero-banner" orientation="vertical" spacing="4px">
+    <ng-label id="list_title" class="section-title"
+      >Pokédex Nacional — Explorador Angular + Servidor Nativo</ng-label
+    >
+    <ng-label id="list_subtitle" class="section-subtitle"
+      >Mostrando {{ items().length }} de {{ totalCount() }} Pokémon ({{ favoriteIds().size }}
+      favoritos)</ng-label
+    >
+  </ng-box>
+
+  <ng-flow
+    id="pokemon_grid"
+    row-spacing="14px"
+    column-spacing="14px"
+    min-children="2"
+    max-children="4"
+  >
+    @for (poke of items(); track poke.id) {
+    <ng-box
+      class="grid-card"
+      orientation="vertical"
+      spacing="8px"
+      [attr.data-testid]="'card-' + poke.id"
+    >
+      <ng-image [src]="poke.spriteUrl" width="108" height="108" />
+      <ng-label class="poke-num">{{ poke.number }}</ng-label>
+      <ng-label class="card-name">
+        {{ favoriteIds().has(poke.id) ? '★ ' + poke.displayName : poke.displayName }}
+      </ng-label>
+      <ng-button
+        class="suggested-action"
+        [attr.id]="'open_poke_' + poke.id"
+        [attr.data-testid]="'open-poke-' + poke.id"
+        (click)="selectPokemon.emit(poke.id)"
+        >Ver ficha ›</ng-button
+      >
+    </ng-box>
+    } @empty {
+    <ng-box id="empty_catalog_box" class="empty-state" orientation="vertical" spacing="8px">
+      <ng-label id="empty_catalog" class="section-subtitle"
+        >No se encontraron Pokémon para tu búsqueda.</ng-label
+      >
+    </ng-box>
+    }
+  </ng-flow>
+
+  @if (hasMore()) {
+  <ng-box id="pagination_bar" orientation="horizontal" spacing="12px" halign="center">
+    <ng-button id="btn_load_more" class="suggested-action" (click)="loadMore.emit()"
+      >Cargar más Pokémon (+12) ›</ng-button
+    >
+  </ng-box>
+  }
+</ng-box>

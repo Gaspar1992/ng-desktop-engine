@@ -50,15 +50,16 @@ impl Gtk4Sys {
     }
 
     pub fn create_scrolled_window(&self) -> GtkHandle {
-        unsafe { GtkHandle((self.gtk_scrolled_window_new)()) }
+        unsafe {
+            let scroll = (self.gtk_scrolled_window_new)();
+            (self.gtk_widget_set_hexpand)(scroll, 1);
+            (self.gtk_widget_set_vexpand)(scroll, 1);
+            GtkHandle(scroll)
+        }
     }
 
     pub fn create_box(&self, spacing: i32) -> GtkHandle {
-        unsafe {
-            let bx = (self.gtk_box_new)(GTK_ORIENTATION_VERTICAL, spacing);
-            self.set_uniform_margin(GtkHandle(bx), 20);
-            GtkHandle(bx)
-        }
+        unsafe { GtkHandle((self.gtk_box_new)(GTK_ORIENTATION_VERTICAL, spacing)) }
     }
 
     pub fn create_grid(&self) -> GtkHandle {

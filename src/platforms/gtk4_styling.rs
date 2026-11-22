@@ -32,8 +32,12 @@ pub(super) fn render_gtk_css_rule(rule: &StyleRule) -> String {
 impl GtkLinuxBackend {
     pub(super) fn rebuild_css_stylesheet(&self) -> String {
         let mut css = String::from(
-            "window { background: #1e1e1e; color: #ffffff; }\n\
-             headerbar, windowhandle { min-height: 46px; }\n",
+            "window { background: #0f172a; color: #f8fafc; }\n\
+             headerbar, windowhandle { min-height: 46px; }\n\
+             searchentry, entry, spinbutton, textview { border-radius: 8px; padding: 6px 10px; }\n\
+             button { border-radius: 8px; padding: 6px 12px; font-weight: 600; }\n\
+             levelbar block.filled { background: #38bdf8; border-radius: 4px; }\n\
+             levelbar block.empty { background: #1e293b; border-radius: 4px; }\n",
         );
         let mut ordered: Vec<_> = self.styles.iter().collect();
         ordered.sort_by_key(|(style_id, _)| style_id.0);
@@ -236,9 +240,9 @@ impl GtkLinuxBackend {
                     gtk.set_box_spacing(handle, px);
                 }
             }
-            "hexpand" => gtk.set_hexpand(handle, value == "true" || value == "1"),
-            "vexpand" => gtk.set_vexpand(handle, value == "true" || value == "1"),
-            "visible" => gtk.set_widget_visible(handle, value != "false" && value != "0"),
+            "hexpand" | "vexpand" | "visible" => {
+                Self::apply_visibility_and_expand(gtk, widget_kind, handle, key, value);
+            }
             "halign" => gtk.set_halign(handle, value),
             "valign" => gtk.set_valign(handle, value),
             "margin" => {
@@ -252,6 +256,27 @@ impl GtkLinuxBackend {
                 }
             }
             _ => Self::apply_interactive_attribute(gtk, widget_kind, handle, key, value),
+        }
+    }
+
+    fn apply_visibility_and_expand(
+        gtk: &Gtk4Sys,
+        kind: GtkWidgetType,
+        handle: GtkHandle,
+        key: &str,
+        value: &str,
+    ) {
+        match key {
+            "hexpand" => gtk.set_hexpand(handle, value == "true" || value == "1"),
+            "vexpand" => gtk.set_vexpand(handle, value == "true" || value == "1"),
+            "visible" => {
+                let is_vis = value != "false" && value != "0";
+                gtk.set_widget_visible(handle, is_vis);
+                if kind == GtkWidgetType::Spinner {
+                    gtk.set_spinner_active(handle, is_vis);
+                }
+            }
+            _ => {}
         }
     }
 

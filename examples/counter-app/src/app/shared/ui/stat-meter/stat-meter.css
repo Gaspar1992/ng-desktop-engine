@@ -1,0 +1,10 @@
+.stat-row {
+  padding: 2px;
+  gap: 4px;
+}
+
+.stats-label {
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 700;
+}

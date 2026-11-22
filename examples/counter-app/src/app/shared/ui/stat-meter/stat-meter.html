@@ -1,0 +1,4 @@
+<ng-box class="stat-row" orientation="vertical" spacing="4px">
+  <ng-label class="stats-label">{{ label() }} ({{ value() }} / 255)</ng-label>
+  <ng-level-bar [attr.value]="value()" max="255" />
+</ng-box>

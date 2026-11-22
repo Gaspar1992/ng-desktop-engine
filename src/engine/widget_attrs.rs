@@ -300,7 +300,7 @@ impl WidgetKind {
                 _ => {}
             },
             Self::Spinner { active } => {
-                if key == "active" {
+                if key == "active" || key == "visible" {
                     *active = value != "false" && value != "0";
                 }
             }

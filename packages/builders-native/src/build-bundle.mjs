@@ -210,6 +210,37 @@ function emitAppJsBundleIfPresent(outDir, projectName, allStyleRules, iconMeta) 
   return entryBundleFile;
 }
 
+function collectComponentStyleRules(compMeta, baseDir) {
+  const rules = [];
+  const stylePaths = [];
+  if (compMeta.styleUrl) {
+    stylePaths.push(compMeta.styleUrl);
+  }
+  if (Array.isArray(compMeta.styleUrls)) {
+    stylePaths.push(...compMeta.styleUrls);
+  }
+  for (const relCss of stylePaths) {
+    const absCss = resolve(baseDir, relCss);
+    if (existsSync(absCss)) {
+      rules.push(...parseStylesCss(readFileSync(absCss, 'utf8'), relCss));
+    }
+  }
+  if (Array.isArray(compMeta.styles)) {
+    for (const inlineCss of compMeta.styles) {
+      rules.push(...parseStylesCss(inlineCss, `${compMeta.selector}.inline.css`));
+    }
+  }
+  return rules;
+}
+
+function dedupeStyleRules(rules) {
+  const byClass = new Map();
+  for (const rule of rules) {
+    byClass.set(rule.className, rule);
+  }
+  return [...byClass.values()];
+}
+
 export function compileBundle({
   rebuildIcons = true,
   cwd,
@@ -231,9 +262,16 @@ export function compileBundle({
   const sourceRootAbs = resolve(rootDir, workspace.sourceRoot);
   const appDir = resolve(sourceRootAbs, 'app');
   const tsSource = readFileSync(resolve(appDir, 'app.ts'), 'utf8');
-  const { state, numericSignals, methods, component } = extractComponentMetadata(tsSource);
-  const htmlSource = readFileSync(resolve(appDir, component.templateUrl), 'utf8');
-  const cssSource = readFileSync(resolve(appDir, component.styleUrl), 'utf8');
+  const { state, numericSignals, methods, component } = extractComponentMetadata(
+    tsSource,
+    'app.ts',
+  );
+  const htmlSource =
+    typeof component.template === 'string'
+      ? component.template
+      : component.templateUrl && existsSync(resolve(appDir, component.templateUrl))
+        ? readFileSync(resolve(appDir, component.templateUrl), 'utf8')
+        : '';
   const indexHtmlPath = resolve(sourceRootAbs, 'index.html');
   const indexHtml = existsSync(indexHtmlPath) ? readFileSync(indexHtmlPath, 'utf8') : '';
 
@@ -244,29 +282,31 @@ export function compileBundle({
   const iconAbsPath = resolve(rootDir, iconRelPath);
 
   const componentRegistry = {};
-  const allStyleRules = [...parseStylesCss(cssSource)];
+  const collectedRules = [...collectComponentStyleRules(component, appDir)];
 
   const candidateFiles = collectComponentTsFiles(appDir, appDir);
   for (const file of candidateFiles) {
     const filePath = resolve(appDir, file);
     if (existsSync(filePath)) {
       const ts = readFileSync(filePath, 'utf8');
-      const meta = extractComponentMetadata(ts, file);
       if (!ts.includes('@Component')) continue;
+      const meta = extractComponentMetadata(ts, file);
+      if (!meta.component.hasComponentDecorator) continue;
       const compDir = dirname(filePath);
-      const tmplPath = resolve(compDir, meta.component.templateUrl);
-      const stylePath = resolve(compDir, meta.component.styleUrl);
-      const templateHtml = existsSync(tmplPath) ? readFileSync(tmplPath, 'utf8') : '';
-      if (existsSync(stylePath)) {
-        const rules = parseStylesCss(readFileSync(stylePath, 'utf8'));
-        allStyleRules.push(...rules);
-      }
+      const templateHtml =
+        typeof meta.component.template === 'string'
+          ? meta.component.template
+          : meta.component.templateUrl && existsSync(resolve(compDir, meta.component.templateUrl))
+            ? readFileSync(resolve(compDir, meta.component.templateUrl), 'utf8')
+            : '';
+      collectedRules.push(...collectComponentStyleRules(meta.component, compDir));
       componentRegistry[meta.component.selector] = {
         templateHtml,
-        templateUrl: meta.component.templateUrl,
+        templateUrl: meta.component.templateUrl || `${meta.component.selector}.html`,
       };
     }
   }
+  const allStyleRules = dedupeStyleRules(collectedRules);
 
   const templateAst = parseTemplateHtml(
     htmlSource,

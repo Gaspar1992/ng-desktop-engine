@@ -11,13 +11,19 @@ import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { NativeDesktopService } from '@ng-desktop/desktop';
 import { NATIVE_FORM_DIRECTIVES } from '@ng-desktop/forms';
 import { NativePlatformLocation, Router, RouterOutlet } from '@ng-desktop/router';
-import { PokedexService } from './pokedex.service';
-import { PokemonCard } from './pokemon-card';
-import { TypeBadge } from './type-badge';
+import { PokedexService } from './core/services/pokedex.service';
+import { CatalogView } from './features/catalog/catalog-view';
+import { PokemonDetailView } from './features/detail/pokemon-detail-view';
 
 @Component({
   selector: 'app-root',
-  imports: [ReactiveFormsModule, NATIVE_FORM_DIRECTIVES, RouterOutlet, PokemonCard, TypeBadge],
+  imports: [
+    ReactiveFormsModule,
+    NATIVE_FORM_DIRECTIVES,
+    RouterOutlet,
+    CatalogView,
+    PokemonDetailView,
+  ],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   templateUrl: './app.html',
   styleUrl: './app.css',
