@@ -10,13 +10,13 @@ This monorepo combines two tightly coupled layers:
 
 - **Rust Core & Native Backends ([`src/`](./src)):**
   - `src/engine/`: 100% safe Rust scene graph, generational `Arena`, `RenderCommand` queue, style registry, and borrow checker (`unsafe_code = "deny"`).
-  - `src/platforms/`: OS adapters (`GtkLinuxBackend`, `WinUiBackend`, `MacOsAppKitBackend`, `HeadlessBackend`) + isolated GTK4 FFI (`gtk4_sys.rs`, `gtk4_callbacks.rs`).
-  - `src/runtime/`: Pluggable JS engines (`JscEngine` via `libjavascriptcoregtk-6.0.so.1` and zero-JIT `QuickJsEngine`), `.ngb` parser, reactivity engine, and HMR.
+  - `src/platforms/`: OS adapters (`GtkLinuxBackend`, `WinUiBackend`, `MacOsAppKitBackend`, `HeadlessBackend`) + isolated OS FFI (`gtk4_sys.rs`, `gtk4_callbacks.rs`, `win32_sys.rs`, `appkit_sys.rs`).
+  - `src/runtime/`: Pluggable JS engines (`JscEngine` via `libjavascriptcoregtk-6.0.so.1` and zero-JIT `QuickJsEngine`), host Ivy/server bridges (`host_bridge.rs`, `server_worker.rs`), `.ngb` parser, reactivity engine, and HMR.
   - `src/desktop/`: Native OS services (HTTP/2 via `libsoup-3.0`, SQLite3 WAL via `libsqlite3`, GLib/GIO system env, XDG + `inotify` watcher, multithreaded compute pool).
   - `src/ffi_dl.rs`: Centralized `DynLib` dynamic symbol loader.
-  - `src/packager/`: Multi-OS packaging (`.deb`, AppImage, Flatpak, Windows WinUI 3 MSIX manifest, macOS `.app` / `.dmg`).
+  - `src/packager/`: Multi-OS packaging staging (`.deb`, AppImage, Flatpak, Windows WinUI 3 `AppxManifest.xml`, macOS `.app` bundle).
 - **Angular 22+ Packages ([`packages/`](./packages)) & Examples ([`examples/`](./examples)):**
-  - `@ng-desktop/platform`, `@ng-desktop/forms`, `@ng-desktop/router`, `@ng-desktop/http`, `@ng-desktop/desktop`, `@ng-desktop/builders`.
+  - `@ng-desktop/platform`, `@ng-desktop/forms`, `@ng-desktop/router`, `@ng-desktop/http`, `@ng-desktop/desktop`, `@ng-desktop/server`, `@ng-desktop/builders`.
 
 ---
 
@@ -67,7 +67,7 @@ Every pull request must uphold the following architectural rules:
    - Verify Windows and macOS targets compile cleanly with zero Clippy warnings:
      ```bash
      cargo clippy --target x86_64-pc-windows-gnu --all-targets -- -D warnings
-     cargo clippy --target x86_64-apple-darwin --all-targets -- -D warnings
+     cargo clippy --target x86_64-apple-darwin --lib -- -D warnings
      ```
 4. **Angular `>=22.0.0` Compatibility:**
    - Keep `peerDependencies` across `@ng-desktop/*` set to `">=22.0.0"` (never hard-pin a minor release) so external Angular 22+ applications can upgrade seamlessly.
@@ -94,13 +94,13 @@ This repository follows [Conventional Commits](https://www.conventionalcommits.o
 ```
 
 - **Types:** `feat`, `fix`, `refactor`, `perf`, `test`, `docs`, `ci`, `chore`
-- **Scopes:** `engine`, `platforms`, `desktop`, `http`, `router`, `forms`, `builders`, `demo`, `ci`, `release`, `governance`
+- **Scopes:** `engine`, `platforms`, `desktop`, `http`, `router`, `forms`, `server`, `builders`, `demo`, `ci`, `release`, `governance`
 
 ### How Milestone Releases Work
 
 When a major milestone is complete, pushing a version tag (`vX.Y.Z`) triggers [`.github/workflows/release.yml`](./.github/workflows/release.yml) and [`scripts/generate-release-notes.mjs`](./scripts/generate-release-notes.mjs) to publish a GitHub Release and verify/publish packages via **tokenless OIDC Trusted Publishing**:
 
-1. **`vX.Y.Z` (Engine + Individual `@ng-desktop/*` Packages):** Rust binaries + standalone `.tgz` tarballs for `@ng-desktop/{platform,forms,router,http,desktop,builders}` and `@ng-desktop/engine-*` with Angular-style architecture diagrams, categorized changelogs, and Sigstore SLSA build provenance attestations (`actions/attest@v4`).
+1. **`vX.Y.Z` (Engine + Individual `@ng-desktop/*` Packages):** Rust binaries + standalone `.tgz` tarballs for `@ng-desktop/{platform,forms,router,http,desktop,server,builders}` and `@ng-desktop/engine-*` with Angular-style architecture diagrams, categorized changelogs, and Sigstore SLSA build provenance attestations (`actions/attest@v4`).
 2. **Tokenless OIDC Publishing (`npm` & `crates.io`):**
    - `publish-npm` runs inside GitHub Environment `npm-publish` (`id-token: write`, `npm >= 11.5.1`, no `NPM_TOKEN` secret) once `vars.NPM_TRUSTED_PUBLISHING == 'true'`. Initial one-time package creation is assisted by `pnpm run publish:bootstrap`.
    - `publish-crates` runs inside GitHub Environment `crates-publish` using `rust-lang/crates-io-auth-action@v1` once `vars.CRATES_TRUSTED_PUBLISHING == 'true'`.

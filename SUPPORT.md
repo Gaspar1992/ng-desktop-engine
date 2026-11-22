@@ -4,6 +4,8 @@ Welcome! Before opening an issue, please check the resources below so your quest
 
 ## 📚 Documentation & Guides
 
+- **External App Integration Tutorial:** [`docs/GETTING_STARTED.md`](./docs/GETTING_STARTED.md)
+- **Ecosystem Compatibility (`NgRx`, `Aria`, `CDK`, `Material`, `Nx`):** [`docs/ECOSYSTEM_COMPATIBILITY.md`](./docs/ECOSYSTEM_COMPATIBILITY.md)
 - **Overview, Architecture & Quick Start:** [`README.md`](./README.md)
 - **Technical Roadmap & Design History:** [`ROADMAP.md`](./ROADMAP.md)
 - **Version History & Release Notes:** [`CHANGELOG.md`](./CHANGELOG.md)
