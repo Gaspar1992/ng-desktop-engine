@@ -16,30 +16,62 @@ permissions:
 
 jobs:
   build-os-bundles:
-    name: Build ${{ matrix.platform }} (Engine + @ng-desktop/* Packages)
+    name: Build ${{ matrix.target }} (Engine + @ng-desktop/* Packages)
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-24.04
+            target: linux-x64
             platform: linux
+            dir_name: engine-linux-x64-gnu
+            archive: ng-desktop-engine-linux-x86_64.tar.gz
+            pack_libs: true
+          - os: ubuntu-24.04-arm
+            target: linux-arm64
+            platform: linux
+            dir_name: engine-linux-arm64-gnu
+            archive: ng-desktop-engine-linux-arm64.tar.gz
+            pack_libs: false
           - os: windows-latest
+            target: win32-x64
             platform: windows
+            dir_name: engine-win32-x64-msvc
+            archive: ng-desktop-engine-windows-x86_64.zip
+            pack_libs: false
           - os: macos-latest
+            target: darwin-arm64
             platform: macos
+            dir_name: engine-darwin-arm64
+            archive: ng-desktop-engine-macos-arm64.tar.gz
+            pack_libs: false
+          - os: macos-15-intel
+            target: darwin-x64
+            platform: macos
+            dir_name: engine-darwin-x64
+            archive: ng-desktop-engine-macos-x86_64.tar.gz
+            pack_libs: false
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
       - name: Setup pnpm
+        if: matrix.pack_libs
         uses: pnpm/action-setup@v6
 
-      - name: Setup Node.js
+      - name: Setup Node.js (with pnpm cache for libraries)
+        if: matrix.pack_libs
         uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: 'pnpm'
+
+      - name: Setup Node.js (engine-only staging)
+        if: ${{ !matrix.pack_libs }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
 
       - name: Resolve release version dynamically
         shell: bash
@@ -56,9 +88,10 @@ jobs:
           echo "APP_VERSION=${VER}" >> "$GITHUB_ENV"
 
       - name: Install dependencies & build APF packages
+        if: matrix.pack_libs
         run: |
           pnpm install --frozen-lockfile
-          pnpm run build:packages
+          pnpm run build:packages -- --version="${APP_VERSION}"
 
       - name: Install Linux native libraries (Ubuntu)
         if: matrix.platform == 'linux'
@@ -83,17 +116,19 @@ jobs:
           VER="${APP_VERSION}"
           mkdir -p release-out
 
-          # 1. Standalone Linux Engine archive: ng-desktop-engine-linux-x86_64.tar.gz
-          tar -czf "release-out/ng-desktop-engine-linux-x86_64.tar.gz" -C target/release ng-native-engine
+          # 1. Standalone Linux Engine archive
+          tar -czf "release-out/${{ matrix.archive }}" -C target/release ng-native-engine
 
-          # 2. Stage & pack platform npm binary package (@ng-desktop/engine-linux-x64-gnu)
-          node scripts/build-engine-packages.mjs --target=linux-x64 --binary=target/release/ng-native-engine --version="${VER}"
-          (cd "dist/engine-packages/engine-linux-x64-gnu" && npm pack --pack-destination "../../../release-out")
+          # 2. Stage & pack platform npm binary package (@ng-desktop/engine-*)
+          node scripts/build-engine-packages.mjs --target="${{ matrix.target }}" --binary=target/release/ng-native-engine --version="${VER}"
+          (cd "dist/engine-packages/${{ matrix.dir_name }}" && npm pack --pack-destination "../../../release-out")
 
-          # 3. Pack individual compiled APF Angular 22+ libraries (@ng-desktop/*) as .tgz tarballs
-          for pkg in platform-native forms-native router-native http-native desktop-native builders-native; do
-            (cd "dist/packages/${pkg}" && npm pack --pack-destination "../../../release-out")
-          done
+          # 3. Pack all 7 compiled APF/ESM Angular 22+ libraries (@ng-desktop/*) on the primary Linux leg
+          if [ "${{ matrix.pack_libs }}" = "true" ]; then
+            for pkg in platform-native forms-native router-native http-native desktop-native server-native builders-native; do
+              (cd "dist/packages/${pkg}" && npm pack --pack-destination "../../../release-out")
+            done
+          fi
           ls -lh release-out/
 
       - name: Package Windows (Engine .zip + Engine npm package)
@@ -104,13 +139,13 @@ jobs:
           New-Item -ItemType Directory -Force -Path "release-out" | Out-Null
 
           # 1. Stage & pack platform npm binary package (@ng-desktop/engine-win32-x64-msvc)
-          node scripts/build-engine-packages.mjs --target=win32-x64 --binary=target/release/ng-native-engine.exe --version="${VER}"
-          Push-Location "dist/engine-packages/engine-win32-x64-msvc"
+          node scripts/build-engine-packages.mjs --target="${{ matrix.target }}" --binary=target/release/ng-native-engine.exe --version="$VER"
+          Push-Location "dist/engine-packages/${{ matrix.dir_name }}"
           npm pack --pack-destination "../../../release-out"
           Pop-Location
 
-          # 2. Standalone Windows Engine archive: ng-desktop-engine-windows-x86_64.zip
-          Compress-Archive -Path "target/release/ng-native-engine.exe" -DestinationPath "release-out/ng-desktop-engine-windows-x86_64.zip" -Force
+          # 2. Standalone Windows Engine archive
+          Compress-Archive -Path "target/release/ng-native-engine.exe" -DestinationPath "release-out/${{ matrix.archive }}" -Force
           Get-ChildItem release-out
 
       - name: Package macOS (Engine tarball + Engine npm package)
@@ -119,18 +154,18 @@ jobs:
           VER="${APP_VERSION}"
           mkdir -p release-out
 
-          # 1. Stage & pack platform npm binary package (@ng-desktop/engine-darwin-arm64)
-          node scripts/build-engine-packages.mjs --target=darwin-arm64 --binary=target/release/ng-native-engine --version="${VER}"
-          (cd "dist/engine-packages/engine-darwin-arm64" && npm pack --pack-destination "../../../release-out")
+          # 1. Stage & pack platform npm binary package (@ng-desktop/engine-darwin-*)
+          node scripts/build-engine-packages.mjs --target="${{ matrix.target }}" --binary=target/release/ng-native-engine --version="${VER}"
+          (cd "dist/engine-packages/${{ matrix.dir_name }}" && npm pack --pack-destination "../../../release-out")
 
-          # 2. Standalone macOS Engine archive: ng-desktop-engine-macos-arm64.tar.gz
-          tar -czf "release-out/ng-desktop-engine-macos-arm64.tar.gz" -C target/release ng-native-engine
+          # 2. Standalone macOS Engine archive
+          tar -czf "release-out/${{ matrix.archive }}" -C target/release ng-native-engine
           ls -lh release-out/
 
       - name: Upload OS release artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: release-${{ matrix.platform }}
+          name: release-${{ matrix.target }}
           path: release-out/*
           if-no-files-found: error
 
@@ -198,13 +233,18 @@ jobs:
             artifacts/ng-desktop-router-${{ steps.meta.outputs.version }}.tgz
             artifacts/ng-desktop-http-${{ steps.meta.outputs.version }}.tgz
             artifacts/ng-desktop-desktop-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-desktop-server-${{ steps.meta.outputs.version }}.tgz
             artifacts/ng-desktop-builders-${{ steps.meta.outputs.version }}.tgz
             artifacts/ng-desktop-engine-linux-x64-gnu-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-desktop-engine-linux-arm64-gnu-${{ steps.meta.outputs.version }}.tgz
             artifacts/ng-desktop-engine-win32-x64-msvc-${{ steps.meta.outputs.version }}.tgz
             artifacts/ng-desktop-engine-darwin-arm64-${{ steps.meta.outputs.version }}.tgz
+            artifacts/ng-desktop-engine-darwin-x64-${{ steps.meta.outputs.version }}.tgz
             artifacts/ng-desktop-engine-linux-x86_64.tar.gz
+            artifacts/ng-desktop-engine-linux-arm64.tar.gz
             artifacts/ng-desktop-engine-windows-x86_64.zip
             artifacts/ng-desktop-engine-macos-arm64.tar.gz
+            artifacts/ng-desktop-engine-macos-x86_64.tar.gz
             artifacts/SHA256SUMS-engine.txt
 
   publish-npm:
@@ -249,13 +289,25 @@ jobs:
             artifacts/ng-desktop-router-*.tgz
             artifacts/ng-desktop-http-*.tgz
             artifacts/ng-desktop-desktop-*.tgz
+            artifacts/ng-desktop-server-*.tgz
             artifacts/ng-desktop-builders-*.tgz
           )
-          test "${#ENGINE_TARBALLS[@]}" -gt 0
-          test "${#LIB_TARBALLS[@]}" -eq 6
+          test "${#ENGINE_TARBALLS[@]}" -eq 5
+          test "${#LIB_TARBALLS[@]}" -eq 7
           if [ "${NPM_TRUSTED_PUBLISHING:-false}" = "true" ]; then
             for tgz in "${ENGINE_TARBALLS[@]}" "${LIB_TARBALLS[@]}"; do
-              npm publish "./${tgz}" --provenance --access public
+              PKG_INFO="$(tar -xOf "./${tgz}" package/package.json | node -e "
+                const fs = require('fs');
+                const p = JSON.parse(fs.readFileSync(0, 'utf8'));
+                process.stdout.write(p.name + '\t' + p.version);
+              ")"
+              PKG_NAME="${PKG_INFO%%$'\t'*}"
+              PKG_VER="${PKG_INFO#*$'\t'}"
+              if npm view "${PKG_NAME}@${PKG_VER}" version >/dev/null 2>&1; then
+                echo "[Publish Skip] ${PKG_NAME}@${PKG_VER} already published on npm."
+              else
+                npm publish "./${tgz}" --provenance --access public
+              fi
             done
           else
             echo "vars.NPM_TRUSTED_PUBLISHING != 'true'; verifying tarball manifests offline (enable OIDC in npmjs.com + 'gh variable set NPM_TRUSTED_PUBLISHING --body true')."
