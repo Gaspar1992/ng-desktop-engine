@@ -122,13 +122,16 @@ Following the official Angular monorepo publishing model, each package is versio
 | **\`@ng-desktop/router\`** | \`ng-desktop-router-${version}.tgz\` | DOM-free \`NativePlatformLocation\` navigation stack, \`NativeTitleStrategy\` (\`TitleStrategy\` updating OS window titlebars automatically on route navigation), and \`NativeStackRouteReuseStrategy\` (\`RouteReuseStrategy\` keeping master-detail views alive in \`<ng-stack>\`). |
 | **\`@ng-desktop/http\`** | \`ng-desktop-http-${version}.tgz\` | OS-native \`NativeHttpBackend\` (\`HttpBackend\`) driving \`libsoup-3.0\` (Linux HTTP/2), \`URLSession\` (macOS), and \`WinHTTP\` (Windows), plus \`provideHttpClient\` features (\`withFetch\`, \`withInterceptors\`, \`withXsrfConfiguration\`, \`withHttpCaching\`, \`withParallelBatching\`) and reactive \`createNativeHttpResource()\`. |
 | **\`@ng-desktop/desktop\`** | \`ng-desktop-desktop-${version}.tgz\` | \`NativeDesktopService\` (dark/light theme Signal, clipboard, notifications, file dialogs), \`NativeSqliteService\` (\`libsqlite3\` FFI with reactive \`liveQuery<T>()\` Signals), \`NativeNetworkService\` (\`GNetworkMonitor\` online/metered Signals), \`NativeComputeService\` (multithreaded Rust fuzzy search & 64-bit FNV-1a hashing), \`NativeFileSystemService\` (XDG dirs + atomic JSON I/O + \`inotify\` reactive file watcher), and \`NativeDropTargetDirective\` (\`[ngNativeDropTarget]\`). |
+| **\`@ng-desktop/server\`** | \`ng-desktop-server-${version}.tgz\` | Isolated AnalogJS-style local backend router and host context (\`defineServerEventHandler\`, SQLite, XDG filesystem, multithreaded compute, and OS-native HTTP client) running inside dedicated runtime workers. |
 | **\`@ng-desktop/builders\`** | \`ng-desktop-builders-${version}.tgz\` | Angular 22+ CLI & Nx builder, \`oxc-parser\` AST metadata & permission analyzer (\`permissions.manifest.json\`), \`@angular/compiler\` template compiler, \`ng-desktop\` CLI, \`ng add\` schematics, prebuilt \`@ng-desktop/engine-*\` resolution, and Unix Socket HMR IPC. |
 
 ### Prebuilt Host Engine Binary Packages (\`optionalDependencies\`)
 
 - \`ng-desktop-engine-linux-x64-gnu-${version}.tgz\`
+- \`ng-desktop-engine-linux-arm64-gnu-${version}.tgz\`
 - \`ng-desktop-engine-win32-x64-msvc-${version}.tgz\`
 - \`ng-desktop-engine-darwin-arm64-${version}.tgz\`
+- \`ng-desktop-engine-darwin-x64-${version}.tgz\`
 
 ---
 
@@ -136,11 +139,13 @@ Following the official Angular monorepo publishing model, each package is versio
 
 - **Centralized Dynamic FFI Loader (\`src/ffi_dl.rs\`):** Single audited \`DynLib\` abstraction (\`dlopen\` / \`dlsym\`) shared across \`gtk4_sys.rs\`, \`jsc_sys.rs\`, \`libsoup_sys.rs\`, \`sqlite_sys.rs\`, \`system_env.rs\`, and \`fs_watcher.rs\`.
 - **ThinLTO Production Profile:** Compiled with \`rustc 1.100.0\` (\`opt-level = 3\`, \`lto = "thin"\`, \`codegen-units = 1\`, \`panic = "abort"\`, \`strip = "symbols"\`), producing a **< 1 MB** standalone native runtime binary.
-- **27 Cross-Platform Native Widget Primitives:** 100% parity across \`GtkLinuxBackend\` (GTK4/Libadwaita), \`WinUiBackend\` (Windows 11 WinUI 3), \`MacOsAppKitBackend\` (macOS AppKit/Cocoa), and \`HeadlessBackend\`.
+- **29 Cross-Platform Native Widget Primitives:** 100% parity across \`GtkLinuxBackend\` (GTK4/Libadwaita), \`WinUiBackend\` (Windows 11 WinUI 3), \`MacOsAppKitBackend\` (macOS AppKit/Cocoa), and \`HeadlessBackend\`.
 - **Engine Binary Archives:**
   - \`ng-desktop-engine-linux-x86_64.tar.gz\`
+  - \`ng-desktop-engine-linux-arm64.tar.gz\`
   - \`ng-desktop-engine-windows-x86_64.zip\`
   - \`ng-desktop-engine-macos-arm64.tar.gz\`
+  - \`ng-desktop-engine-macos-x86_64.tar.gz\`
 
 ---
 
