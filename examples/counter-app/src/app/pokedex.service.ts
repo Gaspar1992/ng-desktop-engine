@@ -105,7 +105,14 @@ export class PokedexService {
   }
 
   toggleFavoritesOnly(): Promise<void> {
-    this.favoritesOnly.update((prev) => !prev);
+    return this.setFavoritesOnly(!this.favoritesOnly());
+  }
+
+  setFavoritesOnly(onlyFavorites: boolean): Promise<void> {
+    if (this.favoritesOnly() === onlyFavorites && this.catalogSeq > 0) {
+      return Promise.resolve();
+    }
+    this.favoritesOnly.set(onlyFavorites);
     return this.loadCatalogPage(true);
   }
 

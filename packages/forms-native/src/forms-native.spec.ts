@@ -205,4 +205,35 @@ describe('@ng-desktop/forms — ControlValueAccessor Directives', () => {
 
     fixture.destroy();
   });
+
+  it('binds gtk-* and adw-* form selectors (<gtk-search-entry>, <gtk-text-view>, <gtk-spin-button>, <adw-combo-row>)', () => {
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+
+    const searchNode = renderer.createElement('gtk-search-entry') as NativeElementNode;
+    const searchAccessor = createDirective(NativeTextValueAccessor, searchNode);
+    const searchCtrl = new FormControl('pikachu');
+    searchAccessor.writeValue(searchCtrl.value);
+    searchAccessor.registerOnChange((val) => searchCtrl.setValue(val, { emitEvent: false }));
+    bridge.__dispatchEvent(searchNode.id, 'input', { value: 'raichu' });
+    expect(searchCtrl.value).toBe('raichu');
+
+    const comboNode = renderer.createElement('adw-combo-row') as NativeElementNode;
+    const comboAccessor = createDirective(NativeNumberValueAccessor, comboNode);
+    const comboCtrl = new FormControl(1);
+    comboAccessor.writeValue(comboCtrl.value);
+    comboAccessor.registerOnChange((val) => comboCtrl.setValue(val, { emitEvent: false }));
+    expect(bridge.__drainQueue()).toContain(`attr ${comboNode.id} selected 1`);
+    bridge.__dispatchEvent(comboNode.id, 'value-changed', { value: 3 });
+    expect(comboCtrl.value).toBe(3);
+
+    const spinNode = renderer.createElement('gtk-spin-button') as NativeElementNode;
+    const spinAccessor = createDirective(NativeNumberValueAccessor, spinNode);
+    spinAccessor.writeValue(25);
+    expect(bridge.__drainQueue()).toContain(`attr ${spinNode.id} value 25`);
+
+    searchAccessor.ngOnDestroy();
+    comboAccessor.ngOnDestroy();
+    spinAccessor.ngOnDestroy();
+  });
 });

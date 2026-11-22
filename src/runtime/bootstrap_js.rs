@@ -6,6 +6,12 @@
 pub const NG_NATIVE_BOOTSTRAP_JS: &str = r#"
 globalThis.__NG_NATIVE__ = (() => {
   let queue = [];
+  let batchDepth = 0;
+  let batchBuffer = [];
+  const emit = (cmd) => {
+    if (batchDepth > 0) batchBuffer.push(cmd);
+    else queue.push(cmd);
+  };
   let logs = [];
   const resolveAppId = () => {
     const raw = globalThis.__NG_NATIVE_APP_ID__;
@@ -16,7 +22,7 @@ globalThis.__NG_NATIVE__ = (() => {
   let rafQueue = new Map();
   let nextRafId = 1;
   const startTime = Date.now();
-  let listeners = new Map();
+  const listenersByNode = new Map();
   let nextListenerId = 1;
   let hostCallbacks = new Map();
   let nextCallbackId = 1;
@@ -134,82 +140,130 @@ globalThis.__NG_NATIVE__ = (() => {
     registerStyle(cls, bg = 'none', fg = 'none', pad = 0, space = 0, extras = '') {
       const extraTrimmed = String(extras ?? '').trim();
       if (extraTrimmed) {
-        queue.push(`style ${cls} ${bg} ${fg} ${pad} ${space} ${extraTrimmed}`);
+        emit(`style ${cls} ${bg} ${fg} ${pad} ${space} ${extraTrimmed}`);
       } else {
-        queue.push(`style ${cls} ${bg} ${fg} ${pad} ${space}`);
+        emit(`style ${cls} ${bg} ${fg} ${pad} ${space}`);
       }
     },
     declareSignal(name, initial = 0) {
-      queue.push(`signal ${name} ${initial}`);
+      emit(`signal ${name} ${initial}`);
     },
     createElement(id, tag) {
-      queue.push(`create ${id} ${tag}`);
+      emit(`create ${id} ${tag}`);
       return id;
     },
     createComment(id, text = 'anchor') {
-      queue.push(`comment ${id} ${text}`);
+      emit(`comment ${id} ${text}`);
       return id;
     },
     setText(id, text) {
-      queue.push(`text ${id} ${escapeNewlines(text)}`);
+      emit(`text ${id} ${escapeNewlines(text)}`);
     },
     setAttribute(id, key, value) {
-      queue.push(`attr ${id} ${key} ${escapeNewlines(value)}`);
+      emit(`attr ${id} ${key} ${escapeNewlines(value)}`);
     },
     setWindowIcon(id, appId, icoPath) {
-      queue.push(`icon ${id} ${appId} ${icoPath}`);
+      emit(`icon ${id} ${appId} ${icoPath}`);
     },
     appendChild(parent, child) {
-      queue.push(`append ${parent} ${child}`);
+      emit(`append ${parent} ${child}`);
     },
     insertBefore(parent, child, refChild) {
       if (refChild) {
-        queue.push(`insert_before ${parent} ${child} ${refChild}`);
+        emit(`insert_before ${parent} ${child} ${refChild}`);
       } else {
-        queue.push(`insert_before ${parent} ${child}`);
+        emit(`insert_before ${parent} ${child}`);
       }
     },
     removeChild(parent, child) {
-      queue.push(`remove_child ${parent} ${child}`);
+      emit(`remove_child ${parent} ${child}`);
     },
     addClass(id, className) {
-      queue.push(`add_class ${id} ${className}`);
+      emit(`add_class ${id} ${className}`);
     },
     removeClass(id, className) {
-      queue.push(`remove_class ${id} ${className}`);
+      emit(`remove_class ${id} ${className}`);
     },
     bindText(id, signalName, template) {
-      queue.push(`bind_text ${id} ${signalName} ${template}`);
+      emit(`bind_text ${id} ${signalName} ${template}`);
     },
     bindAttr(id, attrKey, signalName, template = '{}') {
-      queue.push(`bind_attr ${id} ${attrKey} ${signalName} ${template}`);
+      emit(`bind_attr ${id} ${attrKey} ${signalName} ${template}`);
     },
     bindVisible(id, signalName, op = '!=', rhs = 0) {
-      queue.push(`bind_visible ${id} ${signalName} ${op} ${rhs}`);
+      emit(`bind_visible ${id} ${signalName} ${op} ${rhs}`);
     },
     onAdd(id, eventName, signalName, delta = 1) {
-      queue.push(`on_add ${id} ${eventName} ${signalName} ${delta}`);
+      emit(`on_add ${id} ${eventName} ${signalName} ${delta}`);
     },
     onSet(id, eventName, signalName, value = 0) {
-      queue.push(`on_set ${id} ${eventName} ${signalName} ${value}`);
+      emit(`on_set ${id} ${eventName} ${signalName} ${value}`);
     },
     listen(id, eventName, callback) {
       const lid = nextListenerId++;
-      listeners.set(lid, { id, eventName, callback });
-      return () => listeners.delete(lid);
+      let byEvent = listenersByNode.get(id);
+      if (!byEvent) {
+        byEvent = new Map();
+        listenersByNode.set(id, byEvent);
+      }
+      let callbacks = byEvent.get(eventName);
+      if (!callbacks) {
+        callbacks = new Map();
+        byEvent.set(eventName, callbacks);
+      }
+      callbacks.set(lid, callback);
+      return () => {
+        callbacks.delete(lid);
+        if (callbacks.size === 0) {
+          byEvent.delete(eventName);
+          if (byEvent.size === 0) {
+            listenersByNode.delete(id);
+          }
+        }
+      };
     },
     __dispatchEvent(id, eventName, eventPayload = {}) {
-      for (const entry of listeners.values()) {
-        if (entry.id === id && entry.eventName === eventName) {
-          entry.callback(eventPayload);
-        }
+      const callbacks = listenersByNode.get(id)?.get(eventName);
+      if (!callbacks || callbacks.size === 0) return;
+      for (const callback of Array.from(callbacks.values())) {
+        callback(eventPayload);
       }
+    },
+    __dispatchAndDrain(id, eventName, eventPayload = {}) {
+      bridge.__dispatchEvent(id, eventName, eventPayload);
+      bridge.__flushTimers();
+      return bridge.__drainQueue();
     },
     __resolveHostCallback(id, payload) {
       const pending = hostCallbacks.get(id);
       if (!pending) return;
       hostCallbacks.delete(id);
       pending.resolve(payload);
+    },
+    __tickAndDrain(nowMs = Date.now(), completions = []) {
+      if (Array.isArray(completions)) {
+        for (const pair of completions) {
+          if (Array.isArray(pair) && pair.length >= 2) {
+            bridge.__resolveHostCallback(pair[0], pair[1]);
+          }
+        }
+      }
+      if (timers.size > 0 || rafQueue.size > 0) {
+        bridge.__tickTimers(nowMs);
+      }
+      return bridge.__drainQueue();
+    },
+    beginBatch() {
+      batchDepth += 1;
+    },
+    endBatch() {
+      if (batchDepth > 0) {
+        batchDepth -= 1;
+      }
+      if (batchDepth === 0 && batchBuffer.length > 0) {
+        queue.push(...batchBuffer);
+        batchBuffer.length = 0;
+      }
     },
     __tickTimers(nowMs = Date.now()) {
       const now = typeof nowMs === 'number' && Number.isFinite(nowMs) ? nowMs : Date.now();
@@ -252,24 +306,25 @@ globalThis.__NG_NATIVE__ = (() => {
       }
     },
     destroyNode(id) {
-      queue.push(`destroy ${id}`);
+      listenersByNode.delete(id);
+      emit(`destroy ${id}`);
     },
     getSystemTheme() {
       return systemTheme;
     },
     setSystemTheme(theme) {
       systemTheme = theme === 'light' ? 'light' : 'dark';
-      queue.push(`theme ${systemTheme}`);
+      emit(`theme ${systemTheme}`);
     },
     getClipboard() {
       return clipboardText;
     },
     setClipboard(text) {
       clipboardText = String(text ?? '');
-      queue.push(`clipboard ${clipboardText}`);
+      emit(`clipboard ${clipboardText}`);
     },
     sendNotification(title, body, icon = resolveAppId()) {
-      queue.push(`comment notify_${nextListenerId++} [${icon}] ${title}: ${body}`);
+      emit(`comment notify_${nextListenerId++} [${icon}] ${title}: ${body}`);
     },
     openFileDialog(_title = 'Open File', defaultPath = '/home/user/document.txt') {
       return defaultPath;
@@ -695,6 +750,7 @@ globalThis.__NG_NATIVE__ = (() => {
       return out;
     },
     __drainQueue() {
+      if (queue.length === 0) return '';
       const out = queue.join('\n');
       queue = [];
       return out;

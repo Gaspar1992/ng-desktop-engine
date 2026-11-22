@@ -142,8 +142,10 @@ export interface NgNativeBridge {
   fsWatchFile(path: string): boolean;
   fsPollChangedFiles(): string[];
   __dispatchEvent(id: string, eventName: string, eventPayload?: unknown): void;
+  __dispatchAndDrain?(id: string, eventName: string, eventPayload?: unknown): string;
   __flushTimers(): void;
   __tickTimers?(nowMs?: number): void;
+  __tickAndDrain?(nowMs?: number, completions?: Array<[number, unknown]>): string;
   __resolveHostCallback?(id: number, payload: unknown): void;
   beginBatch?(): void;
   endBatch?(): void;
@@ -207,10 +209,7 @@ export function ensureNgNativeBridge(): NgNativeBridge {
       cacheEnabled: true,
       timeoutMs: 15_000,
     };
-    const listeners = new Map<
-      number,
-      { id: string; eventName: string; callback: (e?: unknown) => void }
-    >();
+    const listenersByNode = new Map<string, Map<string, Map<number, (e?: unknown) => void>>>();
     let nextListenerId = 1;
 
     const escapeNewlines = (value: string): string => value.replace(/\r?\n/g, '\u001e');
@@ -280,12 +279,29 @@ export function ensureNgNativeBridge(): NgNativeBridge {
       },
       listen(id, eventName, callback) {
         const lid = nextListenerId++;
-        listeners.set(lid, { id, eventName, callback });
+        let byEvent = listenersByNode.get(id);
+        if (!byEvent) {
+          byEvent = new Map();
+          listenersByNode.set(id, byEvent);
+        }
+        let callbacks = byEvent.get(eventName);
+        if (!callbacks) {
+          callbacks = new Map();
+          byEvent.set(eventName, callbacks);
+        }
+        callbacks.set(lid, callback);
         return () => {
-          listeners.delete(lid);
+          callbacks.delete(lid);
+          if (callbacks.size === 0) {
+            byEvent.delete(eventName);
+            if (byEvent.size === 0) {
+              listenersByNode.delete(id);
+            }
+          }
         };
       },
       destroyNode(id) {
+        listenersByNode.delete(id);
         emit(`destroy ${id}`);
       },
       getSystemTheme() {
@@ -413,17 +429,33 @@ export function ensureNgNativeBridge(): NgNativeBridge {
         return fsStore.pollChangedFiles();
       },
       __dispatchEvent(id, eventName, eventPayload = {}) {
-        for (const entry of listeners.values()) {
-          if (entry.id === id && entry.eventName === eventName) {
-            entry.callback(eventPayload);
-          }
+        const callbacks = listenersByNode.get(id)?.get(eventName);
+        if (!callbacks || callbacks.size === 0) {
+          return;
         }
+        for (const callback of [...callbacks.values()]) {
+          callback(eventPayload);
+        }
+      },
+      __dispatchAndDrain(id, eventName, eventPayload = {}) {
+        fallbackBridge.__dispatchEvent(id, eventName, eventPayload);
+        fallbackBridge.__flushTimers();
+        return fallbackBridge.__drainQueue();
       },
       __flushTimers() {
         // No-op in synchronous fallback
       },
       __tickTimers() {
         // No-op in synchronous fallback
+      },
+      __tickAndDrain(nowMs, completions = []) {
+        if (Array.isArray(completions)) {
+          for (const [cbId, payload] of completions) {
+            fallbackBridge.__resolveHostCallback?.(cbId, payload);
+          }
+        }
+        fallbackBridge.__tickTimers?.(nowMs);
+        return fallbackBridge.__drainQueue();
       },
       __resolveHostCallback() {
         // No-op in synchronous fallback
@@ -441,6 +473,9 @@ export function ensureNgNativeBridge(): NgNativeBridge {
         }
       },
       __drainQueue() {
+        if (queue.length === 0) {
+          return '';
+        }
         const out = queue.join('\n');
         queue = [];
         return out;

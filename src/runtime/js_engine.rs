@@ -1,5 +1,5 @@
-pub use super::bootstrap_js::NG_NATIVE_BOOTSTRAP_JS;
-use super::host_bridge::HostBridge;
+use super::bootstrap_js::NG_NATIVE_BOOTSTRAP_JS;
+use super::host_bridge::{HostAsyncCompletion, HostBridge};
 use super::jsc_sys::JscSys;
 pub use super::quickjs_engine::QuickJsEngine;
 use crate::desktop::NativeHttpEngine;
@@ -24,6 +24,42 @@ pub trait JsEngineBackend {
         payload: &EventPayload,
     ) -> Result<(), EngineError>;
     fn drain_native_commands(&mut self) -> Result<String, EngineError>;
+
+    /// Dispatches a JS event and drains queued native scene mutations in one bridge roundtrip.
+    fn dispatch_and_drain(
+        &mut self,
+        node_var: &str,
+        event_name: &str,
+        payload: &EventPayload,
+    ) -> Result<String, EngineError> {
+        self.dispatch_js_event_with_payload(node_var, event_name, payload)?;
+        self.drain_native_commands()
+    }
+
+    /// Resolves host completions, ticks elapsed JS timers, and drains scene mutations in one roundtrip.
+    fn tick_and_drain(
+        &mut self,
+        now_ms: u64,
+        completions: &[HostAsyncCompletion],
+    ) -> Result<String, EngineError> {
+        for completion in completions {
+            let payload = if completion.payload_json.trim().is_empty() {
+                "null"
+            } else {
+                completion.payload_json.as_str()
+            };
+            let script = format!(
+                "if (globalThis.__NG_NATIVE__ && typeof globalThis.__NG_NATIVE__.__resolveHostCallback === 'function') {{ globalThis.__NG_NATIVE__.__resolveHostCallback({}, {payload}); }}",
+                completion.callback_id
+            );
+            let _ = self.eval_script(&script)?;
+        }
+        let timer_script = format!(
+            "if (globalThis.__NG_NATIVE__ && typeof globalThis.__NG_NATIVE__.__tickTimers === 'function') {{ globalThis.__NG_NATIVE__.__tickTimers({now_ms}); }}"
+        );
+        let _ = self.eval_script(&timer_script)?;
+        self.drain_native_commands()
+    }
 }
 
 /// High-performance Apple/WebKit `JavaScriptCore` (JSC) adapter with 4-tier JIT (`libjavascriptcoregtk-6.0.so.1`).
@@ -53,6 +89,28 @@ impl JscEngine {
     pub fn is_native_jsc_loaded(&self) -> bool {
         self.jsc.is_some()
     }
+}
+
+fn format_event_payload_js(payload: &EventPayload) -> String {
+    match payload {
+        EventPayload::None => String::from("{}"),
+        EventPayload::Text(t) => format!("{{ value: {t:?} }}"),
+        EventPayload::Bool(b) => format!("{{ value: {b}, active: {b}, checked: {b} }}"),
+        EventPayload::Int(n) => format!("{{ value: {n} }}"),
+    }
+}
+
+fn format_completions_js(completions: &[HostAsyncCompletion]) -> String {
+    let mut items = Vec::with_capacity(completions.len());
+    for c in completions {
+        let payload = if c.payload_json.trim().is_empty() {
+            "null"
+        } else {
+            c.payload_json.as_str()
+        };
+        items.push(format!("[{}, {payload}]", c.callback_id));
+    }
+    format!("[{}]", items.join(","))
 }
 
 impl JsEngineBackend for JscEngine {
@@ -95,12 +153,7 @@ impl JsEngineBackend for JscEngine {
         payload: &EventPayload,
     ) -> Result<(), EngineError> {
         if let Some(jsc) = &self.jsc {
-            let payload_js = match payload {
-                EventPayload::None => String::from("{}"),
-                EventPayload::Text(t) => format!("{{ value: {t:?} }}"),
-                EventPayload::Bool(b) => format!("{{ value: {b}, active: {b}, checked: {b} }}"),
-                EventPayload::Int(n) => format!("{{ value: {n} }}"),
-            };
+            let payload_js = format_event_payload_js(payload);
             let call = format!(
                 "globalThis.__NG_NATIVE__.__dispatchEvent({node_var:?}, {event_name:?}, {payload_js}); globalThis.__NG_NATIVE__.__flushTimers();"
             );
@@ -109,6 +162,42 @@ impl JsEngineBackend for JscEngine {
         } else {
             self.fallback
                 .dispatch_js_event_with_payload(node_var, event_name, payload)
+        }
+    }
+
+    fn dispatch_and_drain(
+        &mut self,
+        node_var: &str,
+        event_name: &str,
+        payload: &EventPayload,
+    ) -> Result<String, EngineError> {
+        if let Some(jsc) = &self.jsc {
+            let payload_js = format_event_payload_js(payload);
+            let call = format!(
+                "globalThis.__NG_NATIVE__.__dispatchAndDrain({node_var:?}, {event_name:?}, {payload_js})"
+            );
+            jsc.eval(&call).map_err(EngineError::ScriptSyntaxError)
+        } else {
+            self.fallback
+                .dispatch_and_drain(node_var, event_name, payload)
+        }
+    }
+
+    fn tick_and_drain(
+        &mut self,
+        now_ms: u64,
+        completions: &[HostAsyncCompletion],
+    ) -> Result<String, EngineError> {
+        if let Some(jsc) = &self.jsc {
+            let call = if completions.is_empty() {
+                format!("globalThis.__NG_NATIVE__.__tickAndDrain({now_ms})")
+            } else {
+                let completions_js = format_completions_js(completions);
+                format!("globalThis.__NG_NATIVE__.__tickAndDrain({now_ms}, {completions_js})")
+            };
+            jsc.eval(&call).map_err(EngineError::ScriptSyntaxError)
+        } else {
+            self.fallback.tick_and_drain(now_ms, completions)
         }
     }
 
@@ -194,6 +283,29 @@ impl JsEngineBackend for AnyJsEngine {
         }
     }
 
+    fn dispatch_and_drain(
+        &mut self,
+        node_var: &str,
+        event_name: &str,
+        payload: &EventPayload,
+    ) -> Result<String, EngineError> {
+        match self {
+            Self::Jsc(e) => e.dispatch_and_drain(node_var, event_name, payload),
+            Self::QuickJs(e) => e.dispatch_and_drain(node_var, event_name, payload),
+        }
+    }
+
+    fn tick_and_drain(
+        &mut self,
+        now_ms: u64,
+        completions: &[HostAsyncCompletion],
+    ) -> Result<String, EngineError> {
+        match self {
+            Self::Jsc(e) => e.tick_and_drain(now_ms, completions),
+            Self::QuickJs(e) => e.tick_and_drain(now_ms, completions),
+        }
+    }
+
     fn drain_native_commands(&mut self) -> Result<String, EngineError> {
         match self {
             Self::Jsc(e) => e.drain_native_commands(),
@@ -247,6 +359,19 @@ mod tests {
             jsc.dispatch_js_event("btn", "clicked").unwrap();
             let after_click = jsc.drain_native_commands().unwrap();
             assert_eq!(after_click.trim(), "text lbl Counter: 15");
+
+            let single_roundtrip = jsc
+                .dispatch_and_drain("btn", "clicked", &EventPayload::None)
+                .unwrap();
+            assert_eq!(single_roundtrip.trim(), "text lbl Counter: 20");
+
+            jsc.eval_script("__NG_NATIVE__.destroyNode('btn');")
+                .unwrap();
+            let _ = jsc.drain_native_commands().unwrap();
+            let after_destroy = jsc
+                .dispatch_and_drain("btn", "clicked", &EventPayload::None)
+                .unwrap();
+            assert_eq!(after_destroy.trim(), "");
         }
     }
 }

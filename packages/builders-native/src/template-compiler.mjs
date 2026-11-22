@@ -472,6 +472,21 @@ export function parseTemplateHtml(
         continue;
       }
 
+      if (tmplNode.name === 'ng-container') {
+        if (Array.isArray(tmplNode.children) && tmplNode.children.length > 0) {
+          out.push(...transformNodes(tmplNode.children, scopeState));
+        }
+        continue;
+      }
+
+      if (tmplNode.name === 'router-outlet') {
+        out.push(makeCommentNode(idState, 'outlet', 'router-outlet'));
+        if (Array.isArray(tmplNode.children) && tmplNode.children.length > 0) {
+          out.push(...transformNodes(tmplNode.children, scopeState));
+        }
+        continue;
+      }
+
       if (Array.isArray(tmplNode.branches)) {
         const firstExpr = tmplNode.branches[0]?.expression?.source?.trim() || 'cond';
         out.push(makeCommentNode(idState, 'anchor', `@if(${firstExpr})`));

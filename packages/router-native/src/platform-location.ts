@@ -87,14 +87,19 @@ export class NativePlatformLocation extends PlatformLocation {
   }
 
   override replaceState(state: unknown, title: string, url: string): void {
+    const prevHash = this.hash;
     this.historyStack[this.currentIndex] = {
       url: this.normalizeUrl(url),
       title,
       state,
     };
+    if (this.hash !== prevHash) {
+      this.notifyHashChange(state);
+    }
   }
 
   override pushState(state: unknown, title: string, url: string): void {
+    const prevHash = this.hash;
     this.historyStack.splice(this.currentIndex + 1);
     this.historyStack.push({
       url: this.normalizeUrl(url),
@@ -102,6 +107,17 @@ export class NativePlatformLocation extends PlatformLocation {
       state,
     });
     this.currentIndex = this.historyStack.length - 1;
+    if (this.hash !== prevHash) {
+      this.notifyHashChange(state);
+    }
+  }
+
+  canGoBack(): boolean {
+    return this.currentIndex > 0;
+  }
+
+  canGoForward(): boolean {
+    return this.currentIndex + 1 < this.historyStack.length;
   }
 
   override forward(): void {
@@ -120,12 +136,27 @@ export class NativePlatformLocation extends PlatformLocation {
     if (nextIdx < 0 || nextIdx >= this.historyStack.length) {
       return;
     }
+    const prevHash = this.hash;
     this.currentIndex = nextIdx;
+    const state = this.currentEntry().state;
     const evt: LocationChangeEvent = {
       type: 'popstate',
-      state: this.currentEntry().state,
+      state,
     };
     for (const listener of this.popStateListeners) {
+      listener(evt);
+    }
+    if (this.hash !== prevHash) {
+      this.notifyHashChange(state);
+    }
+  }
+
+  private notifyHashChange(state: unknown): void {
+    const evt: LocationChangeEvent = {
+      type: 'hashchange',
+      state,
+    };
+    for (const listener of this.hashChangeListeners) {
       listener(evt);
     }
   }

@@ -4,6 +4,7 @@ import {
   NativeTitleService,
   provideNativePlatform,
 } from '@ng-desktop/platform';
+import { NativePlatformLocation } from '@ng-desktop/router';
 import { App } from './app';
 import { appConfig } from './app.config';
 import { PokedexService } from './pokedex.service';
@@ -126,17 +127,33 @@ describe('App (100% Angular + @ng-desktop/server API)', () => {
     expect(filtered.map((item) => item.id)).toEqual([25]);
   });
 
-  it('opens detail view, toggles favorites, saves notes, updates NativeTitleService, and returns to list', async () => {
+  it('opens detail view via @ng-desktop/router, binds @ng-desktop/forms, toggles favorites, and returns to list', async () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.componentInstance;
     const service = TestBed.inject(PokedexService);
     const titleService = TestBed.inject(NativeTitleService);
+    const location = TestBed.inject(NativePlatformLocation);
     fixture.detectChanges();
 
+    app.searchControl.setValue('pika');
+    await Promise.resolve();
+    expect(service.searchQuery()).toBe('pika');
+
+    app.favoritesOnlyControl.setValue(true);
+    await Promise.resolve();
+    expect(service.favoritesOnly()).toBe(true);
+    app.favoritesOnlyControl.setValue(false, { emitEvent: false });
+    await service.setFavoritesOnly(false);
+
     await app.openPokemon(25);
+    expect(location.pathname).toBe('/pokemon/25');
     expect(service.viewMode()).toBe('detail');
     expect(service.selectedDetail()?.displayName).toBe('Pikachu');
+    expect(app.spinIdControl.value).toBe(25);
     expect(titleService.getTitle()).toBe('Pokédex Nacional — N.º 0025 Pikachu');
+
+    app.noteControl.setValue('Nota Reactive Form');
+    expect(app.noteControl.value).toBe('Nota Reactive Form');
 
     const bridge = ensureNgNativeBridge();
     bridge.registerHttpEndpoint(
@@ -161,8 +178,21 @@ describe('App (100% Angular + @ng-desktop/server API)', () => {
     await service.toggleFavorite(25, 'Pikachu');
     expect(service.isFavorite(25)).toBe(false);
 
-    await service.backToList();
+    await app.backToList();
+    expect(location.pathname).toBe('/pokemon');
     expect(service.viewMode()).toBe('list');
     expect(titleService.getTitle()).toBe('Pokédex Nacional');
+
+    location.back();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(location.pathname).toBe('/pokemon/25');
+    expect(service.viewMode()).toBe('detail');
+
+    location.forward();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(location.pathname).toBe('/pokemon');
+    expect(service.viewMode()).toBe('list');
   });
 });

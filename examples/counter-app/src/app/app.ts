@@ -1,71 +1,106 @@
-import { Component, CUSTOM_ELEMENTS_SCHEMA, inject, OnInit, signal } from '@angular/core';
+import {
+  Component,
+  CUSTOM_ELEMENTS_SCHEMA,
+  inject,
+  OnDestroy,
+  OnInit,
+  signal,
+} from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { FormControl, ReactiveFormsModule } from '@angular/forms';
+import { NATIVE_FORM_DIRECTIVES } from '@ng-desktop/forms';
+import { NativePlatformLocation, Router, RouterOutlet } from '@ng-desktop/router';
 import { PokedexService } from './pokedex.service';
 import { PokemonCard } from './pokemon-card';
 import { TypeBadge } from './type-badge';
 
-function extractPayloadString(event: unknown): string {
-  if (typeof event === 'string') {
-    return event;
-  }
-  if (event && typeof event === 'object') {
-    if ('value' in event) {
-      return String((event as { value: unknown }).value ?? '');
-    }
-    if ('target' in event) {
-      const target = (event as { target?: { value?: unknown } }).target;
-      if (target && 'value' in target) {
-        return String(target.value ?? '');
-      }
-    }
-  }
-  return '';
-}
-
 @Component({
   selector: 'app-root',
-  imports: [PokemonCard, TypeBadge],
+  imports: [ReactiveFormsModule, NATIVE_FORM_DIRECTIVES, RouterOutlet, PokemonCard, TypeBadge],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
-export class App implements OnInit {
+export class App implements OnInit, OnDestroy {
   protected readonly pokedex = inject(PokedexService);
+  private readonly router = inject(Router);
+  private readonly location = inject(NativePlatformLocation);
+
   protected readonly windowTitle = signal('Pokédex Nacional');
-  protected readonly subtitle = signal('Angular 22 + @ng-desktop/server');
-  protected readonly noteDraft = signal('');
+  protected readonly subtitle = signal(
+    'Angular 22 + @ng-desktop/router + @ng-desktop/forms + @ng-desktop/server',
+  );
+
+  readonly searchControl = new FormControl('', { nonNullable: true });
+  readonly spinIdControl = new FormControl(1, { nonNullable: true });
+  readonly favoritesOnlyControl = new FormControl(false, { nonNullable: true });
+  readonly noteControl = new FormControl('', { nonNullable: true });
+
+  private unlistenPopState: VoidFunction | null = null;
+
+  constructor() {
+    this.searchControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((query) => {
+      void this.pokedex.setSearchQuery(query);
+    });
+
+    this.spinIdControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((rawId) => {
+      const id = Math.trunc(rawId);
+      if (Number.isInteger(id) && id >= 1 && id <= 1025 && id !== this.pokedex.selectedId()) {
+        void this.openPokemon(id);
+      }
+    });
+
+    this.favoritesOnlyControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((onlyFavorites) => {
+      void this.pokedex.setFavoritesOnly(onlyFavorites);
+    });
+  }
 
   ngOnInit(): void {
     void this.pokedex.refreshFavorites();
     void this.pokedex.loadCatalogPage(true);
+    this.unlistenPopState = this.location.onPopState(() => {
+      const match = this.location.pathname.match(/^\/pokemon\/(\d+)$/);
+      if (match) {
+        const id = Number.parseInt(match[1], 10);
+        if (Number.isInteger(id) && id >= 1 && id <= 1025) {
+          void this.loadPokemonDetailState(id);
+        }
+      } else if (this.location.pathname === '/pokemon' || this.location.pathname === '/') {
+        void this.pokedex.backToList();
+      }
+    });
   }
 
-  onSearchInput(event: unknown): void {
-    void this.pokedex.setSearchQuery(extractPayloadString(event));
-  }
-
-  onSpinChanged(event: unknown): void {
-    const raw = extractPayloadString(event);
-    const id = Number.parseInt(raw, 10);
-    if (Number.isInteger(id) && id >= 1 && id <= 1025) {
-      void this.openPokemon(id);
-    }
+  ngOnDestroy(): void {
+    this.unlistenPopState?.();
+    this.unlistenPopState = null;
   }
 
   toggleFavoritesFilter(): void {
-    void this.pokedex.toggleFavoritesOnly();
+    const next = !this.pokedex.favoritesOnly();
+    this.favoritesOnlyControl.setValue(next, { emitEvent: false });
+    void this.pokedex.setFavoritesOnly(next);
   }
 
   loadMore(): void {
     void this.pokedex.loadMore();
   }
 
-  async openPokemon(id: number): Promise<void> {
-    await this.pokedex.openPokemon(id);
-    this.noteDraft.set(this.pokedex.selectedNote());
+  private async loadPokemonDetailState(boundedId: number): Promise<void> {
+    await this.pokedex.openPokemon(boundedId);
+    this.spinIdControl.setValue(boundedId, { emitEvent: false });
+    this.noteControl.setValue(this.pokedex.selectedNote(), { emitEvent: false });
   }
 
-  backToList(): void {
-    void this.pokedex.backToList();
+  async openPokemon(id: number): Promise<void> {
+    const boundedId = Math.max(1, Math.min(1025, Math.trunc(id) || 1));
+    await this.router.navigate(['/pokemon', boundedId]);
+    await this.loadPokemonDetailState(boundedId);
+  }
+
+  async backToList(): Promise<void> {
+    await this.router.navigate(['/pokemon']);
+    await this.pokedex.backToList();
   }
 
   previousPokemon(): void {
@@ -83,11 +118,7 @@ export class App implements OnInit {
     if (!detail) {
       return;
     }
-    void this.pokedex.toggleFavorite(detail.id, detail.displayName, this.noteDraft());
-  }
-
-  onNoteInput(event: unknown): void {
-    this.noteDraft.set(extractPayloadString(event));
+    void this.pokedex.toggleFavorite(detail.id, detail.displayName, this.noteControl.getRawValue());
   }
 
   saveNote(): void {
@@ -95,6 +126,6 @@ export class App implements OnInit {
     if (!detail) {
       return;
     }
-    void this.pokedex.saveFieldNote(detail.id, this.noteDraft());
+    void this.pokedex.saveFieldNote(detail.id, this.noteControl.getRawValue());
   }
 }
