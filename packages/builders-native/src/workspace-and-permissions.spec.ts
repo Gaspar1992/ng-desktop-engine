@@ -235,7 +235,8 @@ export class App {}`,
       );
       writeFileSync(
         join(tmpRoot, 'src/app/app.css'),
-        `.badge { background: #1e293b; color: #f8fafc; padding: 8px; border-radius: 6px; }`,
+        `.badge { background: #1e293b; color: #f8fafc; padding: 8px; border-radius: 6px; }
+         .responsive-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }`,
       );
       writeFileSync(
         join(tmpRoot, 'dist/sample-app/browser/polyfills-TEST.js'),
@@ -253,6 +254,9 @@ export class App {}`,
       expect(appBundle).toContain('globalThis.__NG_NATIVE_APP_ID__ = "sample-app";');
       expect(appBundle).toContain(
         'globalThis.__NG_NATIVE__?.registerStyle("badge", "#1e293b", "#f8fafc", 8, 0, "radius=6");',
+      );
+      expect(appBundle).toContain(
+        'globalThis.__NG_NATIVE__?.registerStyle("responsive-grid", "none", "none", 0, 12, "min-width=160 hexpand=true min-children=1 max-children=12 homogeneous=true");',
       );
       expect(appBundle).toMatch(/globalThis\.__POLYFILL_LOADED__\s*=\s*(?:!0|true);/);
       expect(appBundle).toMatch(/console\.log\(["']compiled-ivy-main["']\);/);

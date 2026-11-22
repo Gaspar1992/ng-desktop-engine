@@ -38,6 +38,12 @@ jobs:
       - name: Build Angular & Native Bundle (.ngb)
         run: pnpm run build
 
+      - name: Build @ng-desktop/* APF packages
+        run: pnpm run build:packages
+
+      - name: Verify packed npm tarballs in external consumer
+        run: pnpm run test:pack
+
       - name: Install Linux native runtime libraries
         run: |
           sudo apt-get update

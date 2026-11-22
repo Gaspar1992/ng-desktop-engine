@@ -78,7 +78,12 @@ export {
   type HmrClientResult,
 } from './hmr-client.mjs';
 export { buildMultiResolutionIcons } from './icon-compiler.mjs';
-export { emitStyleInstruction, parseStylesCss, type StyleRuleIr } from './style-compiler.mjs';
+export {
+  emitStyleInstruction,
+  formatStyleRuleExtensions,
+  parseStylesCss,
+  type StyleRuleIr,
+} from './style-compiler.mjs';
 export {
   applyPipeTransform,
   parseTemplateHtml,

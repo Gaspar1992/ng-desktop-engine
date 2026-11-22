@@ -14,7 +14,11 @@ import { pushHmrReload, pushHmrServerReload } from './hmr-client.mjs';
 import { buildMultiResolutionIcons } from './icon-compiler.mjs';
 import { analyzeProjectPermissions } from './permission-analyzer.mjs';
 import { compileServerBundle, discoverServerRoutes, runEsbuildBuild } from './server-compiler.mjs';
-import { emitStyleInstruction, parseStylesCss } from './style-compiler.mjs';
+import {
+  emitStyleInstruction,
+  formatStyleRuleExtensions,
+  parseStylesCss,
+} from './style-compiler.mjs';
 import { parseTemplateHtml } from './template-compiler.mjs';
 import { resolveWorkspaceProject } from './workspace-resolver.mjs';
 
@@ -180,12 +184,9 @@ function emitAppJsBundleIfPresent(outDir, projectName, allStyleRules, iconMeta) 
       : 'delete globalThis.__NG_DESKTOP_ICON__;',
   ];
   for (const rule of allStyleRules) {
-    const extensions = [];
-    if (rule.borderRadius !== null) extensions.push(`radius=${rule.borderRadius}`);
-    if (rule.fontSize !== null) extensions.push(`font-size=${rule.fontSize}`);
-    if (rule.fontWeight !== null) extensions.push(`font-weight=${rule.fontWeight}`);
+    const extras = formatStyleRuleExtensions(rule);
     preamble.push(
-      `globalThis.__NG_NATIVE__?.registerStyle(${JSON.stringify(rule.className)}, ${JSON.stringify(rule.background)}, ${JSON.stringify(rule.color)}, ${Number(rule.padding) || 0}, ${Number(rule.spacing) || 0}, ${JSON.stringify(extensions.join(' '))});`,
+      `globalThis.__NG_NATIVE__?.registerStyle(${JSON.stringify(rule.className)}, ${JSON.stringify(rule.background)}, ${JSON.stringify(rule.color)}, ${Number(rule.padding) || 0}, ${Number(rule.spacing) || 0}, ${JSON.stringify(extras)});`,
     );
   }
 
