@@ -152,4 +152,62 @@ describe('@ng-desktop/desktop Nivel 1-3 services', () => {
     expect(desktop.shortcuts()).toEqual([]);
     expect(desktop.triggerShortcut('<Control>f')).toBe(false);
   });
+
+  it('tracks window resize/focus and scroll/scrollBottom desktop helper events', () => {
+    const desktop = TestBed.inject(NativeDesktopService);
+    const bridge = ensureNgNativeBridge();
+
+    const resized: Array<{ width: number; height: number; maximized: boolean }> = [];
+    const focuses: boolean[] = [];
+    const scrolls: Array<{ scrollTop: number; progress: number }> = [];
+    let bottomHits = 0;
+
+    const unResize = desktop.onWindowResize((ev) => resized.push(ev), 'win');
+    const unFocus = desktop.onWindowFocusChange((f) => focuses.push(f), 'win');
+    const unScroll = desktop.onScroll('scroll', (ev) =>
+      scrolls.push({ scrollTop: ev.scrollTop, progress: ev.progress }),
+    );
+    const unBottom = desktop.onScrollBottom('scroll', () => {
+      bottomHits += 1;
+    });
+
+    bridge.__dispatchEvent('win', 'resize', {
+      value: '{"width":1600,"height":900,"maximized":true}',
+    });
+    expect(resized).toEqual([{ width: 1600, height: 900, maximized: true }]);
+    expect(desktop.windowGeometry()).toMatchObject({ width: 1600, height: 900, maximized: true });
+
+    bridge.__dispatchEvent('win', 'blur', { value: false });
+    bridge.__dispatchEvent('win', 'focus', { value: true });
+    expect(focuses).toEqual([false, true]);
+    expect(desktop.windowFocused()).toBe(true);
+
+    bridge.__dispatchEvent('scroll', 'scroll', {
+      value:
+        '{"scrollTop":240,"scrollHeight":960,"clientHeight":480,"atTop":false,"atBottom":false,"progress":0.5}',
+    });
+    bridge.__dispatchEvent('scroll', 'scroll-bottom', {});
+    expect(scrolls).toEqual([{ scrollTop: 240, progress: 0.5 }]);
+    expect(bottomHits).toBe(1);
+
+    unResize();
+    unFocus();
+    unScroll();
+    unBottom();
+
+    const closeEvents: boolean[] = [];
+    const unClose = desktop.onWindowCloseRequest((ev) => closeEvents.push(ev.preventable), {
+      preventClose: true,
+    });
+    expect(bridge.__drainQueue()).toContain('attr win prevent-close true');
+
+    bridge.__dispatchEvent('win', 'close-request', { value: '{"preventable":true}' });
+    expect(closeEvents).toEqual([true]);
+
+    desktop.closeWindow('win');
+    expect(bridge.__drainQueue()).toContain('attr win close-window true');
+
+    unClose();
+    expect(bridge.__drainQueue()).toContain('attr win prevent-close false');
+  });
 });

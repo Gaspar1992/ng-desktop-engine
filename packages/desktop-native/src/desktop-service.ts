@@ -45,6 +45,49 @@ export interface SaveFileDialogOptions {
   suggestedName?: string;
 }
 
+export interface NativeScrollEvent {
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+  atTop: boolean;
+  atBottom: boolean;
+  progress: number;
+}
+
+export interface NativeResizeEvent {
+  width: number;
+  height: number;
+  maximized: boolean;
+}
+
+export interface NativeCloseRequestEvent {
+  preventable: boolean;
+}
+
+function parseBridgePayloadObject(raw: unknown): Record<string, unknown> {
+  const tryParse = (candidate: unknown): Record<string, unknown> | null => {
+    if (typeof candidate !== 'string') return null;
+    const trimmed = candidate.trim();
+    if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null;
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
+  };
+  const direct = tryParse(raw);
+  if (direct) return direct;
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const obj = raw as Record<string, unknown>;
+    const nested = tryParse(obj['value']);
+    return nested ? { ...obj, ...nested } : obj;
+  }
+  return {};
+}
+
 /**
  * Injectable Angular service providing reactive access to native Desktop OS capabilities:
  * - System Dark/Light theme (`theme` signal synchronized with `GtkSettings` / `AdwStyleManager`)
@@ -61,6 +104,7 @@ export class NativeDesktopService {
   readonly appMenu: WritableSignal<readonly NativeMenuItem[]>;
   readonly trayState: WritableSignal<NativeTrayState>;
   readonly shortcuts: WritableSignal<readonly NativeShortcutBinding[]>;
+  readonly windowFocused: WritableSignal<boolean> = signal(true);
 
   constructor() {
     this.theme = signal<NativeThemeMode>(this.bridge.getSystemTheme());
@@ -219,6 +263,85 @@ export class NativeDesktopService {
     }
     handler();
     return true;
+  }
+
+  onWindowResize(handler: (event: NativeResizeEvent) => void, windowNodeId = 'win'): () => void {
+    return this.bridge.listen(windowNodeId, 'resize', (raw) => {
+      const parsed = parseBridgePayloadObject(raw);
+      const current = this.windowGeometry();
+      const event: NativeResizeEvent = {
+        width: Number(parsed['width'] ?? current.width),
+        height: Number(parsed['height'] ?? current.height),
+        maximized: Boolean(parsed['maximized'] ?? current.maximized),
+      };
+      this.windowGeometry.set({ ...current, ...event });
+      handler(event);
+    });
+  }
+
+  onWindowFocusChange(handler: (focused: boolean) => void, windowNodeId = 'win'): () => void {
+    const unFocus = this.bridge.listen(windowNodeId, 'focus', () => {
+      this.windowFocused.set(true);
+      handler(true);
+    });
+    const unBlur = this.bridge.listen(windowNodeId, 'blur', () => {
+      this.windowFocused.set(false);
+      handler(false);
+    });
+    return () => {
+      unFocus();
+      unBlur();
+    };
+  }
+
+  onScroll(scrollNodeId: string, handler: (event: NativeScrollEvent) => void): () => void {
+    return this.bridge.listen(scrollNodeId, 'scroll', (raw) => {
+      const parsed = parseBridgePayloadObject(raw);
+      handler({
+        scrollTop: Number(parsed['scrollTop'] ?? 0),
+        scrollHeight: Number(parsed['scrollHeight'] ?? 0),
+        clientHeight: Number(parsed['clientHeight'] ?? 0),
+        atTop: Boolean(parsed['atTop'] ?? false),
+        atBottom: Boolean(parsed['atBottom'] ?? false),
+        progress: Number(parsed['progress'] ?? 0),
+      });
+    });
+  }
+
+  onScrollBottom(scrollNodeId: string, handler: () => void): () => void {
+    return this.bridge.listen(scrollNodeId, 'scroll-bottom', () => {
+      handler();
+    });
+  }
+
+  setPreventClose(prevent: boolean, windowNodeId = 'win'): void {
+    this.bridge.setAttribute(windowNodeId, 'prevent-close', prevent ? 'true' : 'false');
+  }
+
+  closeWindow(windowNodeId = 'win'): void {
+    this.bridge.setAttribute(windowNodeId, 'close-window', 'true');
+  }
+
+  onWindowCloseRequest(
+    handler: (event: NativeCloseRequestEvent) => void,
+    options?: { preventClose?: boolean; windowNodeId?: string },
+  ): () => void {
+    const windowNodeId = options?.windowNodeId ?? 'win';
+    if (options?.preventClose !== undefined) {
+      this.setPreventClose(options.preventClose, windowNodeId);
+    } else {
+      this.bridge.setAttribute(windowNodeId, 'event-mask', 'close-request');
+    }
+    const unlisten = this.bridge.listen(windowNodeId, 'close-request', (raw) => {
+      const parsed = parseBridgePayloadObject(raw);
+      handler({ preventable: Boolean(parsed['preventable']) });
+    });
+    return () => {
+      if (options?.preventClose) {
+        this.setPreventClose(false, windowNodeId);
+      }
+      unlisten();
+    };
   }
 }
 

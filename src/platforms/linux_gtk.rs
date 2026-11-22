@@ -3,11 +3,14 @@
 use super::PlatformBackend;
 use super::gtk4_callbacks::{
     drain_pending_events, on_gtk_button_clicked, on_gtk_check_toggled,
-    on_gtk_drop_down_selected_notify, on_gtk_entry_changed, on_gtk_scale_value_changed,
-    on_gtk_scroll_edge_reached, on_gtk_switch_active_notify, pack_node_id,
+    on_gtk_drop_down_selected_notify, on_gtk_entry_activate, on_gtk_entry_changed,
+    on_gtk_scale_value_changed, on_gtk_scroll_edge_reached, on_gtk_scroll_value_changed,
+    on_gtk_search_stop, on_gtk_switch_active_notify, pack_node_id, set_window_prevent_close,
 };
 use super::gtk4_sys::{Gtk4Sys, GtkHandle};
-use crate::engine::{EventPayload, NativeEvent, NodeId, RenderCommand, StyleId, StyleRule};
+use crate::engine::{
+    EventMask, EventPayload, NativeEvent, NodeId, RenderCommand, StyleId, StyleRule,
+};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,6 +92,10 @@ pub(super) struct NativeGtkWidget {
     /// Tracks programmatic scroll offset (`scroll-to="x,y"`) and anchor (`scroll-anchor="id"`).
     pub(super) scroll_position: Option<(i32, i32)>,
     pub(super) scroll_anchor: Option<String>,
+    /// Tracks which optional GTK4 `EventControllers` are currently attached to this widget.
+    pub(super) attached_events: EventMask,
+    /// When true on a `Window`, `close-request` notifies JS and prevents OS destruction until `close-window`.
+    pub(super) prevent_close: bool,
 }
 
 /// Concrete Linux GTK4 + Libadwaita platform adapter backed by `libgtk-4.so.1`.
@@ -103,17 +110,23 @@ pub struct GtkLinuxBackend {
     css_dirty: bool,
     css_reload_count: u64,
     pulse_tick: std::cell::Cell<u32>,
+    window_states: std::cell::RefCell<HashMap<NodeId, (i32, i32, bool, bool)>>,
 }
 
 impl Drop for GtkLinuxBackend {
     fn drop(&mut self) {
+        let drained: Vec<(NodeId, NativeGtkWidget)> = self.widgets.drain().collect();
+        for &(id, ref widget) in &drained {
+            if widget.kind == GtkWidgetType::Window {
+                set_window_prevent_close(pack_node_id(id), false);
+            }
+        }
         let Some(gtk) = &self.gtk else {
             return;
         };
         let has_open_windows = gtk.open_window_count() > 0;
-        let drained: Vec<NativeGtkWidget> = self.widgets.drain().map(|(_, w)| w).collect();
         if has_open_windows {
-            for widget in &drained {
+            for (_, widget) in &drained {
                 if widget.kind == GtkWidgetType::Window
                     && let Some(handle) = widget.handle
                 {
@@ -121,7 +134,7 @@ impl Drop for GtkLinuxBackend {
                 }
             }
         }
-        for widget in &drained {
+        for (_, widget) in &drained {
             if widget.kind != GtkWidgetType::Window
                 && let Some(handle) = widget.handle
             {
@@ -156,6 +169,7 @@ impl GtkLinuxBackend {
             css_dirty: false,
             css_reload_count: 0,
             pulse_tick: std::cell::Cell::new(0),
+            window_states: std::cell::RefCell::new(HashMap::new()),
         }
     }
 
@@ -171,6 +185,7 @@ impl GtkLinuxBackend {
             css_dirty: false,
             css_reload_count: 0,
             pulse_tick: std::cell::Cell::new(0),
+            window_states: std::cell::RefCell::new(HashMap::new()),
         }
     }
 
@@ -220,6 +235,18 @@ impl GtkLinuxBackend {
         self.widgets
             .get(&node)
             .and_then(|w| w.scroll_anchor.as_deref())
+    }
+
+    #[must_use]
+    pub fn attached_event_mask(&self, node: NodeId) -> EventMask {
+        self.widgets
+            .get(&node)
+            .map_or(EventMask::NONE, |w| w.attached_events)
+    }
+
+    #[must_use]
+    pub fn is_prevent_close(&self, node: NodeId) -> bool {
+        self.widgets.get(&node).is_some_and(|w| w.prevent_close)
     }
 
     pub fn step_event_loop(&self, may_block: bool) -> Vec<NodeId> {
@@ -278,12 +305,63 @@ impl GtkLinuxBackend {
                         GtkWidgetType::Expander => {
                             EventPayload::Bool(gtk.get_expander_expanded(handle))
                         }
+                        GtkWidgetType::Scroll if ev.event_name == "scroll" => gtk
+                            .scroll_metrics_json(handle)
+                            .map_or(EventPayload::None, EventPayload::Text),
                         _ => EventPayload::None,
                     };
                 }
             }
         }
+        self.poll_window_lifecycle_events(&mut events);
         events
+    }
+
+    fn poll_window_lifecycle_events(&self, events: &mut Vec<NativeEvent>) {
+        let Some(gtk) = &self.gtk else { return };
+        if gtk.open_window_count() == 0 {
+            self.window_states.borrow_mut().clear();
+            return;
+        }
+        let mut prev_states = self.window_states.borrow_mut();
+        for (&id, widget) in &self.widgets {
+            if widget.kind != GtkWidgetType::Window {
+                continue;
+            }
+            let Some(handle) = widget.handle else {
+                continue;
+            };
+            let (w, h) = gtk.widget_size(handle);
+            if w <= 0 || h <= 0 {
+                continue;
+            }
+            let (maximized, active) = gtk.window_flags(handle);
+            let prev = prev_states.get(&id).copied();
+            if prev.is_none_or(|(pw, ph, pm, _)| pw != w || ph != h || pm != maximized) {
+                events.push(NativeEvent {
+                    node: id,
+                    event_name: String::from("resize"),
+                    payload: EventPayload::Text(format!(
+                        r#"{{"width":{w},"height":{h},"maximized":{maximized}}}"#
+                    )),
+                });
+            }
+            if prev.is_some_and(|(_, _, pm, _)| pm != maximized) {
+                events.push(NativeEvent {
+                    node: id,
+                    event_name: String::from("maximize"),
+                    payload: EventPayload::Bool(maximized),
+                });
+            }
+            if prev.is_some_and(|(_, _, _, pa)| pa != active) {
+                events.push(NativeEvent {
+                    node: id,
+                    event_name: String::from(if active { "focus" } else { "blur" }),
+                    payload: EventPayload::Bool(active),
+                });
+            }
+            prev_states.insert(id, (w, h, maximized, active));
+        }
     }
 
     fn apply_gtk_set_text(&mut self, id: NodeId, text: &str) {
@@ -331,6 +409,8 @@ impl GtkLinuxBackend {
                         drop_target: false,
                         scroll_position: None,
                         scroll_anchor: None,
+                        attached_events: EventMask::NONE,
+                        prevent_close: false,
                     },
                 );
             }
@@ -349,13 +429,15 @@ impl GtkLinuxBackend {
                 }
             }
             RenderCommand::ApplyStyleClass { node, style_id } => {
-                let (Some(gtk), Some(widget), Some(rule)) =
-                    (&self.gtk, self.widgets.get(node), self.styles.get(style_id))
-                else {
-                    return;
-                };
-                if let Some(handle) = widget.handle {
+                let rule_opt = self.styles.get(style_id).cloned();
+                if let (Some(gtk), Some(widget), Some(rule)) =
+                    (&self.gtk, self.widgets.get(node), rule_opt.as_ref())
+                    && let Some(handle) = widget.handle
+                {
                     gtk.add_css_class(handle, &rule.class_name);
+                }
+                if let Some(rule) = rule_opt {
+                    self.apply_style_rule_layout(*node, &rule);
                 }
             }
             RenderCommand::RemoveStyleClass { node, style_id } => {
@@ -383,6 +465,8 @@ impl GtkLinuxBackend {
             }
             RenderCommand::DestroyWidget { id } => {
                 self.header_titles.remove(id);
+                self.window_states.borrow_mut().remove(id);
+                set_window_prevent_close(pack_node_id(*id), false);
                 if let Some(widget) = self.widgets.remove(id)
                     && let (Some(gtk), Some(handle)) = (&self.gtk, widget.handle)
                 {
@@ -418,6 +502,8 @@ impl GtkLinuxBackend {
                 drop_target: false,
                 scroll_position: None,
                 scroll_anchor: None,
+                attached_events: EventMask::NONE,
+                prevent_close: false,
             },
         );
     }
@@ -436,7 +522,9 @@ impl GtkLinuxBackend {
             }
             "ng-scroll" | "gtk-scrolled-window" => {
                 let scroll = gtk.create_scrolled_window();
-                gtk.connect_edge_reached(scroll, on_gtk_scroll_edge_reached, pack_node_id(id));
+                let packed = pack_node_id(id);
+                gtk.connect_edge_reached(scroll, on_gtk_scroll_edge_reached, packed);
+                gtk.connect_scroll_adjustment(scroll, on_gtk_scroll_value_changed, packed);
                 (Some(scroll), GtkWidgetType::Scroll)
             }
             "ng-box" | "gtk-box" => (Some(gtk.create_box(12)), GtkWidgetType::Box),
@@ -452,7 +540,9 @@ impl GtkLinuxBackend {
             }
             "ng-entry" | "gtk-entry" => {
                 let entry = gtk.create_entry();
-                gtk.connect_signal(entry, c"changed", on_gtk_entry_changed, pack_node_id(id));
+                let packed = pack_node_id(id);
+                gtk.connect_signal(entry, c"changed", on_gtk_entry_changed, packed);
+                gtk.connect_signal(entry, c"activate", on_gtk_entry_activate, packed);
                 (Some(entry), GtkWidgetType::Entry)
             }
             "ng-switch" | "gtk-switch" => {
@@ -551,12 +641,17 @@ impl GtkLinuxBackend {
             }
             "ng-password-entry" | "gtk-password-entry" => {
                 let pe = gtk.create_password_entry();
-                gtk.connect_signal(pe, c"changed", on_gtk_entry_changed, pack_node_id(id));
+                let packed = pack_node_id(id);
+                gtk.connect_signal(pe, c"changed", on_gtk_entry_changed, packed);
+                gtk.connect_signal(pe, c"activate", on_gtk_entry_activate, packed);
                 (Some(pe), GtkWidgetType::PasswordEntry)
             }
             "ng-search-entry" | "gtk-search-entry" => {
                 let se = gtk.create_search_entry();
-                gtk.connect_signal(se, c"changed", on_gtk_entry_changed, pack_node_id(id));
+                let packed = pack_node_id(id);
+                gtk.connect_signal(se, c"changed", on_gtk_entry_changed, packed);
+                gtk.connect_signal(se, c"activate", on_gtk_entry_activate, packed);
+                gtk.connect_signal(se, c"stop-search", on_gtk_search_stop, packed);
                 (Some(se), GtkWidgetType::SearchEntry)
             }
             "ng-spin-button" | "gtk-spin-button" => {

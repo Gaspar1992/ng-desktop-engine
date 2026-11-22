@@ -11,7 +11,7 @@ pub mod widget_attrs;
 use crate::platforms::PlatformBackend;
 use arena::Arena;
 pub use commands::{CommandQueue, RenderCommand};
-pub use events::{EventPayload, EventRegistry, NativeEvent};
+pub use events::{EventMask, EventPayload, EventRegistry, NativeEvent, coalesce_frame_events};
 pub use icons::{IconResolution, WindowIconAsset};
 pub use node::{EngineError, NodeId, StyleId};
 use std::collections::{HashMap, HashSet};

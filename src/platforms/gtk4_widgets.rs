@@ -196,6 +196,7 @@ impl Gtk4Sys {
             let flow = (self.gtk_flow_box_new)();
             (self.gtk_flow_box_set_selection_mode)(flow, 0); // GTK_SELECTION_NONE
             (self.gtk_flow_box_set_homogeneous)(flow, 0);
+            (self.gtk_widget_set_hexpand)(flow, 1);
             GtkHandle(flow)
         }
     }

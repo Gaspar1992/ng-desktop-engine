@@ -1,64 +1,70 @@
-<ng-window id="win" [title]="windowTitle()">
+<ng-window id="win" [title]="windowTitle()" (beforeunload)="onBeforeUnload()">
   <ng-header-bar id="hdr" [attr.subtitle]="subtitle()">{{ windowTitle() }}</ng-header-bar>
-  <ng-scroll id="scroll" min-height="540px">
-    <ng-clamp id="main_clamp" max-size="1120px">
-      <ng-box id="vbox" class="main-card" orientation="vertical" spacing="16px">
-        <ng-box id="search_bar" class="toolbar-card" orientation="horizontal" spacing="10px">
-          <ng-search-entry
-            id="search_entry"
-            hexpand="true"
-            placeholder="Buscar Pokémon por nombre o N.º (ej. bul, pika, 25)..."
-            [formControl]="searchControl"
-          />
-          <ng-spin-button
-            id="poke_id_spin"
-            min="1"
-            max="1025"
-            step="1"
-            [formControl]="spinIdControl"
-          />
-          <ng-switch id="sw_filter_favorites" [formControl]="favoritesOnlyControl" />
-          <ng-button
-            id="btn_filter_favorites"
-            class="secondary-action"
-            (click)="toggleFavoritesFilter()"
-          >
-            {{ pokedex.favoritesOnly() ? 'Ver Todos' : '★ Solo Favoritos' }}
-          </ng-button>
-        </ng-box>
-
-        <ng-spinner
-          id="loading_spinner"
-          [attr.visible]="pokedex.loading() ? 'true' : 'false'"
-          halign="center"
+  <ng-scroll id="scroll" min-height="420px" (scrollBottom)="loadMore()">
+    <ng-box
+      id="vbox"
+      class="main-card"
+      orientation="vertical"
+      spacing="16px"
+      hexpand="true"
+      vexpand="true"
+    >
+      <ng-box id="search_bar" class="toolbar-card" orientation="horizontal" spacing="10px">
+        <ng-search-entry
+          id="search_entry"
+          hexpand="true"
+          placeholder="Buscar Pokémon por nombre o N.º (ej. bul, pika, 25)..."
+          [formControl]="searchControl"
+          (cancel)="searchControl.setValue('')"
         />
-
-        @if (pokedex.errorMessage(); as errMsg) {
-        <ng-label id="error_banner" class="error-banner">{{ errMsg }}</ng-label>
-        } @if (pokedex.viewMode() === 'list') {
-        <app-catalog-view
-          [items]="pokedex.catalogItems()"
-          [totalCount]="pokedex.totalCount()"
-          [favoriteIds]="pokedex.favoriteIds()"
-          [hasMore]="pokedex.hasMore()"
-          (selectPokemon)="openPokemon($event)"
-          (loadMore)="loadMore()"
+        <ng-spin-button
+          id="poke_id_spin"
+          min="1"
+          max="1025"
+          step="1"
+          [formControl]="spinIdControl"
         />
-        } @else { @if (pokedex.selectedDetail(); as detail) {
-        <app-pokemon-detail-view
-          [detail]="detail"
-          [isFavorite]="pokedex.isFavorite(detail.id)"
-          [noteStatus]="pokedex.noteStatus()"
-          [noteControl]="noteControl"
-          (back)="backToList()"
-          (previous)="previousPokemon()"
-          (next)="nextPokemon()"
-          (toggleFavorite)="toggleCurrentFavorite()"
-          (saveNote)="saveNote()"
-        />
-        } }
-        <router-outlet />
+        <ng-switch id="sw_filter_favorites" [formControl]="favoritesOnlyControl" />
+        <ng-button
+          id="btn_filter_favorites"
+          class="secondary-action"
+          (click)="toggleFavoritesFilter()"
+        >
+          {{ pokedex.favoritesOnly() ? 'Ver Todos' : '★ Solo Favoritos' }}
+        </ng-button>
       </ng-box>
-    </ng-clamp>
+
+      <ng-spinner
+        id="loading_spinner"
+        [attr.visible]="pokedex.loading() ? 'true' : 'false'"
+        halign="center"
+      />
+
+      @if (pokedex.errorMessage(); as errMsg) {
+      <ng-label id="error_banner" class="error-banner">{{ errMsg }}</ng-label>
+      } @if (pokedex.viewMode() === 'list') {
+      <app-catalog-view
+        [items]="pokedex.catalogItems()"
+        [totalCount]="pokedex.totalCount()"
+        [favoriteIds]="pokedex.favoriteIds()"
+        [hasMore]="pokedex.hasMore()"
+        (selectPokemon)="openPokemon($event)"
+        (loadMore)="loadMore()"
+      />
+      } @else { @if (pokedex.selectedDetail(); as detail) {
+      <app-pokemon-detail-view
+        [detail]="detail"
+        [isFavorite]="pokedex.isFavorite(detail.id)"
+        [noteStatus]="pokedex.noteStatus()"
+        [noteControl]="noteControl"
+        (back)="backToList()"
+        (previous)="previousPokemon()"
+        (next)="nextPokemon()"
+        (toggleFavorite)="toggleCurrentFavorite()"
+        (saveNote)="saveNote()"
+      />
+      } }
+      <router-outlet />
+    </ng-box>
   </ng-scroll>
 </ng-window>

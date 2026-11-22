@@ -66,6 +66,36 @@ export function matchesKeyboardEvent(eventName: string, payload: NativeKeyEventP
   );
 }
 
+function normalizeKeyPayload(raw: unknown): NativeKeyEventPayload {
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        return JSON.parse(trimmed) as NativeKeyEventPayload;
+      } catch {
+        return { key: raw };
+      }
+    }
+    return { key: raw };
+  }
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const obj = raw as Record<string, unknown>;
+    const rawValue = obj['value'];
+    if (typeof rawValue === 'string') {
+      const trimmed = rawValue.trim();
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        try {
+          return { ...obj, ...(JSON.parse(trimmed) as NativeKeyEventPayload) };
+        } catch {
+          return obj as NativeKeyEventPayload;
+        }
+      }
+    }
+    return obj as NativeKeyEventPayload;
+  }
+  return {};
+}
+
 /**
  * Angular `EventManagerPlugin` translating `(keydown.<mod>.<key>)` and `(keyup.<mod>.<key>)`
  * bindings onto native `GtkShortcutController` / `GtkEventControllerKey` listeners.
@@ -74,6 +104,7 @@ export function matchesKeyboardEvent(eventName: string, payload: NativeKeyEventP
 export class NativeKeyEventsPlugin extends EventManagerPlugin {
   private readonly bridge = ensureNgNativeBridge();
   private readonly rendererFactory = injectOptionalRendererFactory();
+  private readonly enabledKeyboardNodes = new Set<string>();
 
   constructor() {
     super(null);
@@ -102,10 +133,15 @@ export class NativeKeyEventsPlugin extends EventManagerPlugin {
             : String((element as { id: unknown }).id)
           : primaryWin;
 
+    if (!this.enabledKeyboardNodes.has(nodeId)) {
+      this.enabledKeyboardNodes.add(nodeId);
+      this.bridge.setAttribute(nodeId, 'event-mask', 'keyboard');
+    }
+
     return this.bridge.listen(nodeId, baseEvent, (rawEvent) => {
-      const payload = (rawEvent ?? {}) as NativeKeyEventPayload;
+      const payload = normalizeKeyPayload(rawEvent);
       if (matchesKeyboardEvent(eventName, payload)) {
-        handler(rawEvent);
+        handler(payload);
       }
     });
   }

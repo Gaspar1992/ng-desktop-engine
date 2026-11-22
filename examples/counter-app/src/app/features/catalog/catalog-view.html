@@ -1,5 +1,5 @@
-<ng-box id="list_view" orientation="vertical" spacing="14px">
-  <ng-box id="list_header" class="hero-banner" orientation="vertical" spacing="4px">
+<ng-box id="list_view" orientation="vertical" spacing="14px" hexpand="true">
+  <ng-box id="list_header" class="hero-banner" orientation="vertical" spacing="4px" hexpand="true">
     <ng-label id="list_title" class="section-title"
       >Pokédex Nacional — Explorador Angular + Servidor Nativo</ng-label
     >
@@ -9,27 +9,21 @@
     >
   </ng-box>
 
-  <ng-flow
-    id="pokemon_grid"
-    row-spacing="14px"
-    column-spacing="14px"
-    min-children="2"
-    max-children="4"
-  >
+  <ng-flow id="pokemon_grid" class="pokemon-grid" row-spacing="12px" column-spacing="12px">
     @for (poke of items(); track poke.id) {
     <ng-box
       class="grid-card"
-      orientation="vertical"
-      spacing="8px"
       [attr.data-testid]="'card-' + poke.id"
+      (dblclick)="selectPokemon.emit(poke.id)"
     >
-      <ng-image [src]="poke.spriteUrl" width="108" height="108" />
+      <ng-image [src]="poke.spriteUrl" width="84" height="84" halign="center" />
       <ng-label class="poke-num">{{ poke.number }}</ng-label>
       <ng-label class="card-name">
         {{ favoriteIds().has(poke.id) ? '★ ' + poke.displayName : poke.displayName }}
       </ng-label>
       <ng-button
         class="suggested-action"
+        hexpand="true"
         [attr.id]="'open_poke_' + poke.id"
         [attr.data-testid]="'open-poke-' + poke.id"
         (click)="selectPokemon.emit(poke.id)"

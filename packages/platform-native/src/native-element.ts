@@ -158,6 +158,26 @@ export class NativeElementNode {
     }
   }
 
+  get value(): string {
+    return this.attributes.get('value') ?? this.textContent;
+  }
+
+  set value(val: string) {
+    const normalized = String(val ?? '');
+    this.textContent = normalized;
+    this.attributes.set('value', normalized);
+  }
+
+  get checked(): boolean {
+    return this.attributes.get('active') === 'true' || this.attributes.get('checked') === 'true';
+  }
+
+  set checked(val: boolean) {
+    const strVal = val ? 'true' : 'false';
+    this.attributes.set('active', strVal);
+    this.attributes.set('checked', strVal);
+  }
+
   getAttribute(name: string): string | null {
     return this.attributes.get(name) ?? null;
   }

@@ -33,6 +33,18 @@ export {
 } from './ecosystem-compat';
 export { nativeImageLoader, provideNativeImageLoader } from './image-loader';
 export {
+  NATIVE_UI_DIRECTIVES,
+  NativeContainerDirective,
+  NativeElementDirective,
+  NativeInputWidgetDirective,
+  NativeMediaAndMeterDirective,
+  NativeTextWidgetDirective,
+  NativeWindowDirective,
+  type NativeAttrInput,
+  type NativeBoolInput,
+  type NativeNumberInput,
+} from './native-directives';
+export {
   getNativeActiveElement,
   NativeElementNode,
   setNativeActiveElement,
@@ -40,7 +52,12 @@ export {
   type NativeElementEvent,
   type NativeEventListener,
 } from './native-element';
-export { NativeRenderer2, NativeRendererFactory2 } from './native-renderer';
+export {
+  HTML_TO_NATIVE_TAG,
+  NativeRenderer2,
+  NativeRendererFactory2,
+  resolveNativeTag,
+} from './native-renderer';
 export { NATIVE_WINDOW_NODE_ID, NativeTitleService, provideNativeTitle } from './native-title';
 export {
   bootstrapNativeApplication,

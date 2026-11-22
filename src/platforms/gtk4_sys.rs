@@ -18,6 +18,13 @@ const GTK_STYLE_PROVIDER_PRIORITY_APPLICATION: c_uint = 600;
 pub type GtkClickCallback = unsafe extern "C" fn(*mut c_void, *mut c_void);
 pub type GtkNotifyCallback = unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void);
 pub type GtkEdgeReachedCallback = unsafe extern "C" fn(*mut c_void, c_int, *mut c_void);
+pub type GtkGestureClickCallback = unsafe extern "C" fn(*mut c_void, c_int, f64, f64, *mut c_void);
+pub type GtkMotionCallback = unsafe extern "C" fn(*mut c_void, f64, f64, *mut c_void);
+pub type GtkKeyCallback =
+    unsafe extern "C" fn(*mut c_void, c_uint, c_uint, c_uint, *mut c_void) -> c_int;
+pub type GtkScrollControllerCallback =
+    unsafe extern "C" fn(*mut c_void, f64, f64, *mut c_void) -> c_int;
+pub type GtkCloseRequestCallback = unsafe extern "C" fn(*mut c_void, *mut c_void) -> c_int;
 
 /// Dynamically loaded `GTK4` / `GLib` / `GObject` / `GIO` function table for Linux.
 /// Isolates all C FFI symbol loading (`dlopen` / `dlsym`) from widget operations.
@@ -36,6 +43,8 @@ pub struct Gtk4Sys {
     pub(super) gtk_window_present: unsafe extern "C" fn(*mut c_void),
     pub(super) gtk_window_destroy: unsafe extern "C" fn(*mut c_void),
     pub(super) gtk_window_get_toplevels: unsafe extern "C" fn() -> *mut c_void,
+    pub(super) gtk_window_is_maximized: unsafe extern "C" fn(*mut c_void) -> c_int,
+    pub(super) gtk_window_is_active: unsafe extern "C" fn(*mut c_void) -> c_int,
     pub(super) gtk_header_bar_new: unsafe extern "C" fn() -> *mut c_void,
     pub(super) gtk_header_bar_set_show_title_buttons: unsafe extern "C" fn(*mut c_void, c_int),
     pub(super) gtk_header_bar_set_title_widget: unsafe extern "C" fn(*mut c_void, *mut c_void),
@@ -46,6 +55,11 @@ pub struct Gtk4Sys {
     pub(super) gtk_scrolled_window_new: unsafe extern "C" fn() -> *mut c_void,
     pub(super) gtk_scrolled_window_set_child: unsafe extern "C" fn(*mut c_void, *mut c_void),
     pub(super) gtk_scrolled_window_set_min_content_height: unsafe extern "C" fn(*mut c_void, c_int),
+    pub(super) gtk_scrolled_window_get_vadjustment:
+        unsafe extern "C" fn(*mut c_void) -> *mut c_void,
+    pub(super) gtk_adjustment_get_value: unsafe extern "C" fn(*mut c_void) -> f64,
+    pub(super) gtk_adjustment_get_upper: unsafe extern "C" fn(*mut c_void) -> f64,
+    pub(super) gtk_adjustment_get_page_size: unsafe extern "C" fn(*mut c_void) -> f64,
     pub(super) gtk_box_new: unsafe extern "C" fn(c_int, c_int) -> *mut c_void,
     pub(super) gtk_box_append: unsafe extern "C" fn(*mut c_void, *mut c_void),
     pub(super) gtk_box_remove: unsafe extern "C" fn(*mut c_void, *mut c_void),
@@ -101,6 +115,17 @@ pub struct Gtk4Sys {
     pub(super) gtk_widget_set_margin_end: unsafe extern "C" fn(*mut c_void, c_int),
     pub(super) gtk_widget_set_size_request: unsafe extern "C" fn(*mut c_void, c_int, c_int),
     pub(super) gtk_widget_set_visible: unsafe extern "C" fn(*mut c_void, c_int),
+    pub(super) gtk_widget_get_width: unsafe extern "C" fn(*mut c_void) -> c_int,
+    pub(super) gtk_widget_get_height: unsafe extern "C" fn(*mut c_void) -> c_int,
+    pub(super) gtk_widget_add_controller: unsafe extern "C" fn(*mut c_void, *mut c_void),
+    pub(super) gtk_gesture_click_new: unsafe extern "C" fn() -> *mut c_void,
+    pub(super) gtk_gesture_single_set_button: unsafe extern "C" fn(*mut c_void, c_uint),
+    pub(super) gtk_gesture_single_get_current_button: unsafe extern "C" fn(*mut c_void) -> c_uint,
+    pub(super) gtk_event_controller_motion_new: unsafe extern "C" fn() -> *mut c_void,
+    pub(super) gtk_event_controller_focus_new: unsafe extern "C" fn() -> *mut c_void,
+    pub(super) gtk_event_controller_key_new: unsafe extern "C" fn() -> *mut c_void,
+    pub(super) gtk_event_controller_scroll_new: unsafe extern "C" fn(c_uint) -> *mut c_void,
+    pub(super) gdk_keyval_name: unsafe extern "C" fn(c_uint) -> *const c_char,
     pub(super) gtk_picture_new: unsafe extern "C" fn() -> *mut c_void,
     pub(super) gtk_picture_set_filename: unsafe extern "C" fn(*mut c_void, *const c_char),
     pub(super) gtk_picture_set_can_shrink: unsafe extern "C" fn(*mut c_void, c_int),
@@ -265,6 +290,8 @@ impl Gtk4Sys {
                 gtk_window_present: Self::load_fn(gtk_lib, c"gtk_window_present")?,
                 gtk_window_destroy: Self::load_fn(gtk_lib, c"gtk_window_destroy")?,
                 gtk_window_get_toplevels: Self::load_fn(gtk_lib, c"gtk_window_get_toplevels")?,
+                gtk_window_is_maximized: Self::load_fn(gtk_lib, c"gtk_window_is_maximized")?,
+                gtk_window_is_active: Self::load_fn(gtk_lib, c"gtk_window_is_active")?,
                 gtk_header_bar_new: Self::load_fn(gtk_lib, c"gtk_header_bar_new")?,
                 gtk_header_bar_set_show_title_buttons: Self::load_fn(
                     gtk_lib,
@@ -285,6 +312,16 @@ impl Gtk4Sys {
                 gtk_scrolled_window_set_min_content_height: Self::load_fn(
                     gtk_lib,
                     c"gtk_scrolled_window_set_min_content_height",
+                )?,
+                gtk_scrolled_window_get_vadjustment: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_scrolled_window_get_vadjustment",
+                )?,
+                gtk_adjustment_get_value: Self::load_fn(gtk_lib, c"gtk_adjustment_get_value")?,
+                gtk_adjustment_get_upper: Self::load_fn(gtk_lib, c"gtk_adjustment_get_upper")?,
+                gtk_adjustment_get_page_size: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_adjustment_get_page_size",
                 )?,
                 gtk_box_new: Self::load_fn(gtk_lib, c"gtk_box_new")?,
                 gtk_box_append: Self::load_fn(gtk_lib, c"gtk_box_append")?,
@@ -376,6 +413,35 @@ impl Gtk4Sys {
                     c"gtk_widget_set_size_request",
                 )?,
                 gtk_widget_set_visible: Self::load_fn(gtk_lib, c"gtk_widget_set_visible")?,
+                gtk_widget_get_width: Self::load_fn(gtk_lib, c"gtk_widget_get_width")?,
+                gtk_widget_get_height: Self::load_fn(gtk_lib, c"gtk_widget_get_height")?,
+                gtk_widget_add_controller: Self::load_fn(gtk_lib, c"gtk_widget_add_controller")?,
+                gtk_gesture_click_new: Self::load_fn(gtk_lib, c"gtk_gesture_click_new")?,
+                gtk_gesture_single_set_button: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_gesture_single_set_button",
+                )?,
+                gtk_gesture_single_get_current_button: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_gesture_single_get_current_button",
+                )?,
+                gtk_event_controller_motion_new: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_event_controller_motion_new",
+                )?,
+                gtk_event_controller_focus_new: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_event_controller_focus_new",
+                )?,
+                gtk_event_controller_key_new: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_event_controller_key_new",
+                )?,
+                gtk_event_controller_scroll_new: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_event_controller_scroll_new",
+                )?,
+                gdk_keyval_name: Self::load_fn(gtk_lib, c"gdk_keyval_name")?,
                 gtk_picture_new: Self::load_fn(gtk_lib, c"gtk_picture_new")?,
                 gtk_picture_set_filename: Self::load_fn(gtk_lib, c"gtk_picture_set_filename")?,
                 gtk_picture_set_can_shrink: Self::load_fn(gtk_lib, c"gtk_picture_set_can_shrink")?,

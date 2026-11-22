@@ -150,15 +150,14 @@ describe('@ng-desktop/forms — ControlValueAccessor Directives', () => {
   });
 
   it('matches NativeBooleanValueAccessor selector on <ng-check-button>, <gtk-switch>, and <gtk-check-button>', async () => {
-    const { Component, CUSTOM_ELEMENTS_SCHEMA } = await import('@angular/core');
+    const { Component } = await import('@angular/core');
     const { TestBed } = await import('@angular/core/testing');
     const { ReactiveFormsModule } = await import('@angular/forms');
-    const { provideNativePlatform } = await import('@ng-desktop/platform');
+    const { NATIVE_UI_DIRECTIVES, provideNativePlatform } = await import('@ng-desktop/platform');
 
     @Component({
       standalone: true,
-      imports: [ReactiveFormsModule, NativeBooleanValueAccessor],
-      schemas: [CUSTOM_ELEMENTS_SCHEMA],
+      imports: [ReactiveFormsModule, NativeBooleanValueAccessor, NATIVE_UI_DIRECTIVES],
       template: `
         <ng-check-button [formControl]="checkBtnCtrl"></ng-check-button>
         <gtk-switch [formControl]="gtkSwitchCtrl"></gtk-switch>

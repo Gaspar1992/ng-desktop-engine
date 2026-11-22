@@ -2,7 +2,7 @@
 
 use super::PlatformBackend;
 use super::scene_state::{NativeSceneNode, NativeSceneState};
-use crate::engine::{NativeEvent, NodeId, RenderCommand};
+use crate::engine::{EventMask, NativeEvent, NodeId, RenderCommand};
 #[cfg(target_os = "macos")]
 use crate::ffi_dl::DynLib;
 use std::collections::{HashMap, HashSet};
@@ -16,6 +16,8 @@ pub struct AppKitWidgetBinding {
     pub class_resolved: bool,
     pub primary_selector: &'static str,
     pub selector_resolved: bool,
+    pub event_mask: EventMask,
+    pub event_selectors: Vec<&'static str>,
 }
 
 #[cfg(target_os = "macos")]
@@ -196,6 +198,27 @@ impl AppKitFfiDriver {
         }
     }
 
+    fn selectors_for_mask(mask: EventMask) -> Vec<&'static str> {
+        const TABLE: &[(EventMask, &str)] = &[
+            (EventMask::CLICK, "mouseUp:"),
+            (EventMask::CONTEXT_MENU, "rightMouseDown:"),
+            (EventMask::POINTER_MOTION, "mouseMoved:"),
+            (EventMask::FOCUS, "becomeFirstResponder"),
+            (EventMask::KEYBOARD, "keyDown:"),
+            (EventMask::ACTIVATE, "insertNewline:"),
+            (EventMask::VALUE_CHANGE, "controlTextDidChange:"),
+            (EventMask::SCROLL, "reflectScrolledClipView:"),
+            (EventMask::WHEEL, "scrollWheel:"),
+            (EventMask::WINDOW_STATE, "windowDidResize:"),
+            (EventMask::CLOSE_REQUEST, "windowShouldClose:"),
+            (EventMask::DRAG_DROP, "performDragOperation:"),
+        ];
+        TABLE
+            .iter()
+            .filter_map(|&(bit, sel)| mask.contains(bit).then_some(sel))
+            .collect()
+    }
+
     fn register_node(&mut self, id: NodeId, mapped_tag: &'static str) {
         let objc_class = Self::runtime_objc_class(mapped_tag);
         let primary_selector = Self::primary_selector_for(objc_class);
@@ -208,8 +231,28 @@ impl AppKitFfiDriver {
                 class_resolved,
                 primary_selector,
                 selector_resolved,
+                event_mask: EventMask::NONE,
+                event_selectors: Vec::new(),
             },
         );
+    }
+
+    fn update_event_mask(&mut self, id: NodeId, mask: EventMask) {
+        let Some(next_mask) = self
+            .bindings
+            .get(&id)
+            .map(|binding| binding.event_mask.union(mask))
+        else {
+            return;
+        };
+        let selectors = Self::selectors_for_mask(next_mask);
+        for sel in &selectors {
+            let _ = self.probe_selector(sel);
+        }
+        if let Some(binding) = self.bindings.get_mut(&id) {
+            binding.event_mask = next_mask;
+            binding.event_selectors = selectors;
+        }
     }
 
     fn unregister_node(&mut self, id: NodeId) {
@@ -347,6 +390,16 @@ impl PlatformBackend for MacOsAppKitBackend {
                 RenderCommand::CreateWidget { id, tag } => {
                     self.ffi_driver
                         .register_node(*id, Self::map_appkit_tag(tag));
+                }
+                RenderCommand::SetAttribute { node, key, value } if key == "event-mask" => {
+                    self.ffi_driver
+                        .update_event_mask(*node, EventMask::parse_attr(value));
+                }
+                RenderCommand::SetAttribute { node, key, value }
+                    if key == "prevent-close" && NativeSceneState::parse_truthy_attr(value) =>
+                {
+                    self.ffi_driver
+                        .update_event_mask(*node, EventMask::CLOSE_REQUEST);
                 }
                 RenderCommand::DestroyWidget { id } => {
                     self.ffi_driver.unregister_node(*id);

@@ -1,6 +1,8 @@
+use super::gtk4_callbacks::{pack_node_id, set_window_prevent_close};
 use super::gtk4_sys::{Gtk4Sys, GtkHandle};
 use super::linux_gtk::{GtkLinuxBackend, GtkWidgetType};
-use crate::engine::{NodeId, StyleRule};
+use super::scene_state::NativeSceneState;
+use crate::engine::{EventMask, NodeId, StyleRule};
 use std::fmt::Write as _;
 
 /// Translates a single engine `StyleRule` into a GTK4 CSS class block (pure, unit-testable).
@@ -24,6 +26,12 @@ pub(super) fn render_gtk_css_rule(rule: &StyleRule) -> String {
     }
     if let Some(weight) = rule.font_weight {
         let _ = writeln!(css, "  font-weight: {weight};");
+    }
+    if let Some(mw) = rule.min_width {
+        let _ = writeln!(css, "  min-width: {mw}px;");
+    }
+    if let Some(mh) = rule.min_height {
+        let _ = writeln!(css, "  min-height: {mh}px;");
     }
     let _ = writeln!(css, "}}");
     css
@@ -161,7 +169,37 @@ impl GtkLinuxBackend {
         }
     }
 
-    pub(super) fn apply_native_attribute(&mut self, node: NodeId, key: &str, value: &str) {
+    fn apply_metadata_attribute(&mut self, node: NodeId, key: &str, value: &str) -> bool {
+        if key == "event-mask" {
+            self.enable_widget_events(node, EventMask::parse_attr(value));
+            return true;
+        }
+        if key == "prevent-close" {
+            let prevent = NativeSceneState::parse_truthy_attr(value);
+            if let Some(w) = self.widgets.get_mut(&node) {
+                w.prevent_close = prevent;
+            }
+            set_window_prevent_close(pack_node_id(node), prevent);
+            if prevent {
+                self.enable_widget_events(node, EventMask::CLOSE_REQUEST);
+            }
+            return true;
+        }
+        if key == "close-window" {
+            if NativeSceneState::parse_truthy_attr(value)
+                && let Some(w) = self.widgets.get_mut(&node)
+                && w.kind == GtkWidgetType::Window
+            {
+                w.prevent_close = false;
+                set_window_prevent_close(pack_node_id(node), false);
+                if let Some(handle) = w.handle.take()
+                    && let Some(gtk) = &self.gtk
+                {
+                    gtk.destroy_window(handle);
+                }
+            }
+            return true;
+        }
         if let Some(w) = self.widgets.get_mut(&node) {
             match key {
                 "drop-target" => {
@@ -169,14 +207,57 @@ impl GtkLinuxBackend {
                     w.drop_target = !trimmed.eq_ignore_ascii_case("false") && trimmed != "0";
                 }
                 "scroll-to" => {
-                    w.scroll_position =
-                        super::scene_state::NativeSceneState::parse_scroll_coords(value);
+                    w.scroll_position = NativeSceneState::parse_scroll_coords(value);
                 }
                 "scroll-anchor" => {
                     w.scroll_anchor = Some(value.to_string());
                 }
                 _ => {}
             }
+        }
+        false
+    }
+
+    pub(super) fn enable_widget_events(&mut self, node: NodeId, requested: EventMask) {
+        let Some(widget) = self.widgets.get_mut(&node) else {
+            return;
+        };
+        let delta = EventMask::newly_enabled(widget.attached_events, requested);
+        widget.attached_events = widget.attached_events.union(requested);
+        if delta.is_empty() {
+            return;
+        }
+        let (Some(gtk), Some(handle)) = (&self.gtk, widget.handle) else {
+            return;
+        };
+        let kind = widget.kind;
+        let packed = pack_node_id(node);
+        if delta.contains(EventMask::CLICK) {
+            gtk.attach_click_gesture(handle, packed, kind != GtkWidgetType::Button);
+        }
+        if delta.contains(EventMask::CONTEXT_MENU) {
+            gtk.attach_context_menu_gesture(handle, packed);
+        }
+        if delta.contains(EventMask::POINTER_MOTION) {
+            gtk.attach_motion_controller(handle, packed);
+        }
+        if delta.contains(EventMask::FOCUS) {
+            gtk.attach_focus_controller(handle, packed);
+        }
+        if delta.contains(EventMask::KEYBOARD) {
+            gtk.attach_key_controller(handle, packed);
+        }
+        if delta.contains(EventMask::WHEEL) {
+            gtk.attach_wheel_controller(handle, packed);
+        }
+        if delta.contains(EventMask::CLOSE_REQUEST) && kind == GtkWidgetType::Window {
+            gtk.connect_window_close_request(handle, packed);
+        }
+    }
+
+    pub(super) fn apply_native_attribute(&mut self, node: NodeId, key: &str, value: &str) {
+        if self.apply_metadata_attribute(node, key, value) {
+            return;
         }
         let (Some(gtk), Some(widget)) = (&self.gtk, self.widgets.get(&node)) else {
             return;
@@ -190,11 +271,15 @@ impl GtkLinuxBackend {
             }
             return;
         }
-        if matches!(key, "width" | "height")
+        if matches!(key, "width" | "height" | "min-width" | "min-height")
             && let Some(px) = Self::parse_px_i32(value)
         {
+            if key == "min-height" && widget_kind == GtkWidgetType::Scroll {
+                gtk.set_scrolled_min_height(handle, px);
+                return;
+            }
             if let Some(w) = self.widgets.get_mut(&node) {
-                if key == "width" {
+                if matches!(key, "width" | "min-width") {
                     w.size_request.0 = px;
                 } else {
                     w.size_request.1 = px;
@@ -224,11 +309,6 @@ impl GtkLinuxBackend {
             }
             "show-title-buttons" if widget_kind == GtkWidgetType::HeaderBar => {
                 gtk.set_header_bar_show_title_buttons(handle, value != "false" && value != "0");
-            }
-            "min-height" if widget_kind == GtkWidgetType::Scroll => {
-                if let Some(px) = Self::parse_px_i32(value) {
-                    gtk.set_scrolled_min_height(handle, px);
-                }
             }
             "orientation"
                 if matches!(widget_kind, GtkWidgetType::Box | GtkWidgetType::Separator) =>
@@ -375,6 +455,87 @@ impl GtkLinuxBackend {
             _ => {}
         }
     }
+    /// Applies CSS Flexbox/Grid-derived layout properties attached to a registered `StyleRule`.
+    pub(super) fn apply_style_rule_layout(&mut self, node: NodeId, rule: &StyleRule) {
+        if (rule.min_width.is_some() || rule.min_height.is_some())
+            && let (Some(gtk), Some(w)) = (&self.gtk, self.widgets.get_mut(&node))
+            && let Some(handle) = w.handle
+        {
+            if let Some(mw) = rule.min_width
+                && w.size_request.0 < 0
+            {
+                w.size_request.0 = i32::from(mw);
+            }
+            if let Some(mh) = rule.min_height
+                && w.size_request.1 < 0
+            {
+                w.size_request.1 = i32::from(mh);
+            }
+            gtk.set_size_request(handle, w.size_request.0, w.size_request.1);
+        }
+        let (Some(gtk), Some(widget)) = (&self.gtk, self.widgets.get(&node)) else {
+            return;
+        };
+        let Some(handle) = widget.handle else { return };
+        let kind = widget.kind;
+        if let Some(orient) = &rule.orientation
+            && matches!(
+                kind,
+                GtkWidgetType::Box | GtkWidgetType::Paned | GtkWidgetType::Separator
+            )
+        {
+            gtk.set_orientation(handle, orient != "horizontal");
+        }
+        Self::apply_style_rule_spacing_and_align(gtk, kind, handle, rule);
+    }
+
+    fn apply_style_rule_spacing_and_align(
+        gtk: &Gtk4Sys,
+        kind: GtkWidgetType,
+        handle: GtkHandle,
+        rule: &StyleRule,
+    ) {
+        if rule.spacing > 0 {
+            let sp = i32::from(rule.spacing);
+            match kind {
+                GtkWidgetType::Box => gtk.set_box_spacing(handle, sp),
+                GtkWidgetType::FlowBox => {
+                    let u = u32::from(rule.spacing);
+                    gtk.set_flow_box_row_spacing(handle, u);
+                    gtk.set_flow_box_column_spacing(handle, u);
+                }
+                GtkWidgetType::Grid => {
+                    let u = u32::from(rule.spacing);
+                    gtk.set_grid_row_spacing(handle, u);
+                    gtk.set_grid_column_spacing(handle, u);
+                }
+                _ => {}
+            }
+        }
+        if let Some(hexp) = rule.hexpand {
+            gtk.set_hexpand(handle, hexp);
+        }
+        if let Some(vexp) = rule.vexpand {
+            gtk.set_vexpand(handle, vexp);
+        }
+        if let Some(hal) = &rule.halign {
+            gtk.set_halign(handle, hal);
+        }
+        if let Some(val) = &rule.valign {
+            gtk.set_valign(handle, val);
+        }
+        if kind == GtkWidgetType::FlowBox {
+            if let Some(min_c) = rule.min_children {
+                gtk.set_flow_box_min_children_per_line(handle, u32::from(min_c));
+            }
+            if let Some(max_c) = rule.max_children {
+                gtk.set_flow_box_max_children_per_line(handle, u32::from(max_c));
+            }
+            if let Some(hom) = rule.homogeneous {
+                gtk.set_flow_box_homogeneous(handle, hom);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -398,6 +559,8 @@ mod tests {
             border_radius: Some(12),
             font_size: Some(22),
             font_weight: Some(800),
+            min_width: Some(240),
+            min_height: Some(180),
             ..StyleRule::default()
         };
         let hero_css = render_gtk_css_rule(&hero);
@@ -406,6 +569,8 @@ mod tests {
         assert!(hero_css.contains("border-radius: 12px;"));
         assert!(hero_css.contains("font-size: 22px;"));
         assert!(hero_css.contains("font-weight: 800;"));
+        assert!(hero_css.contains("min-width: 240px;"));
+        assert!(hero_css.contains("min-height: 180px;"));
         assert!(!hero_css.contains("padding"));
     }
 }

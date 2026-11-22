@@ -11,19 +11,74 @@ pub struct StyleRule {
     pub border_radius: Option<u16>,
     pub font_size: Option<u16>,
     pub font_weight: Option<u16>,
+    pub min_width: Option<u16>,
+    pub min_height: Option<u16>,
+    pub orientation: Option<String>,
+    pub hexpand: Option<bool>,
+    pub vexpand: Option<bool>,
+    pub halign: Option<String>,
+    pub valign: Option<String>,
+    pub min_children: Option<u16>,
+    pub max_children: Option<u16>,
+    pub homogeneous: Option<bool>,
 }
 
 impl StyleRule {
-    /// Applies an optional extended `key=value` declaration (`radius`, `font-size`, `font-weight`).
-    /// Returns `false` when the key is unknown or the value is not a valid unsigned integer.
+    /// Applies an optional extended `key=value` declaration (`radius`, `font-size`,
+    /// `font-weight`, `min-width`, `min-height`, and CSS Flexbox/Grid layout directives).
+    /// Returns `false` when the key is unknown or the value is invalid.
     pub fn apply_extension(&mut self, key: &str, raw_value: &str) -> bool {
-        let Ok(value) = raw_value.trim().trim_end_matches("px").parse::<u16>() else {
+        let trimmed = raw_value.trim();
+        match key {
+            "orientation" | "flex-direction" => match trimmed {
+                "horizontal" | "row" => self.orientation = Some(String::from("horizontal")),
+                "vertical" | "column" => self.orientation = Some(String::from("vertical")),
+                _ => return false,
+            },
+            "hexpand" => match Self::parse_bool(trimmed) {
+                Some(b) => self.hexpand = Some(b),
+                None => return false,
+            },
+            "vexpand" => match Self::parse_bool(trimmed) {
+                Some(b) => self.vexpand = Some(b),
+                None => return false,
+            },
+            "homogeneous" => match Self::parse_bool(trimmed) {
+                Some(b) => self.homogeneous = Some(b),
+                None => return false,
+            },
+            "halign" if matches!(trimmed, "fill" | "start" | "end" | "center" | "baseline") => {
+                self.halign = Some(String::from(trimmed));
+            }
+            "valign" if matches!(trimmed, "fill" | "start" | "end" | "center" | "baseline") => {
+                self.valign = Some(String::from(trimmed));
+            }
+            "halign" | "valign" => return false,
+            _ => return self.apply_numeric_extension(key, trimmed),
+        }
+        true
+    }
+
+    fn parse_bool(raw: &str) -> Option<bool> {
+        match raw {
+            "true" | "1" => Some(true),
+            "false" | "0" => Some(false),
+            _ => None,
+        }
+    }
+
+    fn apply_numeric_extension(&mut self, key: &str, raw_value: &str) -> bool {
+        let Ok(value) = raw_value.trim_end_matches("px").trim().parse::<u16>() else {
             return false;
         };
         match key {
             "radius" | "border-radius" => self.border_radius = Some(value),
             "font-size" => self.font_size = Some(value),
             "font-weight" => self.font_weight = Some(value),
+            "min-width" => self.min_width = Some(value),
+            "min-height" => self.min_height = Some(value),
+            "min-children" | "min-per-row" => self.min_children = Some(value),
+            "max-children" | "max-per-row" => self.max_children = Some(value),
             _ => return false,
         }
         true
@@ -167,10 +222,32 @@ mod tests {
         assert!(rule.apply_extension("radius", "12px"));
         assert!(rule.apply_extension("font-size", "18"));
         assert!(rule.apply_extension("font-weight", "700"));
+        assert!(rule.apply_extension("min-width", "240px"));
+        assert!(rule.apply_extension("min-height", "120"));
+        assert!(rule.apply_extension("orientation", "horizontal"));
+        assert!(rule.apply_extension("hexpand", "true"));
+        assert!(rule.apply_extension("vexpand", "false"));
+        assert!(rule.apply_extension("halign", "center"));
+        assert!(rule.apply_extension("valign", "start"));
+        assert!(rule.apply_extension("min-children", "1"));
+        assert!(rule.apply_extension("max-children", "12"));
+        assert!(rule.apply_extension("homogeneous", "true"));
+        assert!(!rule.apply_extension("orientation", "diagonal"));
+        assert!(!rule.apply_extension("halign", "stretch"));
         assert!(!rule.apply_extension("font-weight", "bold"));
         assert!(!rule.apply_extension("letter-spacing", "2"));
         assert_eq!(rule.border_radius, Some(12));
         assert_eq!(rule.font_size, Some(18));
         assert_eq!(rule.font_weight, Some(700));
+        assert_eq!(rule.min_width, Some(240));
+        assert_eq!(rule.min_height, Some(120));
+        assert_eq!(rule.orientation.as_deref(), Some("horizontal"));
+        assert_eq!(rule.hexpand, Some(true));
+        assert_eq!(rule.vexpand, Some(false));
+        assert_eq!(rule.halign.as_deref(), Some("center"));
+        assert_eq!(rule.valign.as_deref(), Some("start"));
+        assert_eq!(rule.min_children, Some(1));
+        assert_eq!(rule.max_children, Some(12));
+        assert_eq!(rule.homogeneous, Some(true));
     }
 }

@@ -414,6 +414,72 @@ function makeCommentNode(idState, prefix, text) {
   };
 }
 
+const HTML_TO_NATIVE_TAG = {
+  div: 'ng-box',
+  section: 'ng-box',
+  main: 'ng-box',
+  article: 'ng-box',
+  aside: 'ng-box',
+  nav: 'ng-box',
+  header: 'ng-box',
+  footer: 'ng-box',
+  form: 'ng-box',
+  ul: 'ng-box',
+  ol: 'ng-box',
+  li: 'ng-box',
+  figure: 'ng-box',
+  figcaption: 'ng-box',
+  p: 'ng-label',
+  span: 'ng-label',
+  label: 'ng-label',
+  h1: 'ng-label',
+  h2: 'ng-label',
+  h3: 'ng-label',
+  h4: 'ng-label',
+  h5: 'ng-label',
+  h6: 'ng-label',
+  strong: 'ng-label',
+  em: 'ng-label',
+  small: 'ng-label',
+  code: 'ng-label',
+  pre: 'ng-label',
+  a: 'ng-label',
+  button: 'ng-button',
+  img: 'ng-image',
+  hr: 'ng-separator',
+  input: 'ng-entry',
+  textarea: 'ng-text-view',
+  select: 'ng-select',
+  progress: 'ng-progress-bar',
+  details: 'ng-expander',
+};
+
+function resolveNativeHtmlTag(tagName, attrs) {
+  const lower = String(tagName || '')
+    .trim()
+    .toLowerCase();
+  if (lower === 'input') {
+    const inputType = String(attrs?.type || '')
+      .trim()
+      .toLowerCase();
+    switch (inputType) {
+      case 'search':
+        return 'ng-search-entry';
+      case 'password':
+        return 'ng-password-entry';
+      case 'checkbox':
+        return 'ng-checkbox';
+      case 'range':
+        return 'ng-slider';
+      case 'number':
+        return 'ng-spin-button';
+      default:
+        return 'ng-entry';
+    }
+  }
+  return HTML_TO_NATIVE_TAG[lower] || tagName;
+}
+
 function isControlOrElementChild(child) {
   return (
     typeof child.name === 'string' ||
@@ -805,7 +871,7 @@ export function parseTemplateHtml(
 
       out.push({
         id: attrs.id || `node_${idState.next++}`,
-        tag: tmplNode.name,
+        tag: resolveNativeHtmlTag(tmplNode.name, attrs),
         title: attrs.title || null,
         classes: attrs.class ? attrs.class.split(/\s+/).filter(Boolean) : [],
         attributes: customAttrs,
