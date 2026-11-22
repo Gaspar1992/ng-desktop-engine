@@ -1,6 +1,10 @@
 #![allow(unsafe_code)]
 
 use super::PlatformBackend;
+#[cfg(target_os = "macos")]
+use super::appkit_sys::{
+    AppKitHandle, AppKitSys, NsPoint, NsRect, NsSize, can_activate_live_appkit,
+};
 use super::scene_state::{NativeSceneNode, NativeSceneState};
 use crate::engine::{EventMask, NativeEvent, NodeId, RenderCommand};
 #[cfg(target_os = "macos")]
@@ -34,16 +38,25 @@ struct AppKitFfiDriver {
     objc_get_class: Option<ObjcGetClassFn>,
     #[cfg(target_os = "macos")]
     sel_register_name: Option<SelRegisterNameFn>,
+    #[cfg(target_os = "macos")]
+    live_sys: Option<AppKitSys>,
+    #[cfg(target_os = "macos")]
+    live_active: bool,
+    #[cfg(target_os = "macos")]
+    live_handles: HashMap<NodeId, AppKitHandle>,
+    #[cfg(target_os = "macos")]
+    live_toplevels: HashSet<NodeId>,
 }
 
 impl AppKitFfiDriver {
-    fn new() -> Self {
+    fn new(headless: bool) -> Self {
         #[cfg(target_os = "macos")]
         {
-            Self::init_macos_driver()
+            Self::init_macos_driver(headless)
         }
         #[cfg(not(target_os = "macos"))]
         {
+            let _ = headless;
             Self {
                 ffi_loaded: false,
                 resolved_classes: HashSet::new(),
@@ -54,7 +67,7 @@ impl AppKitFfiDriver {
     }
 
     #[cfg(target_os = "macos")]
-    fn init_macos_driver() -> Self {
+    fn init_macos_driver(headless: bool) -> Self {
         let objc_lib = unsafe {
             DynLib::open(c"/usr/lib/libobjc.A.dylib").or_else(|| DynLib::open(c"libobjc.A.dylib"))
         };
@@ -70,6 +83,10 @@ impl AppKitFfiDriver {
                 bindings: HashMap::new(),
                 objc_get_class: None,
                 sel_register_name: None,
+                live_sys: None,
+                live_active: false,
+                live_handles: HashMap::new(),
+                live_toplevels: HashSet::new(),
             };
         };
 
@@ -78,6 +95,12 @@ impl AppKitFfiDriver {
         let msg_send_ok = unsafe { objc.sym::<*mut c_void>(c"objc_msgSend").is_some() };
         let ffi_loaded =
             appkit_loaded && objc_get_class.is_some() && sel_register_name.is_some() && msg_send_ok;
+        let live_sys = if ffi_loaded {
+            AppKitSys::try_load()
+        } else {
+            None
+        };
+        let live_active = !headless && live_sys.is_some() && can_activate_live_appkit();
 
         let mut driver = Self {
             ffi_loaded,
@@ -86,6 +109,10 @@ impl AppKitFfiDriver {
             bindings: HashMap::new(),
             objc_get_class,
             sel_register_name,
+            live_sys,
+            live_active,
+            live_handles: HashMap::new(),
+            live_toplevels: HashSet::new(),
         };
         if ffi_loaded {
             for class_name in [
@@ -236,6 +263,40 @@ impl AppKitFfiDriver {
                 event_selectors: Vec::new(),
             },
         );
+        #[cfg(target_os = "macos")]
+        if self.live_active
+            && let Some(sys) = &self.live_sys
+        {
+            let created = match objc_class {
+                "NSWindow" => {
+                    let h = sys.create_window(false, 1020.0, 720.0);
+                    if h.is_some() {
+                        self.live_toplevels.insert(id);
+                    }
+                    h
+                }
+                "NSPanel" => {
+                    let h = sys.create_window(true, 460.0, 280.0);
+                    if h.is_some() {
+                        self.live_toplevels.insert(id);
+                    }
+                    h
+                }
+                cls => sys.create_view(
+                    cls,
+                    NsRect {
+                        origin: NsPoint { x: 0.0, y: 0.0 },
+                        size: NsSize {
+                            width: 320.0,
+                            height: 36.0,
+                        },
+                    },
+                ),
+            };
+            if let Some(handle) = created {
+                self.live_handles.insert(id, handle);
+            }
+        }
     }
 
     fn update_event_mask(&mut self, id: NodeId, mask: EventMask) {
@@ -258,15 +319,113 @@ impl AppKitFfiDriver {
 
     fn unregister_node(&mut self, id: NodeId) {
         self.bindings.remove(&id);
+        #[cfg(target_os = "macos")]
+        if self.live_active
+            && let Some(sys) = &self.live_sys
+        {
+            let is_top = self.live_toplevels.remove(&id);
+            if let Some(h) = self.live_handles.remove(&id) {
+                if is_top {
+                    sys.close_window(h);
+                } else {
+                    sys.remove_from_superview(h);
+                }
+                sys.release(h);
+            }
+        }
     }
 
     fn open_window_count(&self) -> u32 {
+        #[cfg(target_os = "macos")]
+        if self.live_active
+            && let Some(sys) = &self.live_sys
+        {
+            let live_count = self
+                .live_toplevels
+                .iter()
+                .filter_map(|id| self.live_handles.get(id))
+                .filter(|&&h| sys.is_window_visible(h))
+                .count();
+            return u32::try_from(live_count).unwrap_or(u32::MAX);
+        }
         let count = self
             .bindings
             .values()
             .filter(|b| b.objc_class == "NSWindow")
             .count();
         u32::try_from(count).unwrap_or(u32::MAX)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn apply_live_command(&self, cmd: &RenderCommand) {
+        if !self.live_active {
+            return;
+        }
+        let Some(sys) = &self.live_sys else {
+            return;
+        };
+        match cmd {
+            RenderCommand::SetText { id, text } => {
+                if let (Some(&h), Some(binding)) =
+                    (self.live_handles.get(id), self.bindings.get(id))
+                {
+                    match binding.objc_class {
+                        "NSWindow" | "NSPanel" | "NSButton" => sys.set_title(h, text),
+                        _ => sys.set_string_value(h, text),
+                    }
+                }
+            }
+            RenderCommand::SetAttribute { node, key, value } => {
+                if let (Some(&h), Some(binding)) =
+                    (self.live_handles.get(node), self.bindings.get(node))
+                {
+                    let cls = binding.objc_class;
+                    match key.as_str() {
+                        "title" | "label" => sys.set_title(h, value),
+                        "value" | "text" => sys.set_string_value(h, value),
+                        "visible" => {
+                            let visible = NativeSceneState::parse_truthy_attr(value);
+                            if matches!(cls, "NSWindow" | "NSPanel") {
+                                if visible {
+                                    sys.present_window(h);
+                                } else {
+                                    sys.close_window(h);
+                                }
+                            } else {
+                                sys.set_hidden(h, !visible);
+                            }
+                        }
+                        "close-window" if NativeSceneState::parse_truthy_attr(value) => {
+                            if matches!(cls, "NSWindow" | "NSPanel") {
+                                sys.close_window(h);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            RenderCommand::AppendChild { parent, child }
+            | RenderCommand::InsertBefore { parent, child, .. } => {
+                if !self.live_toplevels.contains(child)
+                    && let (Some(&p_h), Some(&c_h)) =
+                        (self.live_handles.get(parent), self.live_handles.get(child))
+                {
+                    let is_win = self.live_toplevels.contains(parent);
+                    sys.add_subview(p_h, is_win, c_h);
+                    if is_win {
+                        sys.present_window(p_h);
+                    }
+                }
+            }
+            RenderCommand::RemoveChild { child, .. } => {
+                if !self.live_toplevels.contains(child)
+                    && let Some(&c_h) = self.live_handles.get(child)
+                {
+                    sys.remove_from_superview(c_h);
+                }
+            }
+            _ => {}
+        }
     }
 }
 
@@ -275,6 +434,25 @@ pub struct MacOsAppKitBackend {
     pub flushed_frames: u64,
     state: NativeSceneState,
     ffi_driver: AppKitFfiDriver,
+}
+
+impl Drop for MacOsAppKitBackend {
+    fn drop(&mut self) {
+        #[cfg(target_os = "macos")]
+        if self.ffi_driver.live_active
+            && let Some(sys) = &self.ffi_driver.live_sys
+        {
+            for id in self.ffi_driver.live_toplevels.drain() {
+                if let Some(h) = self.ffi_driver.live_handles.remove(&id) {
+                    sys.close_window(h);
+                    sys.release(h);
+                }
+            }
+            for (_, h) in self.ffi_driver.live_handles.drain() {
+                sys.release(h);
+            }
+        }
+    }
 }
 
 impl Default for MacOsAppKitBackend {
@@ -288,7 +466,55 @@ impl MacOsAppKitBackend {
         Self {
             flushed_frames: 0,
             state: NativeSceneState::default(),
-            ffi_driver: AppKitFfiDriver::new(),
+            ffi_driver: AppKitFfiDriver::new(false),
+        }
+    }
+
+    pub fn new_headless() -> Self {
+        Self {
+            flushed_frames: 0,
+            state: NativeSceneState::default(),
+            ffi_driver: AppKitFfiDriver::new(true),
+        }
+    }
+
+    #[must_use]
+    pub const fn is_native_display_active(&self) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            self.ffi_driver.live_active
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            false
+        }
+    }
+
+    #[must_use]
+    pub fn live_handle_count(&self) -> usize {
+        #[cfg(target_os = "macos")]
+        {
+            self.ffi_driver.live_handles.len()
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            0
+        }
+    }
+
+    #[must_use]
+    pub fn probe_objc_string_roundtrip(&self, sample: &str) -> Option<String> {
+        #[cfg(target_os = "macos")]
+        {
+            self.ffi_driver
+                .live_sys
+                .as_ref()
+                .and_then(|sys| sys.probe_nsstring_roundtrip(sample))
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = sample;
+            None
         }
     }
 
@@ -334,6 +560,12 @@ impl MacOsAppKitBackend {
     }
 
     pub fn step_native_events(&self) -> Vec<NativeEvent> {
+        #[cfg(target_os = "macos")]
+        if self.ffi_driver.live_active
+            && let Some(sys) = &self.ffi_driver.live_sys
+        {
+            sys.pump_events();
+        }
         self.state.drain_events()
     }
 
@@ -393,6 +625,8 @@ impl PlatformBackend for MacOsAppKitBackend {
             Self::map_appkit_tag,
         );
         for cmd in commands {
+            self.state
+                .apply_command(cmd, "NSAnchorComment", Self::map_appkit_tag);
             match cmd {
                 RenderCommand::CreateWidget { id, tag } => {
                     self.ffi_driver
@@ -413,8 +647,8 @@ impl PlatformBackend for MacOsAppKitBackend {
                 }
                 _ => {}
             }
-            self.state
-                .apply_command(cmd, "NSAnchorComment", Self::map_appkit_tag);
+            #[cfg(target_os = "macos")]
+            self.ffi_driver.apply_live_command(cmd);
         }
     }
 }

@@ -1,3 +1,4 @@
+pub mod appkit_sys;
 pub mod gtk4_callbacks;
 mod gtk4_controls;
 pub mod gtk4_styling;
@@ -7,6 +8,7 @@ pub mod headless;
 pub mod linux_gtk;
 pub mod macos_appkit;
 pub mod scene_state;
+pub mod win32_sys;
 pub mod windows_winui;
 
 use crate::config::AngularNativeConfig;
@@ -147,7 +149,9 @@ impl AnyPlatformBackend {
     pub fn is_native_display_active(&self) -> bool {
         match self {
             Self::LinuxGtk(b) => b.is_native_display_active(),
-            Self::WindowsWinUi(_) | Self::MacOsAppKit(_) | Self::Headless(_) => false,
+            Self::WindowsWinUi(b) => b.is_native_display_active(),
+            Self::MacOsAppKit(b) => b.is_native_display_active(),
+            Self::Headless(_) => false,
         }
     }
 
