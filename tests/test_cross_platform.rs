@@ -472,3 +472,51 @@ fn macos_appkit_and_windows_winui_dynamic_ffi_drivers_and_window_lifecycle() {
     assert_eq!(appkit.backend().open_window_count(), 0);
     assert!(appkit.backend().get_view_binding(mac_win).is_none());
 }
+
+#[test]
+fn winui_and_appkit_headless_guards_and_native_live_drivers() {
+    let win_headless = WinUiBackend::new_headless();
+    assert!(!win_headless.is_native_display_active());
+    assert_eq!(win_headless.live_handle_count(), 0);
+
+    let mac_headless = MacOsAppKitBackend::new_headless();
+    assert!(!mac_headless.is_native_display_active());
+    assert_eq!(mac_headless.live_handle_count(), 0);
+
+    #[cfg(target_os = "windows")]
+    if std::env::var("NG_DESKTOP_HEADLESS").is_err() {
+        let mut live_win = RenderEngine::new(WinUiBackend::new());
+        let w = live_win.create_element("ng-window").unwrap();
+        live_win.set_text(w, "Win32 Live Test").unwrap();
+        let lbl = live_win.create_element("ng-label").unwrap();
+        live_win.set_text(lbl, "Live Win32 Label").unwrap();
+        let btn = live_win.create_element("ng-button").unwrap();
+        live_win.set_text(btn, "Run").unwrap();
+        let dlg = live_win.create_element("ng-dialog").unwrap();
+        live_win.set_text(dlg, "Win32 Dialog").unwrap();
+        live_win.append_child(w, lbl).unwrap();
+        live_win.append_child(w, btn).unwrap();
+        live_win.flush_frame();
+
+        assert!(live_win.backend().is_native_display_active());
+        assert!(live_win.backend().live_handle_count() >= 2);
+        assert!(live_win.backend().open_window_count() >= 1);
+        let _ = live_win.backend().step_native_events();
+        live_win.destroy_node(dlg).unwrap();
+        live_win.destroy_node(w).unwrap();
+        live_win.flush_frame();
+        assert_eq!(live_win.backend().live_handle_count(), 0);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let mac_live = MacOsAppKitBackend::new();
+        assert!(mac_live.is_ffi_loaded());
+        assert_eq!(
+            mac_live
+                .probe_objc_string_roundtrip("NgDesktop AppKit")
+                .as_deref(),
+            Some("NgDesktop AppKit")
+        );
+    }
+}
