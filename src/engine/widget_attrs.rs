@@ -157,6 +157,30 @@ impl WidgetKind {
                     *max_size = parsed;
                 }
             }
+            Self::ListView {
+                selection_mode,
+                show_separators,
+                ..
+            } => match key {
+                "selection-mode" => value.clone_into(selection_mode),
+                "show-separators" | "separators" => {
+                    *show_separators = value == "true" || value == "1";
+                }
+                _ => {}
+            },
+            Self::Popover {
+                open,
+                position,
+                autohide,
+                has_arrow,
+                ..
+            } => match key {
+                "open" | "visible" => *open = value == "true" || value == "1",
+                "position" | "placement" => value.clone_into(position),
+                "autohide" => *autohide = value != "false" && value != "0",
+                "has-arrow" | "arrow" => *has_arrow = value != "false" && value != "0",
+                _ => {}
+            },
             _ => self.set_interactive_attribute(key, value),
         }
     }

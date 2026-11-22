@@ -478,7 +478,7 @@ mod tests {
         let minimal = AppPermissions::minimal();
 
         let control =
-            generate_debian_control_with_permissions("my-notes", "0.3.0", "amd64", &minimal);
+            generate_debian_control_with_permissions("my-notes", "0.4.0", "amd64", &minimal);
         assert!(control.contains("Package: my-notes"));
         assert!(control.contains("Depends: libgtk-4-1, libjavascriptcoregtk-6.0-1\n"));
         assert!(!control.contains("libsoup"));
@@ -502,15 +502,15 @@ mod tests {
         assert!(!flatpak.contains("--filesystem=host"));
 
         let win_manifest = generate_windows_appx_manifest_with_permissions(
-            "my-notes", "My Notes", "0.3.0", &minimal,
+            "my-notes", "My Notes", "0.4.0", &minimal,
         );
         assert!(win_manifest.contains("Identity Name=\"NgNative.my-notes\""));
-        assert!(win_manifest.contains("Version=\"0.3.0.0\""));
+        assert!(win_manifest.contains("Version=\"0.4.0.0\""));
         assert!(win_manifest.contains("Executable=\"my-notes.exe\""));
         assert!(!win_manifest.contains("runFullTrust"));
         assert!(!win_manifest.contains("internetClient"));
 
-        let mac_plist = generate_macos_info_plist("my-notes", "My Notes", "0.3.0");
+        let mac_plist = generate_macos_info_plist("my-notes", "My Notes", "0.4.0");
         assert!(mac_plist.contains("<string>dev.ngnative.my-notes</string>"));
         assert!(mac_plist.contains("<key>NSHighResolutionCapable</key>"));
 
@@ -534,7 +534,7 @@ mod tests {
         let win_manifest = generate_windows_appx_manifest_with_permissions(
             "sample-desktop-app",
             "Sample Desktop App",
-            "0.3.0",
+            "0.4.0",
             &perms,
         );
         assert!(win_manifest.contains("<Capability Name=\"internetClient\" />"));

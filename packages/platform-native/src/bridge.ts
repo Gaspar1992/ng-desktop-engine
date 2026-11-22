@@ -582,7 +582,7 @@ export function ensureNgNativeBridge(): NgNativeBridge {
         if (!callbacks || callbacks.size === 0) {
           return;
         }
-        for (const callback of [...callbacks.values()]) {
+        for (const callback of Array.from(callbacks.values())) {
           callback(eventPayload);
         }
       },

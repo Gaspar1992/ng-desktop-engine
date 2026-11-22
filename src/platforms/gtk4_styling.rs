@@ -45,7 +45,9 @@ impl GtkLinuxBackend {
              searchentry, entry, spinbutton, textview { border-radius: 8px; padding: 6px 10px; }\n\
              button { border-radius: 8px; padding: 6px 12px; font-weight: 600; }\n\
              levelbar block.filled { background: #38bdf8; border-radius: 4px; }\n\
-             levelbar block.empty { background: #1e293b; border-radius: 4px; }\n",
+             levelbar block.empty { background: #1e293b; border-radius: 4px; }\n\
+             listbox { background: transparent; }\n\
+             popover > contents { background: #1e293b; color: #f8fafc; border-radius: 10px; padding: 8px; }\n",
         );
         let mut ordered: Vec<_> = self.styles.iter().collect();
         ordered.sort_by_key(|(style_id, _)| style_id.0);
@@ -165,11 +167,74 @@ impl GtkLinuxBackend {
                 }
                 true
             }
+            (GtkWidgetType::ListView, "selection-mode") => {
+                gtk.set_list_box_selection_mode(handle, value);
+                true
+            }
+            (GtkWidgetType::ListView, "show-separators" | "separators") => {
+                gtk.set_list_box_show_separators(handle, value == "true" || value == "1");
+                true
+            }
+            (GtkWidgetType::Popover, "position" | "placement") => {
+                gtk.set_popover_position(handle, value);
+                true
+            }
+            (GtkWidgetType::Popover, "autohide") => {
+                gtk.set_popover_autohide(handle, value != "false" && value != "0");
+                true
+            }
+            (GtkWidgetType::Popover, "has-arrow" | "arrow") => {
+                gtk.set_popover_has_arrow(handle, value != "false" && value != "0");
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn apply_popover_metadata_attribute(&mut self, node: NodeId, key: &str, value: &str) -> bool {
+        if key != "open" && key != "visible" && key != "anchor" && key != "anchor-id" {
+            return false;
+        }
+        let is_popover = self
+            .widgets
+            .get(&node)
+            .is_some_and(|w| w.kind == GtkWidgetType::Popover);
+        if !is_popover {
+            return false;
+        }
+        match key {
+            "open" | "visible" => {
+                let is_open = NativeSceneState::parse_truthy_attr(value);
+                if let Some(w) = self.widgets.get_mut(&node) {
+                    w.popover.open = is_open;
+                    w.visibility = WidgetVisibility::from_bool(is_open);
+                    if let (Some(gtk), Some(handle)) = (&self.gtk, w.handle) {
+                        if is_open {
+                            gtk.popover_popup(handle);
+                        } else {
+                            gtk.popover_popdown(handle);
+                        }
+                    }
+                }
+                true
+            }
+            "anchor" | "anchor-id" => {
+                let trimmed = value.trim();
+                let anchor_opt = (!trimmed.is_empty()).then(|| trimmed.to_string());
+                if let Some(w) = self.widgets.get_mut(&node) {
+                    w.popover.anchor = anchor_opt;
+                }
+                self.sync_popover_anchor(node, None);
+                true
+            }
             _ => false,
         }
     }
 
     fn apply_metadata_attribute(&mut self, node: NodeId, key: &str, value: &str) -> bool {
+        if self.apply_popover_metadata_attribute(node, key, value) {
+            return true;
+        }
         if key == "id" {
             let trimmed = value.trim();
             if !trimmed.is_empty() {

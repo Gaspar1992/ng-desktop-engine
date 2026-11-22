@@ -735,3 +735,155 @@ fn gtk_live_multi_window_and_dialog_presentation() {
     engine.flush_frame();
     assert_eq!(engine.backend().toplevel_count(), 1);
 }
+
+#[test]
+fn list_view_and_popover_lifecycle_across_backends() {
+    use ng_native_engine::platforms::MacOsAppKitBackend;
+
+    let mut gtk_eng = RenderEngine::new(GtkLinuxBackend::new_headless());
+    let win = gtk_eng.create_element("ng-window").unwrap();
+    let root = gtk_eng.create_element("ng-box").unwrap();
+    let trigger = gtk_eng.create_element("ng-button").unwrap();
+    gtk_eng.set_attribute(trigger, "id", "filter_btn").unwrap();
+    let list = gtk_eng.create_element("ng-table").unwrap();
+    gtk_eng
+        .set_attribute(list, "selection-mode", "single")
+        .unwrap();
+    gtk_eng
+        .set_attribute(list, "show-separators", "true")
+        .unwrap();
+    let row_a = gtk_eng.create_element("ng-label").unwrap();
+    gtk_eng.set_text(row_a, "Row A").unwrap();
+    let row_b = gtk_eng.create_element("ng-label").unwrap();
+    gtk_eng.set_text(row_b, "Row B").unwrap();
+    gtk_eng.append_child(list, row_a).unwrap();
+    gtk_eng.insert_before(list, row_b, Some(row_a)).unwrap();
+
+    let pop = gtk_eng.create_element("ng-popover").unwrap();
+    gtk_eng.set_attribute(pop, "anchor", "filter_btn").unwrap();
+    gtk_eng.set_attribute(pop, "position", "bottom").unwrap();
+    gtk_eng.set_attribute(pop, "autohide", "true").unwrap();
+    gtk_eng.set_attribute(pop, "has-arrow", "true").unwrap();
+    gtk_eng.set_attribute(pop, "open", "true").unwrap();
+    let pop_lbl = gtk_eng.create_element("ng-label").unwrap();
+    gtk_eng.set_text(pop_lbl, "Filter options").unwrap();
+    gtk_eng.append_child(pop, pop_lbl).unwrap();
+
+    gtk_eng.append_child(win, root).unwrap();
+    gtk_eng.append_child(root, trigger).unwrap();
+    gtk_eng.append_child(root, list).unwrap();
+    gtk_eng.append_child(root, pop).unwrap();
+    gtk_eng.flush_frame();
+
+    assert_eq!(
+        gtk_eng.backend().widget_children(list),
+        Some([row_b, row_a].as_slice())
+    );
+    assert!(gtk_eng.backend().is_popover_open(pop));
+    assert_eq!(gtk_eng.backend().popover_anchor(pop), Some("filter_btn"));
+    gtk_eng.remove_child(list, row_b).unwrap();
+    gtk_eng.destroy_node(row_b).unwrap();
+    gtk_eng.flush_frame();
+    assert_eq!(
+        gtk_eng.backend().widget_children(list),
+        Some([row_a].as_slice())
+    );
+    gtk_eng.destroy_node(win).unwrap();
+    gtk_eng.flush_frame();
+    assert_eq!(gtk_eng.backend().widget_count(), 0);
+
+    let mut win_eng = RenderEngine::new(WinUiBackend::new());
+    let w_list = win_eng.create_element("ng-list").unwrap();
+    let w_pop = win_eng.create_element("ng-popover").unwrap();
+    win_eng.flush_frame();
+    assert_eq!(
+        win_eng.backend().get_control(w_list).unwrap().native_class,
+        "Microsoft.UI.Xaml.Controls.ListView"
+    );
+    assert_eq!(
+        win_eng.backend().get_control(w_pop).unwrap().native_class,
+        "Microsoft.UI.Xaml.Controls.Flyout"
+    );
+
+    let mut mac_eng = RenderEngine::new(MacOsAppKitBackend::new());
+    let m_list = mac_eng.create_element("ng-list").unwrap();
+    let m_pop = mac_eng.create_element("ng-menu").unwrap();
+    mac_eng.flush_frame();
+    assert_eq!(
+        mac_eng.backend().get_view(m_list).unwrap().native_class,
+        "NSTableView"
+    );
+    assert_eq!(
+        mac_eng.backend().get_view(m_pop).unwrap().native_class,
+        "NSPopover"
+    );
+}
+
+#[test]
+fn gtk_live_list_box_and_popover_lifecycle() {
+    let _guard = LIVE_GTK_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let backend = GtkLinuxBackend::new();
+    if !backend.is_native_display_active() {
+        return;
+    }
+    let mut engine = RenderEngine::new(backend);
+    let win = engine.create_element("ng-window").unwrap();
+    let root = engine.create_element("ng-box").unwrap();
+    let anchor_btn = engine.create_element("ng-button").unwrap();
+    engine.set_attribute(anchor_btn, "id", "open_pop").unwrap();
+    engine.set_text(anchor_btn, "Menu").unwrap();
+
+    let list = engine.create_element("ng-list").unwrap();
+    engine
+        .set_attribute(list, "selection-mode", "single")
+        .unwrap();
+    engine
+        .set_attribute(list, "show-separators", "true")
+        .unwrap();
+    let r1 = engine.create_element("ng-label").unwrap();
+    let r2 = engine.create_element("ng-label").unwrap();
+    let r3 = engine.create_element("ng-label").unwrap();
+    engine.set_text(r1, "First").unwrap();
+    engine.set_text(r2, "Second").unwrap();
+    engine.set_text(r3, "Third").unwrap();
+    engine.append_child(list, r1).unwrap();
+    engine.append_child(list, r2).unwrap();
+    engine.append_child(list, r3).unwrap();
+
+    let pop = engine.create_element("ng-popover").unwrap();
+    engine.set_attribute(pop, "anchor", "open_pop").unwrap();
+    engine.set_attribute(pop, "position", "bottom").unwrap();
+    engine.set_attribute(pop, "autohide", "true").unwrap();
+    engine.set_attribute(pop, "has-arrow", "true").unwrap();
+    let pop_content = engine.create_element("ng-label").unwrap();
+    engine.set_text(pop_content, "Popover Body").unwrap();
+    engine.append_child(pop, pop_content).unwrap();
+
+    engine.append_child(root, anchor_btn).unwrap();
+    engine.append_child(root, list).unwrap();
+    engine.append_child(root, pop).unwrap();
+    engine.append_child(win, root).unwrap();
+    engine.flush_frame();
+
+    // Reorder an existing row and remove a row in live GtkListBox, plus popup/popdown GtkPopover.
+    engine.insert_before(list, r3, Some(r1)).unwrap();
+    engine.remove_child(list, r2).unwrap();
+    engine.destroy_node(r2).unwrap();
+    engine.set_attribute(pop, "open", "true").unwrap();
+    engine.flush_frame();
+    let _ = engine.backend().step_native_events(false);
+
+    engine.set_attribute(pop, "open", "false").unwrap();
+    engine.flush_frame();
+    let _ = engine.backend().step_native_events(false);
+
+    assert_eq!(
+        engine.backend().widget_children(list),
+        Some([r3, r1].as_slice())
+    );
+    engine.destroy_node(win).unwrap();
+    engine.flush_frame();
+    assert_eq!(engine.backend().widget_count(), 0);
+}

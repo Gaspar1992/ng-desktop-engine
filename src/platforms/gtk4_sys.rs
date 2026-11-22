@@ -27,6 +27,7 @@ pub type GtkKeyCallback =
 pub type GtkScrollControllerCallback =
     unsafe extern "C" fn(*mut c_void, f64, f64, *mut c_void) -> c_int;
 pub type GtkCloseRequestCallback = unsafe extern "C" fn(*mut c_void, *mut c_void) -> c_int;
+pub type GtkListBoxRowCallback = unsafe extern "C" fn(*mut c_void, *mut c_void, *mut c_void);
 
 /// Dynamically loaded `GTK4` / `GLib` / `GObject` / `GIO` function table for Linux.
 /// Isolates all C FFI symbol loading (`dlopen` / `dlsym`) from widget operations.
@@ -191,6 +192,23 @@ pub struct Gtk4Sys {
     pub(super) adw_clamp_new: Option<unsafe extern "C" fn() -> *mut c_void>,
     pub(super) adw_clamp_set_maximum_size: Option<unsafe extern "C" fn(*mut c_void, c_int)>,
     pub(super) adw_clamp_set_child: Option<unsafe extern "C" fn(*mut c_void, *mut c_void)>,
+    pub(super) gtk_list_box_new: unsafe extern "C" fn() -> *mut c_void,
+    pub(super) gtk_list_box_append: unsafe extern "C" fn(*mut c_void, *mut c_void),
+    pub(super) gtk_list_box_insert: unsafe extern "C" fn(*mut c_void, *mut c_void, c_int),
+    pub(super) gtk_list_box_remove: unsafe extern "C" fn(*mut c_void, *mut c_void),
+    pub(super) gtk_list_box_set_selection_mode: unsafe extern "C" fn(*mut c_void, c_int),
+    pub(super) gtk_list_box_set_show_separators: unsafe extern "C" fn(*mut c_void, c_int),
+    pub(super) gtk_list_box_row_set_child: unsafe extern "C" fn(*mut c_void, *mut c_void),
+    pub(super) gtk_popover_new: unsafe extern "C" fn() -> *mut c_void,
+    pub(super) gtk_popover_set_child: unsafe extern "C" fn(*mut c_void, *mut c_void),
+    pub(super) gtk_popover_popup: unsafe extern "C" fn(*mut c_void),
+    pub(super) gtk_popover_popdown: unsafe extern "C" fn(*mut c_void),
+    pub(super) gtk_popover_set_position: unsafe extern "C" fn(*mut c_void, c_int),
+    pub(super) gtk_popover_set_autohide: unsafe extern "C" fn(*mut c_void, c_int),
+    pub(super) gtk_popover_set_has_arrow: unsafe extern "C" fn(*mut c_void, c_int),
+    pub(super) gtk_widget_set_parent: unsafe extern "C" fn(*mut c_void, *mut c_void),
+    pub(super) gtk_widget_unparent: unsafe extern "C" fn(*mut c_void),
+    pub(super) gtk_widget_get_parent: unsafe extern "C" fn(*mut c_void) -> *mut c_void,
     pub(super) g_main_context_iteration: unsafe extern "C" fn(*mut c_void, c_int) -> c_int,
     pub(super) g_set_prgname: unsafe extern "C" fn(*const c_char),
     pub(super) g_set_application_name: unsafe extern "C" fn(*const c_char),
@@ -270,6 +288,9 @@ impl Gtk4Sys {
                 adw_lib.and_then(|lib| Self::load_fn(lib, c"adw_clamp_set_maximum_size"));
             let adw_clamp_set_child =
                 adw_lib.and_then(|lib| Self::load_fn(lib, c"adw_clamp_set_child"));
+            let gtk_list_box_row_get_index: unsafe extern "C" fn(*mut c_void) -> c_int =
+                Self::load_fn(gtk_lib, c"gtk_list_box_row_get_index")?;
+            super::gtk4_callbacks::set_list_box_row_index_fn(gtk_list_box_row_get_index);
 
             Some(Self {
                 gtk_css_provider_load_from_string: Self::load_fn(
@@ -572,6 +593,29 @@ impl Gtk4Sys {
                 adw_clamp_new,
                 adw_clamp_set_maximum_size,
                 adw_clamp_set_child,
+                gtk_list_box_new: Self::load_fn(gtk_lib, c"gtk_list_box_new")?,
+                gtk_list_box_append: Self::load_fn(gtk_lib, c"gtk_list_box_append")?,
+                gtk_list_box_insert: Self::load_fn(gtk_lib, c"gtk_list_box_insert")?,
+                gtk_list_box_remove: Self::load_fn(gtk_lib, c"gtk_list_box_remove")?,
+                gtk_list_box_set_selection_mode: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_list_box_set_selection_mode",
+                )?,
+                gtk_list_box_set_show_separators: Self::load_fn(
+                    gtk_lib,
+                    c"gtk_list_box_set_show_separators",
+                )?,
+                gtk_list_box_row_set_child: Self::load_fn(gtk_lib, c"gtk_list_box_row_set_child")?,
+                gtk_popover_new: Self::load_fn(gtk_lib, c"gtk_popover_new")?,
+                gtk_popover_set_child: Self::load_fn(gtk_lib, c"gtk_popover_set_child")?,
+                gtk_popover_popup: Self::load_fn(gtk_lib, c"gtk_popover_popup")?,
+                gtk_popover_popdown: Self::load_fn(gtk_lib, c"gtk_popover_popdown")?,
+                gtk_popover_set_position: Self::load_fn(gtk_lib, c"gtk_popover_set_position")?,
+                gtk_popover_set_autohide: Self::load_fn(gtk_lib, c"gtk_popover_set_autohide")?,
+                gtk_popover_set_has_arrow: Self::load_fn(gtk_lib, c"gtk_popover_set_has_arrow")?,
+                gtk_widget_set_parent: Self::load_fn(gtk_lib, c"gtk_widget_set_parent")?,
+                gtk_widget_unparent: Self::load_fn(gtk_lib, c"gtk_widget_unparent")?,
+                gtk_widget_get_parent: Self::load_fn(gtk_lib, c"gtk_widget_get_parent")?,
                 g_main_context_iteration: Self::load_fn(glib_lib, c"g_main_context_iteration")?,
                 g_set_prgname,
                 g_set_application_name: Self::load_fn(glib_lib, c"g_set_application_name")?,

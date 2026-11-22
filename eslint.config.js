@@ -39,6 +39,10 @@ export default [
     files: ['packages/**/*.ts'],
     rules: {
       '@angular-eslint/directive-selector': 'off',
+      '@angular-eslint/component-selector': [
+        'error',
+        { type: 'element', prefix: ['ng', 'gtk', 'adw'], style: 'kebab-case' },
+      ],
     },
   },
   {

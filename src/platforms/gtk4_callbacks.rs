@@ -5,6 +5,19 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::ffi::{c_int, c_uint, c_void};
+#[cfg(target_os = "linux")]
+use std::sync::OnceLock;
+
+#[cfg(target_os = "linux")]
+type ListBoxRowGetIndexFn = unsafe extern "C" fn(*mut c_void) -> c_int;
+
+#[cfg(target_os = "linux")]
+static LIST_BOX_ROW_GET_INDEX: OnceLock<ListBoxRowGetIndexFn> = OnceLock::new();
+
+#[cfg(target_os = "linux")]
+pub(super) fn set_list_box_row_index_fn(func: ListBoxRowGetIndexFn) {
+    let _ = LIST_BOX_ROW_GET_INDEX.set(func);
+}
 
 thread_local! {
     static PENDING_EVENTS: RefCell<Vec<NativeEvent>> = const { RefCell::new(Vec::new()) };
@@ -304,6 +317,32 @@ pub(super) unsafe extern "C" fn on_gtk_window_close_request(
         EventPayload::Text(format!(r#"{{"preventable":{preventable}}}"#)),
     );
     c_int::from(preventable)
+}
+
+pub(super) unsafe extern "C" fn on_gtk_list_box_row_activated(
+    _list_box: *mut c_void,
+    row: *mut c_void,
+    user_data: *mut c_void,
+) {
+    #[cfg(target_os = "linux")]
+    let idx = if let (false, Some(get_idx)) = (row.is_null(), LIST_BOX_ROW_GET_INDEX.get()) {
+        unsafe { i64::from(get_idx(row)) }
+    } else {
+        -1
+    };
+    #[cfg(not(target_os = "linux"))]
+    let idx = {
+        let _ = row;
+        -1
+    };
+    enqueue_event_with_payload(user_data as usize, "row-activated", EventPayload::Int(idx));
+}
+
+pub(super) unsafe extern "C" fn on_gtk_popover_closed(
+    _popover: *mut c_void,
+    user_data: *mut c_void,
+) {
+    enqueue_event(user_data as usize, "closed");
 }
 
 #[cfg(test)]

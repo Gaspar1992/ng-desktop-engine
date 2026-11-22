@@ -130,6 +130,18 @@ pub enum WidgetKind {
         max_size: u32,
         child: Option<NodeId>,
     },
+    ListView {
+        selection_mode: String,
+        show_separators: bool,
+        children: Vec<NodeId>,
+    },
+    Popover {
+        open: bool,
+        position: String,
+        autohide: bool,
+        has_arrow: bool,
+        child: Option<NodeId>,
+    },
     Anchor {
         comment: String,
     },
@@ -265,6 +277,18 @@ impl WidgetKind {
                 header_bar: None,
                 child: None,
             }),
+            "ng-list" | "ng-table" | "gtk-list-box" | "gtk-list-view" => Ok(Self::ListView {
+                selection_mode: String::from("single"),
+                show_separators: false,
+                children: Vec::new(),
+            }),
+            "ng-popover" | "gtk-popover" | "ng-menu" => Ok(Self::Popover {
+                open: false,
+                position: String::from("bottom"),
+                autohide: true,
+                has_arrow: true,
+                child: None,
+            }),
             "ng-anchor" | "#comment" => Ok(Self::Anchor {
                 comment: String::new(),
             }),
@@ -303,12 +327,14 @@ impl WidgetKind {
                 .collect(),
             Self::Scroll { child, .. }
             | Self::Expander { child, .. }
-            | Self::Clamp { child, .. } => child.iter().copied().collect(),
+            | Self::Clamp { child, .. }
+            | Self::Popover { child, .. } => child.iter().copied().collect(),
             Self::HeaderBar { children, .. }
             | Self::Box { children, .. }
             | Self::Grid { children, .. }
             | Self::FlowBox { children, .. }
-            | Self::Stack { children, .. } => children.clone(),
+            | Self::Stack { children, .. }
+            | Self::ListView { children, .. } => children.clone(),
             Self::Separator { .. }
             | Self::Button { .. }
             | Self::Label { .. }
@@ -363,6 +389,8 @@ impl WidgetKind {
             | Self::Paned { .. }
             | Self::Stack { .. }
             | Self::Clamp { .. }
+            | Self::ListView { .. }
+            | Self::Popover { .. }
             | Self::Separator { .. }
             | Self::Switch { .. }
             | Self::Slider { .. }
@@ -409,7 +437,8 @@ impl WidgetKind {
             }
             Self::Scroll { child, .. }
             | Self::Expander { child, .. }
-            | Self::Clamp { child, .. } => {
+            | Self::Clamp { child, .. }
+            | Self::Popover { child, .. } => {
                 *child = Some(child_id);
                 Ok(())
             }
@@ -429,7 +458,8 @@ impl WidgetKind {
             | Self::Grid { children, .. }
             | Self::FlowBox { children, .. }
             | Self::Stack { children, .. }
-            | Self::HeaderBar { children, .. } => {
+            | Self::HeaderBar { children, .. }
+            | Self::ListView { children, .. } => {
                 if !children.contains(&child_id) {
                     children.push(child_id);
                 }
@@ -467,7 +497,8 @@ impl WidgetKind {
             | Self::Grid { children, .. }
             | Self::FlowBox { children, .. }
             | Self::Stack { children, .. }
-            | Self::HeaderBar { children, .. } => {
+            | Self::HeaderBar { children, .. }
+            | Self::ListView { children, .. } => {
                 children.retain(|c| *c != new_child);
                 if let Some(ref_id) = ref_child {
                     let pos = children
@@ -495,7 +526,8 @@ impl WidgetKind {
             }
             Self::Scroll { child, .. }
             | Self::Expander { child, .. }
-            | Self::Clamp { child, .. } => {
+            | Self::Clamp { child, .. }
+            | Self::Popover { child, .. } => {
                 *child = Some(new_child);
                 Ok(())
             }
@@ -551,7 +583,8 @@ impl WidgetKind {
             }
             Self::Scroll { child, .. }
             | Self::Expander { child, .. }
-            | Self::Clamp { child, .. } => {
+            | Self::Clamp { child, .. }
+            | Self::Popover { child, .. } => {
                 if *child == Some(child_id) {
                     *child = None;
                     Ok(())
@@ -578,7 +611,8 @@ impl WidgetKind {
             | Self::Grid { children, .. }
             | Self::FlowBox { children, .. }
             | Self::Stack { children, .. }
-            | Self::HeaderBar { children, .. } => {
+            | Self::HeaderBar { children, .. }
+            | Self::ListView { children, .. } => {
                 let before = children.len();
                 children.retain(|c| *c != child_id);
                 if children.len() == before {
@@ -637,6 +671,8 @@ impl WidgetKind {
             Self::SpinButton { .. } => "ng-spin-button",
             Self::SearchEntry { .. } => "ng-search-entry",
             Self::Clamp { .. } => "ng-clamp",
+            Self::ListView { .. } => "ng-list",
+            Self::Popover { .. } => "ng-popover",
             Self::Anchor { .. } => "ng-anchor",
         }
     }
@@ -699,6 +735,13 @@ mod tests {
             "ng-dialog",
             "gtk-dialog",
             "adw-dialog",
+            "ng-list",
+            "ng-table",
+            "gtk-list-box",
+            "gtk-list-view",
+            "ng-popover",
+            "gtk-popover",
+            "ng-menu",
             "ng-anchor",
         ] {
             assert!(WidgetKind::from_tag(tag).is_ok(), "Failed to parse {tag}");
@@ -935,5 +978,58 @@ mod tests {
             WidgetKind::TextView { ref text, editable: false, monospace: true }
             if text == "Activity log"
         ));
+    }
+
+    #[test]
+    fn list_view_and_popover_manage_children_and_attributes() {
+        let p_id = NodeId {
+            index: 30,
+            generation: 0,
+        };
+        let row1 = NodeId {
+            index: 31,
+            generation: 0,
+        };
+        let row2 = NodeId {
+            index: 32,
+            generation: 0,
+        };
+
+        let mut list = WidgetKind::from_tag("ng-list").unwrap();
+        list.set_attribute("selection-mode", "multiple");
+        list.set_attribute("show-separators", "true");
+        list.add_child(p_id, row1, false).unwrap();
+        list.insert_before(p_id, row2, Some(row1), false).unwrap();
+        assert!(matches!(
+            list,
+            WidgetKind::ListView {
+                ref selection_mode,
+                show_separators: true,
+                ref children,
+            } if selection_mode == "multiple" && children == &vec![row2, row1]
+        ));
+        list.remove_child(p_id, row2).unwrap();
+        assert_eq!(list.child_ids(), vec![row1]);
+        assert_eq!(list.tag_name(), "ng-list");
+
+        let mut pop = WidgetKind::from_tag("ng-popover").unwrap();
+        pop.set_attribute("open", "true");
+        pop.set_attribute("position", "top");
+        pop.set_attribute("autohide", "false");
+        pop.set_attribute("has-arrow", "false");
+        pop.add_child(p_id, row1, false).unwrap();
+        assert!(matches!(
+            pop,
+            WidgetKind::Popover {
+                open: true,
+                ref position,
+                autohide: false,
+                has_arrow: false,
+                child: Some(c),
+            } if position == "top" && c == row1
+        ));
+        pop.remove_child(p_id, row1).unwrap();
+        assert_eq!(pop.child_ids(), Vec::<NodeId>::new());
+        assert_eq!(pop.tag_name(), "ng-popover");
     }
 }

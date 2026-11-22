@@ -5,6 +5,18 @@ This project adheres to [Conventional Commits](https://www.conventionalcommits.o
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-22
+
+### Features & Architecture (`v0.4.0`)
+
+- **CSS Flexbox/Grid translator & unified extensions:** add `css-style-parser.ts` in `@ng-desktop/platform` and share `formatParsedStyleExtensions` with `@ng-desktop/builders` (`style-compiler.mjs`, `build-bundle.mjs`) so `display: flex`, `display: grid`, `flex-direction`, `flex-wrap`, `gap`, `min-width`, `min-height`, and `border-radius` project directly onto `GtkFlowBox`, `GtkBox`, and `GtkGrid` layout rules without browser CSS overhead.
+- **scalable events & `(closeRequest)`/`(beforeunload)` lifecycle:** add bitflag `EventMask`, per-frame continuous-event coalescing (`coalesce_frame_events`), lazy OS event controller attachment (`click`, `contextmenu`, `motion`, `focus`, `keyboard`, `wheel`, `close-request`), scroll edge/position telemetry (`scrollTop`, `scrollBottom`, `scrollEdge`), and `(closeRequest)` / `(beforeunload)` hooks with `prevent-close` and `close-window` attributes across GTK4, Win32/WinUI, and AppKit.
+- **zero-`CUSTOM_ELEMENTS_SCHEMA` Angular DX:** add `NATIVE_UI_DIRECTIVES` (`NativeElementDirective`, `NativeWindowDirective`, `NativeContainerDirective`, `NativeTextWidgetDirective`, `NativeMediaAndMeterDirective`, `NativeInputWidgetDirective`, `NativeListDirective`, `NativePopoverDirective`) and 1:1 `HTML_TO_NATIVE_TAG` mappings (`div` -> `ng-box`, `p`/`span`/`h1`..`h6` -> `ng-label`, `button` -> `ng-button`, `img` -> `ng-image`, `table` -> `ng-list`, `menu` -> `ng-popover`, `dialog` -> `ng-dialog`, etc.).
+- **routing, dialogs & multi-window:** refactor `examples/counter-app` to real `<router-outlet />` navigation (`CatalogRouteComponent`, `DetailRouteComponent` with `withComponentInputBinding`); add native `<ng-dialog>` (`AdwDialog` / `ContentDialog` / `NSPanel`) with `modal`, `transient-for`, multi-window lifecycle, `confirmDialog` host service, and `OnceLock`-serialized `gtk_init_check`/`adw_init`.
+- **live Windows Win32/WinUI & macOS AppKit drivers:** implement dynamic `user32.dll`/`kernel32.dll` (`Win32Sys`) and Objective-C runtime (`AppKitSys`) live window/control realization, recursive `HWND` cleanup (`IsWindow`), non-blocking event pumping, and CI/headless worker-thread safety guards, verified on `windows-latest` and `macos-latest` CI runners.
+- **virtualized lists & anchored popovers:** add `WidgetKind::ListView` (`ng-list`/`ng-table` -> `GtkListBox` / `ListView` / `NSTableView`) with `GtkListBoxRow` wrapper handling, `WidgetKind::Popover` (`ng-popover`/`ng-menu` -> `GtkPopover` / `Flyout` / `NSPopover`) across 29 native primitives, and standalone `<ng-virtual-list>` (`NativeVirtualListComponent` + `computeVirtualSliceRange`) in `@ng-desktop/platform`.
+- **CI packaging hardening:** wire `pnpm run build:packages` and `pnpm run test:pack` into `.github/workflows/ci.yml` to validate all 7 published `@ng-desktop/*` APF/esm tarballs continuously.
+
 ### Refactoring (Phase 1 — Decouple Generic Engine, Packages, Tests, and Release Pipeline from Showcase App)
 
 - **engine & packages:** replace `/tmp/ng_native_pokedex` and `'ng-linux-counter'` defaults with app-scoped cache directories (`NativeSystemEnv::detect_for_app`, `resolveDefaultAppId()`), embed a self-contained neutral `src/engine/default_icon.ico` instead of referencing `examples/counter-app/public/favicon.ico` in `Cargo.toml`, add generic `<ng-window>` resolution via `JsRuntime::resolve_primary_window()`, remove the batch-mode `'btn'` simulation, guard the legacy `PokedexController` hook in `src/main.rs`, and remove the `standalone_pokedex.ngb` copy step from `packages/builders-native/src/build-bundle.mjs`.

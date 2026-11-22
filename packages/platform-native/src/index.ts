@@ -43,7 +43,9 @@ export {
   NativeContainerDirective,
   NativeElementDirective,
   NativeInputWidgetDirective,
+  NativeListDirective,
   NativeMediaAndMeterDirective,
+  NativePopoverDirective,
   NativeTextWidgetDirective,
   NativeWindowDirective,
   type NativeAttrInput,
@@ -80,3 +82,11 @@ export {
   type NativeKeyEventPayload,
 } from './system-providers';
 export { NativeViewportScroller, provideNativeViewportScroller } from './viewport-scroller';
+export {
+  computeVirtualSliceRange,
+  NativeVirtualListComponent,
+  type NativeVirtualItemContext,
+  type NativeVirtualListEntry,
+  type NativeVirtualRowActivatedEvent,
+  type VirtualSliceRange,
+} from './virtual-list.component';

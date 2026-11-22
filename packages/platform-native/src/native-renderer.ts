@@ -9,7 +9,13 @@ import { ensureNgNativeBridge, NgNativeBridge } from './bridge';
 import { mapAlignKeyword, registerParsedStyles } from './css-style-parser';
 import { NativeElementNode } from './native-element';
 
-const VIRTUAL_ANGULAR_TAGS = new Set(['ng-container', 'ng-template', 'ng-content', 'ng-component']);
+const VIRTUAL_ANGULAR_TAGS = new Set([
+  'ng-container',
+  'ng-template',
+  'ng-content',
+  'ng-component',
+  'ng-virtual-list',
+]);
 
 const TEXT_BEARING_TAGS = new Set([
   'ng-label',
@@ -94,6 +100,8 @@ export const HTML_TO_NATIVE_TAG: Readonly<Record<string, string>> = {
   progress: 'ng-progress-bar',
   details: 'ng-expander',
   dialog: 'ng-dialog',
+  table: 'ng-list',
+  menu: 'ng-popover',
 };
 
 /**
@@ -207,6 +215,13 @@ function mapNativeEventNames(eventName: string): string[] {
     case 'close-request':
     case 'beforeunload':
       return ['close-request'];
+    case 'rowActivated':
+    case 'row-activated':
+      return ['row-activated'];
+    case 'closed':
+    case 'popoverClosed':
+    case 'close':
+      return ['closed'];
     case 'dragenter':
       return ['dragenter'];
     case 'dragleave':
@@ -300,6 +315,8 @@ function normalizeNativeEventPayload(
   if (typeof rawPayload === 'string') {
     const parsed = tryParseJson(rawPayload);
     normalized = parsed ? { type: eventName, ...parsed } : { type: eventName, value: rawPayload };
+  } else if (typeof rawPayload === 'number' || typeof rawPayload === 'boolean') {
+    normalized = { type: eventName, value: rawPayload };
   } else if (rawPayload && typeof rawPayload === 'object' && !Array.isArray(rawPayload)) {
     const obj = rawPayload as Record<string, unknown>;
     const parsed = tryParseJson(obj['value']);

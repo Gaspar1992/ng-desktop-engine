@@ -137,6 +137,8 @@ impl AppKitFfiDriver {
                 "NSSearchField",
                 "NSStepper",
                 "NSBox",
+                "NSTableView",
+                "NSPopover",
                 "NSView",
             ] {
                 driver.probe_class(class_name);
@@ -162,6 +164,8 @@ impl AppKitFfiDriver {
             b"NSTextField" | b"NSSecureTextField" | b"NSSearchField" => "setStringValue:",
             b"NSStackView" => "addArrangedSubview:",
             b"NSScrollView" => "setDocumentView:",
+            b"NSTableView" => "reloadData",
+            b"NSPopover" => "performClose:",
             _ => "init",
         }
     }
@@ -282,16 +286,19 @@ impl AppKitFfiDriver {
                     }
                     h
                 }
-                cls => sys.create_view(
-                    cls,
-                    NsRect {
-                        origin: NsPoint { x: 0.0, y: 0.0 },
-                        size: NsSize {
-                            width: 320.0,
-                            height: 36.0,
+                cls => {
+                    let view_cls = if cls == "NSPopover" { "NSView" } else { cls };
+                    sys.create_view(
+                        view_cls,
+                        NsRect {
+                            origin: NsPoint { x: 0.0, y: 0.0 },
+                            size: NsSize {
+                                width: 320.0,
+                                height: 36.0,
+                            },
                         },
-                    },
-                ),
+                    )
+                }
             };
             if let Some(handle) = created {
                 self.live_handles.insert(id, handle);
@@ -599,6 +606,8 @@ impl MacOsAppKitBackend {
             "ng-search-entry" | "gtk-search-entry" => "NSSearchField",
             "ng-spin-button" | "gtk-spin-button" => "NSStepper",
             "ng-clamp" | "adw-clamp" => "NSBox",
+            "ng-list" | "ng-table" | "gtk-list-box" | "gtk-list-view" => "NSTableView",
+            "ng-popover" | "gtk-popover" | "ng-menu" => "NSPopover",
             _ => "NSView",
         }
     }
