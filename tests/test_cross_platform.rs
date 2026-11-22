@@ -488,20 +488,22 @@ fn winui_and_appkit_headless_guards_and_native_live_drivers() {
         let mut live_win = RenderEngine::new(WinUiBackend::new());
         let w = live_win.create_element("ng-window").unwrap();
         live_win.set_text(w, "Win32 Live Test").unwrap();
+        let root = live_win.create_element("ng-box").unwrap();
         let lbl = live_win.create_element("ng-label").unwrap();
         live_win.set_text(lbl, "Live Win32 Label").unwrap();
         let btn = live_win.create_element("ng-button").unwrap();
         live_win.set_text(btn, "Run").unwrap();
         let dlg = live_win.create_element("ng-dialog").unwrap();
         live_win.set_text(dlg, "Win32 Dialog").unwrap();
-        live_win.append_child(w, lbl).unwrap();
-        live_win.append_child(w, btn).unwrap();
+        live_win.append_child(w, root).unwrap();
+        live_win.append_child(root, lbl).unwrap();
+        live_win.append_child(root, btn).unwrap();
         live_win.flush_frame();
 
         assert!(live_win.backend().is_ffi_loaded());
         assert!(live_win.backend().open_window_count() >= 1);
         if live_win.backend().is_native_display_active() {
-            assert!(live_win.backend().live_handle_count() >= 2);
+            assert!(live_win.backend().live_handle_count() >= 4);
             let _ = live_win.backend().step_native_events();
         }
         live_win.destroy_node(dlg).unwrap();

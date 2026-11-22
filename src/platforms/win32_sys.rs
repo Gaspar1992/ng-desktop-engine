@@ -676,6 +676,10 @@ impl Win32Sys {
         unsafe {
             let _ = (self.destroy_window)(handle.0 as *mut c_void);
         }
+        let mut guard = hwnd_map()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        guard.retain(|&hwnd_key, _| self.is_window_alive(Win32Handle(hwnd_key)));
     }
 
     pub(super) fn pump_messages(&self) -> Vec<NativeEvent> {

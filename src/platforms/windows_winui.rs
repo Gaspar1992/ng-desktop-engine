@@ -198,6 +198,9 @@ impl WinUiFfiDriver {
                 && let Some(win32) = &self.win32
             {
                 win32.destroy_window(handle);
+                self.live_handles.retain(|_, h| win32.is_window_alive(*h));
+                self.live_toplevels
+                    .retain(|nid| self.live_handles.contains_key(nid));
             }
         }
     }
