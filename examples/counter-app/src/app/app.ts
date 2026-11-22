@@ -8,6 +8,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
+import { NativeDesktopService } from '@ng-desktop/desktop';
 import { NATIVE_FORM_DIRECTIVES } from '@ng-desktop/forms';
 import { NativePlatformLocation, Router, RouterOutlet } from '@ng-desktop/router';
 import { PokedexService } from './pokedex.service';
@@ -23,6 +24,7 @@ import { TypeBadge } from './type-badge';
 })
 export class App implements OnInit, OnDestroy {
   protected readonly pokedex = inject(PokedexService);
+  private readonly desktop = inject(NativeDesktopService);
   private readonly router = inject(Router);
   private readonly location = inject(NativePlatformLocation);
 
@@ -56,6 +58,52 @@ export class App implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    this.desktop.loadWindowGeometry();
+    const menuItems = [
+      {
+        id: 'refresh-catalog',
+        label: 'Recargar catálogo',
+        accelerator: '<Control>r',
+        enabled: true,
+      },
+      {
+        id: 'toggle-favorites',
+        label: 'Alternar filtro favoritos',
+        accelerator: '<Control>b',
+        enabled: true,
+      },
+      {
+        id: 'export-favorites',
+        label: 'Exportar favoritos JSON',
+        accelerator: '<Control>e',
+        enabled: true,
+      },
+      { id: 'back-to-list', label: 'Volver al listado', accelerator: 'Escape', enabled: true },
+    ];
+    this.desktop.setAppMenu(menuItems, {
+      'refresh-catalog': () => void this.pokedex.loadCatalogPage(true),
+      'toggle-favorites': () => this.toggleFavoritesFilter(),
+      'export-favorites': () => {
+        this.pokedex.exportFavoritesToDisk();
+      },
+      'back-to-list': () => void this.backToList(),
+    });
+    this.desktop.setTray({
+      visible: true,
+      icon: 'pokedex-app',
+      tooltip: 'Pokédex Nacional — Angular 22 Native',
+      menuItems,
+    });
+    this.desktop.registerShortcut('<Control>f', 'focus-search', () => {
+      this.searchControl.setValue('');
+    });
+    this.desktop.registerShortcut('<Control>b', 'toggle-favorites', () => {
+      this.toggleFavoritesFilter();
+    });
+    this.desktop.registerShortcut('Escape', 'back-to-list', () => {
+      void this.backToList();
+    });
+
     void this.pokedex.refreshFavorites();
     void this.pokedex.loadCatalogPage(true);
     this.unlistenPopState = this.location.onPopState(() => {

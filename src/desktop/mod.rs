@@ -66,6 +66,53 @@ pub struct FileDialogRequest {
     pub suggested_path: String,
 }
 
+/// Persistent desktop window geometry & state (`window-state.json` in XDG config).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WindowGeometry {
+    pub width: u32,
+    pub height: u32,
+    pub x: Option<i32>,
+    pub y: Option<i32>,
+    pub maximized: bool,
+}
+
+impl Default for WindowGeometry {
+    fn default() -> Self {
+        Self {
+            width: 1020,
+            height: 720,
+            x: None,
+            y: None,
+            maximized: false,
+        }
+    }
+}
+
+/// Native application menu bar item (`GMenu` / macOS `NSMenu` / Windows `MenuBar`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppMenuItem {
+    pub id: String,
+    pub label: String,
+    pub accelerator: Option<String>,
+    pub enabled: bool,
+}
+
+/// Native system tray / status icon configuration (`AppIndicator` / `NSStatusItem` / `NOTIFYICONDATA`).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TrayState {
+    pub visible: bool,
+    pub icon: String,
+    pub tooltip: String,
+    pub menu_items: Vec<AppMenuItem>,
+}
+
+/// Registered native window/global keyboard accelerator binding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShortcutBinding {
+    pub accelerator: String,
+    pub action_id: String,
+}
+
 /// Cross-platform Desktop OS & Native HTTP service hub for Phase 5 (`@ng-desktop/desktop` & `@ng-desktop/http`).
 pub struct DesktopServices {
     app_id: String,
@@ -74,6 +121,10 @@ pub struct DesktopServices {
     clipboard: String,
     notifications: Vec<DesktopNotification>,
     file_dialogs: Vec<FileDialogRequest>,
+    window_geometry: WindowGeometry,
+    app_menu: Vec<AppMenuItem>,
+    tray_state: TrayState,
+    shortcuts: Vec<ShortcutBinding>,
     http_engine: Arc<Mutex<NativeHttpEngine>>,
     sqlite: NativeSqliteDatabase,
     system_env: NativeSystemEnv,
@@ -130,6 +181,10 @@ impl DesktopServices {
             clipboard: String::new(),
             notifications: Vec::new(),
             file_dialogs: Vec::new(),
+            window_geometry: WindowGeometry::default(),
+            app_menu: Vec::new(),
+            tray_state: TrayState::default(),
+            shortcuts: Vec::new(),
             http_engine,
             sqlite: NativeSqliteDatabase::new_in_memory(),
             system_env: NativeSystemEnv::detect_for_app(app_id),
@@ -285,6 +340,64 @@ impl DesktopServices {
         &self.file_dialogs
     }
 
+    #[must_use]
+    pub const fn window_geometry(&self) -> &WindowGeometry {
+        &self.window_geometry
+    }
+
+    pub const fn set_window_geometry(&mut self, geometry: WindowGeometry) {
+        self.window_geometry = geometry;
+    }
+
+    #[must_use]
+    pub fn app_menu(&self) -> &[AppMenuItem] {
+        &self.app_menu
+    }
+
+    pub fn set_app_menu(&mut self, items: Vec<AppMenuItem>) {
+        self.app_menu = items;
+    }
+
+    #[must_use]
+    pub const fn tray_state(&self) -> &TrayState {
+        &self.tray_state
+    }
+
+    pub fn set_tray_state(&mut self, state: TrayState) {
+        self.tray_state = state;
+    }
+
+    #[must_use]
+    pub fn shortcuts(&self) -> &[ShortcutBinding] {
+        &self.shortcuts
+    }
+
+    pub fn register_shortcut(&mut self, accelerator: &str, action_id: &str) {
+        let clean_acc = accelerator.trim();
+        let clean_action = action_id.trim();
+        if clean_acc.is_empty() || clean_action.is_empty() {
+            return;
+        }
+        if let Some(existing) = self
+            .shortcuts
+            .iter_mut()
+            .find(|item| item.accelerator == clean_acc)
+        {
+            clean_action.clone_into(&mut existing.action_id);
+        } else {
+            self.shortcuts.push(ShortcutBinding {
+                accelerator: String::from(clean_acc),
+                action_id: String::from(clean_action),
+            });
+        }
+    }
+
+    pub fn unregister_shortcut(&mut self, accelerator: &str) -> bool {
+        let before = self.shortcuts.len();
+        self.shortcuts.retain(|item| item.accelerator != accelerator);
+        self.shortcuts.len() < before
+    }
+
     pub fn configure_http(&mut self, config: NativeHttpConfig) {
         if let Ok(mut engine) = self.http_engine.lock() {
             engine.set_config(config);
@@ -434,5 +547,47 @@ mod tests {
         let batch = desktop.execute_http_batch(&[req]);
         assert_eq!(batch.len(), 1);
         assert_eq!(batch[0].status, 403);
+    }
+
+    #[test]
+    fn manages_window_geometry_menus_tray_and_shortcuts() {
+        let mut desktop = DesktopServices::new();
+        assert_eq!(desktop.window_geometry(), &WindowGeometry::default());
+
+        let updated_geom = WindowGeometry {
+            width: 1280,
+            height: 840,
+            x: Some(120),
+            y: Some(80),
+            maximized: true,
+        };
+        desktop.set_window_geometry(updated_geom.clone());
+        assert_eq!(desktop.window_geometry(), &updated_geom);
+
+        desktop.set_app_menu(vec![AppMenuItem {
+            id: String::from("refresh"),
+            label: String::from("Refresh"),
+            accelerator: Some(String::from("<Control>r")),
+            enabled: true,
+        }]);
+        assert_eq!(desktop.app_menu().len(), 1);
+        assert_eq!(desktop.app_menu()[0].id, "refresh");
+
+        desktop.set_tray_state(TrayState {
+            visible: true,
+            icon: String::from("app-icon"),
+            tooltip: String::from("Desktop Ready"),
+            menu_items: desktop.app_menu().to_vec(),
+        });
+        assert!(desktop.tray_state().visible);
+        assert_eq!(desktop.tray_state().tooltip, "Desktop Ready");
+
+        desktop.register_shortcut("<Control>f", "focus-search");
+        desktop.register_shortcut("<Control>f", "search-catalog");
+        desktop.register_shortcut("Escape", "close-detail");
+        assert_eq!(desktop.shortcuts().len(), 2);
+        assert_eq!(desktop.shortcuts()[0].action_id, "search-catalog");
+        assert!(desktop.unregister_shortcut("Escape"));
+        assert_eq!(desktop.shortcuts().len(), 1);
     }
 }

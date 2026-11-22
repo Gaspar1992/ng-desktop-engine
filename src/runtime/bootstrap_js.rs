@@ -36,6 +36,10 @@ globalThis.__NG_NATIVE__ = (() => {
   let fsFiles = new Map();
   let fsWatched = new Set();
   let fsChanged = new Set();
+  let windowGeometry = { width: 1020, height: 720, x: null, y: null, maximized: false };
+  let appMenuItems = [];
+  let trayState = { visible: false, icon: '', tooltip: '', menuItems: [] };
+  let shortcuts = [];
   let httpEndpoints = new Map();
   let httpConfig = {
     platform: 'auto',
@@ -748,6 +752,147 @@ globalThis.__NG_NATIVE__ = (() => {
       const out = Array.from(fsChanged);
       fsChanged.clear();
       return out;
+    },
+    getWindowGeometry() {
+      if (hasHostService()) {
+        const res = callHostService({ action: 'windowGetGeometry' });
+        if (res && res.ok) {
+          windowGeometry = {
+            width: Number(res.width || 1020),
+            height: Number(res.height || 720),
+            x: typeof res.x === 'number' ? res.x : null,
+            y: typeof res.y === 'number' ? res.y : null,
+            maximized: Boolean(res.maximized),
+          };
+          return { ...windowGeometry };
+        }
+      }
+      return { ...windowGeometry };
+    },
+    setWindowGeometry(geom = {}) {
+      const next = {
+        width: typeof geom.width === 'number' && geom.width >= 160 ? Math.trunc(geom.width) : windowGeometry.width,
+        height: typeof geom.height === 'number' && geom.height >= 120 ? Math.trunc(geom.height) : windowGeometry.height,
+        x: typeof geom.x === 'number' ? Math.trunc(geom.x) : (geom.x === null ? null : windowGeometry.x),
+        y: typeof geom.y === 'number' ? Math.trunc(geom.y) : (geom.y === null ? null : windowGeometry.y),
+        maximized: typeof geom.maximized === 'boolean' ? geom.maximized : windowGeometry.maximized,
+      };
+      if (hasHostService()) {
+        const res = callHostService({ action: 'windowSetGeometry', ...next });
+        if (res && res.ok) {
+          windowGeometry = {
+            width: Number(res.width || next.width),
+            height: Number(res.height || next.height),
+            x: typeof res.x === 'number' ? res.x : null,
+            y: typeof res.y === 'number' ? res.y : null,
+            maximized: Boolean(res.maximized),
+          };
+          return { ...windowGeometry };
+        }
+      }
+      windowGeometry = next;
+      return { ...windowGeometry };
+    },
+    getAppMenu() {
+      if (hasHostService()) {
+        const res = callHostService({ action: 'menuGetItems' });
+        if (res && res.ok && Array.isArray(res.items)) {
+          appMenuItems = res.items;
+        }
+      }
+      return appMenuItems.map((item) => ({ ...item }));
+    },
+    setAppMenu(items = []) {
+      const normalized = Array.isArray(items)
+        ? items.map((item) => ({
+            id: String(item?.id ?? ''),
+            label: String(item?.label ?? item?.id ?? ''),
+            accelerator: item?.accelerator ? String(item.accelerator) : null,
+            enabled: item?.enabled !== false,
+          }))
+        : [];
+      if (hasHostService()) {
+        const res = callHostService({ action: 'menuSetItems', items: normalized });
+        if (res && res.ok && Array.isArray(res.items)) {
+          appMenuItems = res.items;
+          return appMenuItems.map((item) => ({ ...item }));
+        }
+      }
+      appMenuItems = normalized;
+      return appMenuItems.map((item) => ({ ...item }));
+    },
+    getTrayState() {
+      if (hasHostService()) {
+        const res = callHostService({ action: 'trayGetState' });
+        if (res && res.ok) {
+          trayState = {
+            visible: Boolean(res.visible),
+            icon: String(res.icon ?? ''),
+            tooltip: String(res.tooltip ?? ''),
+            menuItems: Array.isArray(res.menuItems) ? res.menuItems : [],
+          };
+        }
+      }
+      return { ...trayState, menuItems: [...trayState.menuItems] };
+    },
+    setTrayState(state = {}) {
+      const next = {
+        visible: typeof state.visible === 'boolean' ? state.visible : trayState.visible,
+        icon: typeof state.icon === 'string' ? state.icon : trayState.icon,
+        tooltip: typeof state.tooltip === 'string' ? state.tooltip : trayState.tooltip,
+        menuItems: Array.isArray(state.menuItems) ? state.menuItems : trayState.menuItems,
+      };
+      if (hasHostService()) {
+        const res = callHostService({ action: 'traySetState', ...next });
+        if (res && res.ok) {
+          trayState = {
+            visible: Boolean(res.visible),
+            icon: String(res.icon ?? ''),
+            tooltip: String(res.tooltip ?? ''),
+            menuItems: Array.isArray(res.menuItems) ? res.menuItems : [],
+          };
+          return { ...trayState, menuItems: [...trayState.menuItems] };
+        }
+      }
+      trayState = next;
+      return { ...trayState, menuItems: [...trayState.menuItems] };
+    },
+    registerShortcut(accelerator, actionId) {
+      const cleanAcc = String(accelerator ?? '').trim();
+      const cleanAction = String(actionId ?? '').trim();
+      if (!cleanAcc || !cleanAction) return shortcuts.map((s) => ({ ...s }));
+      if (hasHostService()) {
+        const res = callHostService({ action: 'shortcutRegister', accelerator: cleanAcc, actionId: cleanAction });
+        if (res && res.ok && Array.isArray(res.shortcuts)) {
+          shortcuts = res.shortcuts;
+          return shortcuts.map((s) => ({ ...s }));
+        }
+      }
+      const existing = shortcuts.find((s) => s.accelerator === cleanAcc);
+      if (existing) existing.actionId = cleanAction;
+      else shortcuts.push({ accelerator: cleanAcc, actionId: cleanAction });
+      return shortcuts.map((s) => ({ ...s }));
+    },
+    unregisterShortcut(accelerator) {
+      const cleanAcc = String(accelerator ?? '').trim();
+      if (hasHostService()) {
+        const res = callHostService({ action: 'shortcutUnregister', accelerator: cleanAcc });
+        if (res && res.ok && Array.isArray(res.shortcuts)) {
+          shortcuts = res.shortcuts;
+          return shortcuts.map((s) => ({ ...s }));
+        }
+      }
+      shortcuts = shortcuts.filter((s) => s.accelerator !== cleanAcc);
+      return shortcuts.map((s) => ({ ...s }));
+    },
+    getRegisteredShortcuts() {
+      if (hasHostService()) {
+        const res = callHostService({ action: 'shortcutList' });
+        if (res && res.ok && Array.isArray(res.shortcuts)) {
+          shortcuts = res.shortcuts;
+        }
+      }
+      return shortcuts.map((s) => ({ ...s }));
     },
     __drainQueue() {
       if (queue.length === 0) return '';

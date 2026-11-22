@@ -88,4 +88,67 @@ describe('@ng-desktop/desktop Nivel 1-3 services', () => {
     network.setOnlineStatus(true, false);
     expect(network.isOnline()).toBe(true);
   });
+
+  it('persists window geometry and manages application menus, tray state, and keyboard shortcuts', () => {
+    const desktop = TestBed.inject(NativeDesktopService);
+
+    const saved = desktop.saveWindowGeometry({
+      width: 1280,
+      height: 840,
+      x: 100,
+      y: 60,
+      maximized: true,
+    });
+    expect(saved).toEqual({
+      width: 1280,
+      height: 840,
+      x: 100,
+      y: 60,
+      maximized: true,
+    });
+    expect(desktop.loadWindowGeometry()).toEqual(saved);
+
+    let refreshed = false;
+    let cleared = false;
+    desktop.setAppMenu(
+      [
+        { id: 'refresh', label: 'Refresh', accelerator: '<Control>r', enabled: true },
+        { id: 'disabled-item', label: 'Disabled', enabled: false },
+      ],
+      {
+        refresh: () => {
+          refreshed = true;
+        },
+        'disabled-item': () => {
+          cleared = true;
+        },
+      },
+    );
+    expect(desktop.appMenu()).toHaveLength(2);
+    expect(desktop.triggerMenuAction('refresh')).toBe(true);
+    expect(refreshed).toBe(true);
+    expect(desktop.triggerMenuAction('disabled-item')).toBe(false);
+    expect(cleared).toBe(false);
+
+    const tray = desktop.setTray({
+      visible: true,
+      icon: 'desktop-tray',
+      tooltip: 'App Active',
+      menuItems: desktop.appMenu(),
+    });
+    expect(tray.visible).toBe(true);
+    expect(tray.tooltip).toBe('App Active');
+
+    let searched = false;
+    desktop.registerShortcut('<Control>f', 'focus-search', () => {
+      searched = true;
+    });
+    expect(desktop.shortcuts()).toEqual([{ accelerator: '<Control>f', actionId: 'focus-search' }]);
+    expect(desktop.triggerShortcut('<Control>f')).toBe(true);
+    expect(searched).toBe(true);
+
+    desktop.unregisterShortcut('<Control>f');
+    expect(desktop.shortcuts()).toEqual([]);
+    expect(desktop.triggerShortcut('<Control>f')).toBe(false);
+  });
 });

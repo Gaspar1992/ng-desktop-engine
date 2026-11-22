@@ -2,7 +2,11 @@ export { NativeComputeService, type NativeScoredItem } from './compute-service';
 export {
   NativeDesktopService,
   provideNativeDesktop,
+  type NativeMenuItem,
+  type NativeShortcutBinding,
   type NativeThemeMode,
+  type NativeTrayState,
+  type NativeWindowGeometry,
   type OpenFileDialogOptions,
   type SaveFileDialogOptions,
 } from './desktop-service';
