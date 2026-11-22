@@ -105,6 +105,29 @@ pub struct GtkLinuxBackend {
     pulse_tick: std::cell::Cell<u32>,
 }
 
+impl Drop for GtkLinuxBackend {
+    fn drop(&mut self) {
+        let Some(gtk) = &self.gtk else {
+            return;
+        };
+        let drained: Vec<NativeGtkWidget> = self.widgets.drain().map(|(_, w)| w).collect();
+        for widget in &drained {
+            if widget.kind == GtkWidgetType::Window
+                && let Some(handle) = widget.handle
+            {
+                gtk.destroy_window(handle);
+            }
+        }
+        for widget in &drained {
+            if widget.kind != GtkWidgetType::Window
+                && let Some(handle) = widget.handle
+            {
+                gtk.unref_widget(handle);
+            }
+        }
+    }
+}
+
 impl Default for GtkLinuxBackend {
     fn default() -> Self {
         Self::new()
@@ -208,6 +231,7 @@ impl GtkLinuxBackend {
             gtk.step_main_context(may_block);
         }
         let mut events = drain_pending_events();
+        events.retain(|ev| self.widgets.contains_key(&ev.node));
         // ~60ms cadence at the 16ms pump rate: keeps indeterminate bars animating.
         let tick = self.pulse_tick.get().wrapping_add(1);
         self.pulse_tick.set(tick);
@@ -357,16 +381,24 @@ impl GtkLinuxBackend {
             RenderCommand::DestroyWidget { id } => {
                 self.header_titles.remove(id);
                 if let Some(widget) = self.widgets.remove(id)
-                    && widget.kind == GtkWidgetType::Window
                     && let (Some(gtk), Some(handle)) = (&self.gtk, widget.handle)
                 {
-                    gtk.destroy_window(handle);
+                    if widget.kind == GtkWidgetType::Window {
+                        gtk.destroy_window(handle);
+                    } else {
+                        gtk.unref_widget(handle);
+                    }
                 }
             }
         }
     }
 
     fn insert_widget_record(&mut self, id: NodeId, handle: Option<GtkHandle>, kind: GtkWidgetType) {
+        if kind != GtkWidgetType::Window
+            && let (Some(gtk), Some(h)) = (&self.gtk, handle)
+        {
+            gtk.ref_sink_widget(h);
+        }
         let size_request = if kind == GtkWidgetType::Image {
             (120, 120)
         } else {
@@ -540,14 +572,39 @@ impl GtkLinuxBackend {
         Some(pair)
     }
 
+    fn sync_paned_children(&self, paned_id: NodeId) {
+        let (Some(gtk), Some(paned_w)) = (&self.gtk, self.widgets.get(&paned_id)) else {
+            return;
+        };
+        let Some(p_h) = paned_w.handle else { return };
+        let mut real_handles = paned_w
+            .children
+            .iter()
+            .filter_map(|cid| self.widgets.get(cid).and_then(|w| w.handle));
+        let start = real_handles.next();
+        let end = real_handles.next();
+        gtk.paned_set_start_child(p_h, None);
+        gtk.paned_set_end_child(p_h, None);
+        gtk.paned_set_start_child(p_h, start);
+        gtk.paned_set_end_child(p_h, end);
+    }
+
     fn apply_append_child(&mut self, parent: NodeId, child: NodeId) {
         let (Some(parent_w), Some(child_w)) = (self.widgets.get(&parent), self.widgets.get(&child))
         else {
             return;
         };
+        let parent_kind = parent_w.kind;
+        if parent_kind == GtkWidgetType::Paned {
+            if let Some(pw) = self.widgets.get_mut(&parent) {
+                pw.children.push(child);
+            }
+            self.sync_paned_children(parent);
+            return;
+        }
         let child_index = i32::try_from(parent_w.children.len()).unwrap_or(0);
         if let (Some(gtk), Some(p_h), Some(c_h)) = (&self.gtk, parent_w.handle, child_w.handle) {
-            match parent_w.kind {
+            match parent_kind {
                 GtkWidgetType::Window => {
                     if child_w.kind == GtkWidgetType::HeaderBar {
                         gtk.set_window_titlebar(p_h, c_h);
@@ -559,13 +616,6 @@ impl GtkLinuxBackend {
                 GtkWidgetType::Scroll => gtk.set_scrolled_child(p_h, c_h),
                 GtkWidgetType::Box => gtk.box_append(p_h, c_h),
                 GtkWidgetType::FlowBox => gtk.flow_box_append(p_h, c_h),
-                GtkWidgetType::Paned => {
-                    if child_index == 0 {
-                        gtk.paned_set_start_child(p_h, Some(c_h));
-                    } else {
-                        gtk.paned_set_end_child(p_h, Some(c_h));
-                    }
-                }
                 GtkWidgetType::Stack => {
                     gtk.stack_add_named(p_h, c_h, &format!("page_{child_index}"));
                 }
@@ -587,6 +637,7 @@ impl GtkLinuxBackend {
         else {
             return;
         };
+        let parent_kind = parent_w.kind;
 
         let mut prev_real_sibling: Option<GtkHandle> = None;
         let mut real_insert_idx: i32 = 0;
@@ -615,10 +666,12 @@ impl GtkLinuxBackend {
             total_real_children
         };
 
-        if let (Some(gtk), Some(c_h), Some(p_h)) = (&self.gtk, child_w.handle, parent_w.handle) {
+        if parent_kind != GtkWidgetType::Paned
+            && let (Some(gtk), Some(c_h), Some(p_h)) = (&self.gtk, child_w.handle, parent_w.handle)
+        {
             Self::attach_gtk_child_at(
                 gtk,
-                parent_w.kind,
+                parent_kind,
                 child_w.kind,
                 p_h,
                 c_h,
@@ -638,6 +691,9 @@ impl GtkLinuxBackend {
             } else {
                 pw.children.push(child);
             }
+        }
+        if parent_kind == GtkWidgetType::Paned {
+            self.sync_paned_children(parent);
         }
     }
 
@@ -665,13 +721,6 @@ impl GtkLinuxBackend {
             GtkWidgetType::Scroll => gtk.set_scrolled_child(p_h, c_h),
             GtkWidgetType::Clamp => gtk.set_clamp_child(p_h, Some(c_h)),
             GtkWidgetType::Expander => gtk.set_expander_child(p_h, Some(c_h)),
-            GtkWidgetType::Paned => {
-                if target_idx == 0 {
-                    gtk.paned_set_start_child(p_h, Some(c_h));
-                } else {
-                    gtk.paned_set_end_child(p_h, Some(c_h));
-                }
-            }
             GtkWidgetType::Box => {
                 if is_existing_child {
                     gtk.box_reorder_after(p_h, c_h, prev_real_sibling);
@@ -697,60 +746,61 @@ impl GtkLinuxBackend {
     }
 
     fn apply_remove_child(&mut self, parent: NodeId, child: NodeId) {
+        let mut is_paned = false;
         if let (Some(gtk), Some(parent_w), Some(child_w)) = (
             &self.gtk,
             self.widgets.get(&parent),
             self.widgets.get(&child),
         ) && let Some(p_h) = parent_w.handle
         {
-            match parent_w.kind {
-                GtkWidgetType::Window => {
-                    if child_w.kind == GtkWidgetType::HeaderBar {
-                        gtk.clear_window_titlebar(p_h);
-                    } else {
-                        gtk.clear_window_child(p_h);
+            if parent_w.kind == GtkWidgetType::Paned {
+                is_paned = true;
+            } else if child_w.handle.is_some() {
+                match parent_w.kind {
+                    GtkWidgetType::Window => {
+                        if child_w.kind == GtkWidgetType::HeaderBar {
+                            gtk.clear_window_titlebar(p_h);
+                        } else {
+                            gtk.clear_window_child(p_h);
+                        }
                     }
-                }
-                GtkWidgetType::HeaderBar => {
-                    if let Some(c_h) = child_w.handle {
-                        gtk.header_bar_remove(p_h, c_h);
+                    GtkWidgetType::HeaderBar => {
+                        if let Some(c_h) = child_w.handle {
+                            gtk.header_bar_remove(p_h, c_h);
+                        }
                     }
-                }
-                GtkWidgetType::Scroll => gtk.clear_scrolled_child(p_h),
-                GtkWidgetType::Box => {
-                    if let Some(c_h) = child_w.handle {
-                        gtk.box_remove(p_h, c_h);
+                    GtkWidgetType::Scroll => gtk.clear_scrolled_child(p_h),
+                    GtkWidgetType::Box => {
+                        if let Some(c_h) = child_w.handle {
+                            gtk.box_remove(p_h, c_h);
+                        }
                     }
-                }
-                GtkWidgetType::Grid => {
-                    if let Some(c_h) = child_w.handle {
-                        gtk.grid_remove(p_h, c_h);
+                    GtkWidgetType::Grid => {
+                        if let Some(c_h) = child_w.handle {
+                            gtk.grid_remove(p_h, c_h);
+                        }
                     }
-                }
-                GtkWidgetType::FlowBox => {
-                    if let Some(c_h) = child_w.handle {
-                        gtk.flow_box_remove(p_h, c_h);
+                    GtkWidgetType::FlowBox => {
+                        if let Some(c_h) = child_w.handle {
+                            gtk.flow_box_remove(p_h, c_h);
+                        }
                     }
-                }
-                GtkWidgetType::Stack => {
-                    if let Some(c_h) = child_w.handle {
-                        gtk.stack_remove(p_h, c_h);
+                    GtkWidgetType::Stack => {
+                        if let Some(c_h) = child_w.handle {
+                            gtk.stack_remove(p_h, c_h);
+                        }
                     }
+                    GtkWidgetType::Expander => gtk.set_expander_child(p_h, None),
+                    GtkWidgetType::Clamp => gtk.set_clamp_child(p_h, None),
+                    _ => {}
                 }
-                GtkWidgetType::Paned => {
-                    if parent_w.children.first() == Some(&child) {
-                        gtk.paned_set_start_child(p_h, None);
-                    } else {
-                        gtk.paned_set_end_child(p_h, None);
-                    }
-                }
-                GtkWidgetType::Expander => gtk.set_expander_child(p_h, None),
-                GtkWidgetType::Clamp => gtk.set_clamp_child(p_h, None),
-                _ => {}
             }
         }
         if let Some(pw) = self.widgets.get_mut(&parent) {
             pw.children.retain(|c| *c != child);
+        }
+        if is_paned {
+            self.sync_paned_children(parent);
         }
     }
 }

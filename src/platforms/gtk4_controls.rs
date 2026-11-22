@@ -177,6 +177,22 @@ impl Gtk4Sys {
         }
     }
 
+    pub fn ref_sink_widget(&self, widget: GtkHandle) {
+        if !widget.0.is_null() {
+            unsafe {
+                (self.g_object_ref_sink)(widget.0);
+            }
+        }
+    }
+
+    pub fn unref_widget(&self, widget: GtkHandle) {
+        if !widget.0.is_null() {
+            unsafe {
+                (self.g_object_unref)(widget.0);
+            }
+        }
+    }
+
     pub fn connect_clicked(
         &self,
         btn: GtkHandle,

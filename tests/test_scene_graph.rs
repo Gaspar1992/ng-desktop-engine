@@ -427,5 +427,71 @@ fn gtk_backend_reorders_box_and_flow_box_and_removes_all_containers_safely() {
     let live = GtkLinuxBackend::new();
     if live.is_native_display_active() {
         exercise_reorder_and_container_removal(live);
+        let mut live_paned = RenderEngine::new(GtkLinuxBackend::new());
+        exercise_paned_insert_before_shifts_start_child_to_end_without_uaf(&mut live_paned);
     }
+}
+
+fn exercise_paned_insert_before_shifts_start_child_to_end_without_uaf(
+    engine: &mut RenderEngine<GtkLinuxBackend>,
+) {
+    let win = engine.create_element("ng-window").unwrap();
+    let paned = engine.create_element("ng-paned").unwrap();
+    let right_pane = engine.create_element("ng-box").unwrap();
+    let stats_expander = engine.create_element("ng-expander").unwrap();
+    let stats_box = engine.create_element("ng-box").unwrap();
+    let notes_expander = engine.create_element("ng-expander").unwrap();
+    let notes_text = engine.create_element("ng-text-view").unwrap();
+    let anchor = engine.create_comment("stats_anchor");
+
+    engine
+        .set_attribute(stats_expander, "expanded", "true")
+        .unwrap();
+    engine
+        .set_attribute(notes_expander, "expanded", "true")
+        .unwrap();
+
+    engine.append_child(win, paned).unwrap();
+    engine.append_child(paned, right_pane).unwrap();
+    engine.append_child(right_pane, stats_expander).unwrap();
+    engine.append_child(stats_expander, stats_box).unwrap();
+    engine.append_child(stats_box, anchor).unwrap();
+    engine.append_child(right_pane, notes_expander).unwrap();
+    engine.append_child(notes_expander, notes_text).unwrap();
+    engine.flush_frame();
+
+    // Hydrate a left-hand pane via `insert_before` at index 0 before `right_pane`.
+    let left_pane = engine.create_element("ng-box").unwrap();
+    engine
+        .insert_before(paned, left_pane, Some(right_pane))
+        .unwrap();
+
+    for idx in 0..6 {
+        let lbl = engine.create_element("ng-label").unwrap();
+        let bar = engine.create_element("ng-level-bar").unwrap();
+        engine.insert_before(stats_box, lbl, Some(anchor)).unwrap();
+        engine.insert_before(stats_box, bar, Some(anchor)).unwrap();
+        engine.set_text(lbl, format!("Stat {idx}")).unwrap();
+        engine.set_attribute(bar, "value", "45").unwrap();
+    }
+    engine
+        .set_text(notes_text, "Field notes survived slot shift")
+        .unwrap();
+    engine.flush_frame();
+
+    assert_eq!(
+        engine.backend().widget_children(paned),
+        Some([left_pane, right_pane].as_slice())
+    );
+    let _ = engine.backend().step_native_events(false);
+
+    engine.destroy_node(win).unwrap();
+    engine.flush_frame();
+    assert_eq!(engine.backend().widget_count(), 0);
+}
+
+#[test]
+fn gtk_backend_paned_insert_before_shifts_start_child_to_end_without_uaf() {
+    let mut headless = RenderEngine::new(GtkLinuxBackend::new_headless());
+    exercise_paned_insert_before_shifts_start_child_to_end_without_uaf(&mut headless);
 }
