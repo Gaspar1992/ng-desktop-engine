@@ -1,6 +1,6 @@
 use super::gtk4_callbacks::{pack_node_id, set_window_prevent_close};
 use super::gtk4_sys::{Gtk4Sys, GtkHandle};
-use super::linux_gtk::{GtkLinuxBackend, GtkWidgetType};
+use super::linux_gtk::{GtkLinuxBackend, GtkWidgetType, WidgetVisibility};
 use super::scene_state::NativeSceneState;
 use crate::engine::{EventMask, NodeId, StyleRule};
 use std::fmt::Write as _;
@@ -170,6 +170,13 @@ impl GtkLinuxBackend {
     }
 
     fn apply_metadata_attribute(&mut self, node: NodeId, key: &str, value: &str) -> bool {
+        if key == "id" {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                self.dom_id_to_node.insert(trimmed.to_string(), node);
+            }
+            return true;
+        }
         if key == "event-mask" {
             self.enable_widget_events(node, EventMask::parse_attr(value));
             return true;
@@ -188,7 +195,7 @@ impl GtkLinuxBackend {
         if key == "close-window" {
             if NativeSceneState::parse_truthy_attr(value)
                 && let Some(w) = self.widgets.get_mut(&node)
-                && w.kind == GtkWidgetType::Window
+                && w.kind.is_toplevel()
             {
                 w.prevent_close = false;
                 set_window_prevent_close(pack_node_id(node), false);
@@ -200,8 +207,40 @@ impl GtkLinuxBackend {
             }
             return true;
         }
+        if key == "modal" {
+            let modal = NativeSceneState::parse_truthy_attr(value);
+            if let Some(w) = self.widgets.get_mut(&node) {
+                w.dialog.modal = modal;
+                if let (Some(gtk), Some(handle)) = (&self.gtk, w.handle)
+                    && w.kind == GtkWidgetType::Dialog
+                {
+                    gtk.set_window_modal(handle, modal);
+                }
+            }
+            return true;
+        }
+        if key == "transient-for" {
+            let trimmed = value.trim();
+            let target_opt = (!trimmed.is_empty()).then(|| trimmed.to_string());
+            if let Some(w) = self.widgets.get_mut(&node) {
+                w.dialog.transient_for.clone_from(&target_opt);
+            }
+            if let Some(target_handle) =
+                self.resolve_transient_window_handle(node, target_opt.as_deref())
+                && let (Some(gtk), Some(w)) = (&self.gtk, self.widgets.get(&node))
+                && w.kind == GtkWidgetType::Dialog
+                && let Some(handle) = w.handle
+            {
+                gtk.set_window_transient_for(handle, Some(target_handle));
+            }
+            return true;
+        }
         if let Some(w) = self.widgets.get_mut(&node) {
             match key {
+                "visible" => {
+                    w.visibility =
+                        WidgetVisibility::from_bool(NativeSceneState::parse_truthy_attr(value));
+                }
                 "drop-target" => {
                     let trimmed = value.trim();
                     w.drop_target = !trimmed.eq_ignore_ascii_case("false") && trimmed != "0";
@@ -250,7 +289,7 @@ impl GtkLinuxBackend {
         if delta.contains(EventMask::WHEEL) {
             gtk.attach_wheel_controller(handle, packed);
         }
-        if delta.contains(EventMask::CLOSE_REQUEST) && kind == GtkWidgetType::Window {
+        if delta.contains(EventMask::CLOSE_REQUEST) && kind.is_toplevel() {
             gtk.connect_window_close_request(handle, packed);
         }
     }
@@ -292,7 +331,7 @@ impl GtkLinuxBackend {
             return;
         }
         match key {
-            "title" if widget_kind == GtkWidgetType::Window => {
+            "title" if widget_kind.is_toplevel() => {
                 gtk.set_window_title(handle, value);
             }
             "title" if widget_kind == GtkWidgetType::HeaderBar => {
@@ -354,6 +393,8 @@ impl GtkLinuxBackend {
                 gtk.set_widget_visible(handle, is_vis);
                 if kind == GtkWidgetType::Spinner {
                     gtk.set_spinner_active(handle, is_vis);
+                } else if kind.is_toplevel() && is_vis {
+                    gtk.present_window(handle);
                 }
             }
             _ => {}

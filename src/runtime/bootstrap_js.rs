@@ -40,6 +40,7 @@ globalThis.__NG_NATIVE__ = (() => {
   let appMenuItems = [];
   let trayState = { visible: false, icon: '', tooltip: '', menuItems: [] };
   let shortcuts = [];
+  let nextConfirmDialogResponse = null;
   let httpEndpoints = new Map();
   let httpConfig = {
     platform: 'auto',
@@ -335,6 +336,35 @@ globalThis.__NG_NATIVE__ = (() => {
     },
     saveFileDialog(_title = 'Save File', suggestedName = '/home/user/untitled.txt') {
       return suggestedName;
+    },
+    confirmDialog(options = {}) {
+      const payload = {
+        action: 'dialogConfirm',
+        title: String(options?.title ?? 'Confirm'),
+        message: String(options?.message ?? ''),
+        confirmLabel: String(options?.confirmLabel ?? 'OK'),
+        cancelLabel: String(options?.cancelLabel ?? 'Cancel'),
+        defaultConfirmed: options?.defaultConfirmed !== false,
+      };
+      if (hasHostService()) {
+        const res = callHostService(payload);
+        if (res && res.ok && typeof res.confirmed === 'boolean') {
+          return res.confirmed;
+        }
+      }
+      if (nextConfirmDialogResponse !== null) {
+        const next = nextConfirmDialogResponse;
+        nextConfirmDialogResponse = null;
+        return next;
+      }
+      return payload.defaultConfirmed;
+    },
+    setNextConfirmDialogResponse(confirmed) {
+      const next = Boolean(confirmed);
+      if (hasHostService()) {
+        callHostService({ action: 'dialogConfirmSetNext', confirmed: next });
+      }
+      nextConfirmDialogResponse = next;
     },
     configureHttp(config = {}) {
       httpConfig = { ...httpConfig, ...config };

@@ -7,6 +7,7 @@ import {
 } from '@angular/core';
 import {
   ensureNgNativeBridge,
+  type NativeConfirmDialogOptions,
   type NativeMenuItem,
   type NativeShortcutBinding,
   type NativeTrayState,
@@ -34,6 +35,8 @@ const DEFAULT_WINDOW_GEOMETRY: NativeWindowGeometry = {
   y: null,
   maximized: false,
 };
+
+export type ConfirmDialogOptions = NativeConfirmDialogOptions;
 
 export interface OpenFileDialogOptions {
   title?: string;
@@ -154,6 +157,17 @@ export class NativeDesktopService {
 
   saveFileDialog(options?: SaveFileDialogOptions): string {
     return this.bridge.saveFileDialog(options?.title, options?.suggestedName);
+  }
+
+  confirmDialog(options?: ConfirmDialogOptions): boolean {
+    if (typeof this.bridge.confirmDialog === 'function') {
+      return this.bridge.confirmDialog(options);
+    }
+    return options?.defaultConfirmed !== false;
+  }
+
+  setNextConfirmDialogResponse(confirmed: boolean): void {
+    this.bridge.setNextConfirmDialogResponse?.(confirmed);
   }
 
   loadWindowGeometry(): NativeWindowGeometry {

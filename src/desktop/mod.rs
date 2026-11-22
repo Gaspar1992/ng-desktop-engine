@@ -66,6 +66,17 @@ pub struct FileDialogRequest {
     pub suggested_path: String,
 }
 
+/// Native modal confirmation dialog operation (`AdwAlertDialog` / `ContentDialog` / `NSAlert`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfirmDialogRequest {
+    pub title: String,
+    pub message: String,
+    pub confirm_label: String,
+    pub cancel_label: String,
+    pub default_confirmed: bool,
+    pub confirmed: bool,
+}
+
 /// Persistent desktop window geometry & state (`window-state.json` in XDG config).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WindowGeometry {
@@ -121,6 +132,8 @@ pub struct DesktopServices {
     clipboard: String,
     notifications: Vec<DesktopNotification>,
     file_dialogs: Vec<FileDialogRequest>,
+    confirm_dialogs: Vec<ConfirmDialogRequest>,
+    next_confirm_response: Option<bool>,
     window_geometry: WindowGeometry,
     app_menu: Vec<AppMenuItem>,
     tray_state: TrayState,
@@ -181,6 +194,8 @@ impl DesktopServices {
             clipboard: String::new(),
             notifications: Vec::new(),
             file_dialogs: Vec::new(),
+            confirm_dialogs: Vec::new(),
+            next_confirm_response: None,
             window_geometry: WindowGeometry::default(),
             app_menu: Vec::new(),
             tray_state: TrayState::default(),
@@ -338,6 +353,48 @@ impl DesktopServices {
 
     pub fn file_dialogs(&self) -> &[FileDialogRequest] {
         &self.file_dialogs
+    }
+
+    pub const fn set_next_confirm_dialog_response(&mut self, confirmed: bool) {
+        self.next_confirm_response = Some(confirmed);
+    }
+
+    pub fn confirm_dialog(
+        &mut self,
+        title: &str,
+        message: &str,
+        confirm_label: &str,
+        cancel_label: &str,
+        default_confirmed: bool,
+    ) -> bool {
+        let confirmed = self
+            .next_confirm_response
+            .take()
+            .unwrap_or(default_confirmed);
+        let confirm = if confirm_label.trim().is_empty() {
+            "OK"
+        } else {
+            confirm_label
+        };
+        let cancel = if cancel_label.trim().is_empty() {
+            "Cancel"
+        } else {
+            cancel_label
+        };
+        self.confirm_dialogs.push(ConfirmDialogRequest {
+            title: String::from(title),
+            message: String::from(message),
+            confirm_label: String::from(confirm),
+            cancel_label: String::from(cancel),
+            default_confirmed,
+            confirmed,
+        });
+        confirmed
+    }
+
+    #[must_use]
+    pub fn confirm_dialogs(&self) -> &[ConfirmDialogRequest] {
+        &self.confirm_dialogs
     }
 
     #[must_use]
@@ -504,6 +561,13 @@ mod tests {
         let saved = desktop.save_file_dialog("Save Export", "/tmp/export.ngb");
         assert_eq!(saved, "/tmp/export.ngb");
         assert_eq!(desktop.file_dialogs().len(), 2);
+
+        assert!(desktop.confirm_dialog("Publish", "Deploy build?", "Deploy", "Cancel", true));
+        desktop.set_next_confirm_dialog_response(false);
+        assert!(!desktop.confirm_dialog("Reset", "Clear state?", "Reset", "Keep", true));
+        assert_eq!(desktop.confirm_dialogs().len(), 2);
+        assert!(desktop.confirm_dialogs()[0].confirmed);
+        assert!(!desktop.confirm_dialogs()[1].confirmed);
 
         desktop.register_http_endpoint(
             "GET",

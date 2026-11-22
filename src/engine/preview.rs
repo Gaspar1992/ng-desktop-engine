@@ -39,6 +39,19 @@ impl<B: PlatformBackend> RenderEngine<B> {
                 });
                 format!("[Window #{idx}:{generation} title=\"{title}\"{icon_str}{class_str}]")
             }
+            WidgetKind::Dialog {
+                title,
+                modal,
+                transient_for,
+                ..
+            } => {
+                let trans_str = transient_for
+                    .as_ref()
+                    .map_or_else(String::new, |t| format!(" transient-for=\"{t}\""));
+                format!(
+                    "[Dialog #{idx}:{generation} title=\"{title}\" modal={modal}{trans_str}{class_str}]"
+                )
+            }
             WidgetKind::HeaderBar {
                 title,
                 subtitle,
@@ -198,6 +211,12 @@ impl<B: PlatformBackend> RenderEngine<B> {
                 header_bar,
                 child,
             } => (title.as_str(), icon.as_ref(), *header_bar, *child),
+            WidgetKind::Dialog {
+                title,
+                header_bar,
+                child,
+                ..
+            } => (title.as_str(), None, *header_bar, *child),
             _ => return Err(EngineError::InvalidParent(root_id)),
         };
 

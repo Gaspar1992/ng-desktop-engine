@@ -415,9 +415,14 @@ fn exercise_reorder_and_container_removal(backend: GtkLinuxBackend) {
     assert_eq!(engine.backend().widget_count(), 0);
 }
 
+static LIVE_GTK_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[test]
 fn gtk_backend_reorders_box_and_flow_box_and_removes_all_containers_safely() {
     exercise_reorder_and_container_removal(GtkLinuxBackend::new_headless());
+    let _guard = LIVE_GTK_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let live = GtkLinuxBackend::new();
     if live.is_native_display_active() {
         exercise_reorder_and_container_removal(live);
@@ -634,4 +639,99 @@ fn cross_platform_close_request_and_prevent_close_lifecycle() {
             .contains(&"windowShouldClose:")
     );
     assert!(mac_eng.backend().get_view(m_win).unwrap().prevent_close);
+}
+
+#[test]
+fn multi_window_and_native_dialog_lifecycle_across_backends() {
+    use ng_native_engine::platforms::MacOsAppKitBackend;
+
+    let mut linux = RenderEngine::new(GtkLinuxBackend::new_headless());
+    let main_win = linux.create_element("ng-window").unwrap();
+    linux.set_attribute(main_win, "id", "main_win").unwrap();
+    let second_win = linux.create_element("ng-window").unwrap();
+    let dlg = linux.create_element("ng-dialog").unwrap();
+    linux.set_text(dlg, "Preferences").unwrap();
+    linux.set_attribute(dlg, "modal", "true").unwrap();
+    linux
+        .set_attribute(dlg, "transient-for", "main_win")
+        .unwrap();
+    let dlg_lbl = linux.create_element("ng-label").unwrap();
+    linux.set_text(dlg_lbl, "Audio Output").unwrap();
+    linux.append_child(dlg, dlg_lbl).unwrap();
+    linux.append_child(main_win, dlg).unwrap();
+    linux.flush_frame();
+
+    assert_eq!(linux.backend().toplevel_count(), 3);
+    assert!(linux.backend().is_modal(dlg));
+    assert_eq!(linux.backend().transient_for(dlg), Some("main_win"));
+    let preview = linux.render_window_preview(dlg).unwrap();
+    assert!(preview.contains("Preferences"));
+    assert!(preview.contains("Audio Output"));
+
+    linux.destroy_node(dlg).unwrap();
+    linux.destroy_node(second_win).unwrap();
+    linux.flush_frame();
+    assert_eq!(linux.backend().toplevel_count(), 1);
+
+    let mut win_eng = RenderEngine::new(WinUiBackend::new());
+    let w_win = win_eng.create_element("ng-window").unwrap();
+    let w_dlg = win_eng.create_element("ng-dialog").unwrap();
+    win_eng
+        .set_attribute(w_dlg, "transient-for", "win")
+        .unwrap();
+    win_eng.flush_frame();
+    assert_eq!(win_eng.backend().toplevel_count(), 2);
+    assert_eq!(
+        win_eng.backend().get_control(w_dlg).unwrap().native_class,
+        "Microsoft.UI.Xaml.Controls.ContentDialog"
+    );
+    assert!(win_eng.backend().get_control(w_dlg).unwrap().modal);
+    assert!(win_eng.backend().get_control(w_win).is_some());
+
+    let mut mac_eng = RenderEngine::new(MacOsAppKitBackend::new());
+    let m_dlg = mac_eng.create_element("ng-dialog").unwrap();
+    mac_eng.set_attribute(m_dlg, "modal", "false").unwrap();
+    mac_eng.flush_frame();
+    assert_eq!(mac_eng.backend().toplevel_count(), 1);
+    assert_eq!(
+        mac_eng.backend().get_view(m_dlg).unwrap().native_class,
+        "NSPanel"
+    );
+    assert!(!mac_eng.backend().get_view(m_dlg).unwrap().modal);
+}
+
+#[test]
+fn gtk_live_multi_window_and_dialog_presentation() {
+    let _guard = LIVE_GTK_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let backend = GtkLinuxBackend::new();
+    if !backend.is_native_display_active() {
+        return;
+    }
+    let mut engine = RenderEngine::new(backend);
+    let win = engine.create_element("ng-window").unwrap();
+    engine.set_attribute(win, "id", "primary_win").unwrap();
+    engine.set_text(win, "Main Window").unwrap();
+    let bx = engine.create_element("ng-box").unwrap();
+    engine.append_child(win, bx).unwrap();
+
+    let dlg = engine.create_element("ng-dialog").unwrap();
+    engine.set_text(dlg, "Live Modal").unwrap();
+    engine.set_attribute(dlg, "modal", "true").unwrap();
+    engine
+        .set_attribute(dlg, "transient-for", "primary_win")
+        .unwrap();
+    let dlg_lbl = engine.create_element("ng-label").unwrap();
+    engine.set_text(dlg_lbl, "Inside Modal").unwrap();
+    engine.append_child(dlg, dlg_lbl).unwrap();
+    // Appending a toplevel dialog under a container must never crash GTK4 box_append.
+    engine.append_child(bx, dlg).unwrap();
+    engine.flush_frame();
+
+    assert_eq!(engine.backend().toplevel_count(), 2);
+    assert!(engine.backend().open_window_count() >= 2);
+    engine.destroy_node(dlg).unwrap();
+    engine.flush_frame();
+    assert_eq!(engine.backend().toplevel_count(), 1);
 }

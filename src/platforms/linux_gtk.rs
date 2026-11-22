@@ -16,6 +16,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum GtkWidgetType {
     Window,
+    Dialog,
     HeaderBar,
     Scroll,
     Box,
@@ -45,9 +46,14 @@ pub(super) enum GtkWidgetType {
 }
 
 impl GtkWidgetType {
+    pub(super) const fn is_toplevel(self) -> bool {
+        matches!(self, Self::Window | Self::Dialog)
+    }
+
     fn from_tag(tag: &str) -> Option<Self> {
         match tag {
             "ng-window" | "adw-window" => Some(Self::Window),
+            "ng-dialog" | "gtk-dialog" | "adw-dialog" => Some(Self::Dialog),
             "ng-header-bar" | "adw-header-bar" | "gtk-header-bar" => Some(Self::HeaderBar),
             "ng-scroll" | "gtk-scrolled-window" => Some(Self::Scroll),
             "ng-box" | "gtk-box" => Some(Self::Box),
@@ -79,6 +85,28 @@ impl GtkWidgetType {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub(super) struct DialogConfig {
+    pub(super) modal: bool,
+    pub(super) transient_for: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum WidgetVisibility {
+    Visible,
+    Hidden,
+}
+
+impl WidgetVisibility {
+    pub(super) const fn from_bool(visible: bool) -> Self {
+        if visible { Self::Visible } else { Self::Hidden }
+    }
+
+    pub(super) const fn is_visible(self) -> bool {
+        matches!(self, Self::Visible)
+    }
+}
+
 pub(super) struct NativeGtkWidget {
     pub(super) handle: Option<GtkHandle>,
     pub(super) kind: GtkWidgetType,
@@ -94,8 +122,12 @@ pub(super) struct NativeGtkWidget {
     pub(super) scroll_anchor: Option<String>,
     /// Tracks which optional GTK4 `EventControllers` are currently attached to this widget.
     pub(super) attached_events: EventMask,
-    /// When true on a `Window`, `close-request` notifies JS and prevents OS destruction until `close-window`.
+    /// When true on a toplevel (`Window`/`Dialog`), `close-request` notifies JS and prevents OS destruction until `close-window`.
     pub(super) prevent_close: bool,
+    /// Dialog modality and transient parent metadata.
+    pub(super) dialog: DialogConfig,
+    /// Tracks explicit visibility flag (notably to defer presenting hidden dialogs until visible=true).
+    pub(super) visibility: WidgetVisibility,
 }
 
 /// Concrete Linux GTK4 + Libadwaita platform adapter backed by `libgtk-4.so.1`.
@@ -107,6 +139,8 @@ pub struct GtkLinuxBackend {
     pub(super) widgets: HashMap<NodeId, NativeGtkWidget>,
     pub(super) styles: HashMap<StyleId, StyleRule>,
     pub(super) header_titles: HashMap<NodeId, (String, String)>,
+    pub(super) dom_id_to_node: HashMap<String, NodeId>,
+    pub(super) parent_of: HashMap<NodeId, NodeId>,
     css_dirty: bool,
     css_reload_count: u64,
     pulse_tick: std::cell::Cell<u32>,
@@ -117,7 +151,7 @@ impl Drop for GtkLinuxBackend {
     fn drop(&mut self) {
         let drained: Vec<(NodeId, NativeGtkWidget)> = self.widgets.drain().collect();
         for &(id, ref widget) in &drained {
-            if widget.kind == GtkWidgetType::Window {
+            if widget.kind.is_toplevel() {
                 set_window_prevent_close(pack_node_id(id), false);
             }
         }
@@ -127,7 +161,7 @@ impl Drop for GtkLinuxBackend {
         let has_open_windows = gtk.open_window_count() > 0;
         if has_open_windows {
             for (_, widget) in &drained {
-                if widget.kind == GtkWidgetType::Window
+                if widget.kind.is_toplevel()
                     && let Some(handle) = widget.handle
                 {
                     gtk.destroy_window(handle);
@@ -135,7 +169,7 @@ impl Drop for GtkLinuxBackend {
             }
         }
         for (_, widget) in &drained {
-            if widget.kind != GtkWidgetType::Window
+            if !widget.kind.is_toplevel()
                 && let Some(handle) = widget.handle
             {
                 gtk.unref_widget(handle);
@@ -166,6 +200,8 @@ impl GtkLinuxBackend {
             widgets: HashMap::new(),
             styles: HashMap::new(),
             header_titles: HashMap::new(),
+            dom_id_to_node: HashMap::new(),
+            parent_of: HashMap::new(),
             css_dirty: false,
             css_reload_count: 0,
             pulse_tick: std::cell::Cell::new(0),
@@ -182,6 +218,8 @@ impl GtkLinuxBackend {
             widgets: HashMap::new(),
             styles: HashMap::new(),
             header_titles: HashMap::new(),
+            dom_id_to_node: HashMap::new(),
+            parent_of: HashMap::new(),
             css_dirty: false,
             css_reload_count: 0,
             pulse_tick: std::cell::Cell::new(0),
@@ -247,6 +285,26 @@ impl GtkLinuxBackend {
     #[must_use]
     pub fn is_prevent_close(&self, node: NodeId) -> bool {
         self.widgets.get(&node).is_some_and(|w| w.prevent_close)
+    }
+
+    #[must_use]
+    pub fn is_modal(&self, node: NodeId) -> bool {
+        self.widgets.get(&node).is_some_and(|w| w.dialog.modal)
+    }
+
+    #[must_use]
+    pub fn transient_for(&self, node: NodeId) -> Option<&str> {
+        self.widgets
+            .get(&node)
+            .and_then(|w| w.dialog.transient_for.as_deref())
+    }
+
+    #[must_use]
+    pub fn toplevel_count(&self) -> usize {
+        self.widgets
+            .values()
+            .filter(|w| w.kind.is_toplevel())
+            .count()
     }
 
     pub fn step_event_loop(&self, may_block: bool) -> Vec<NodeId> {
@@ -325,7 +383,7 @@ impl GtkLinuxBackend {
         }
         let mut prev_states = self.window_states.borrow_mut();
         for (&id, widget) in &self.widgets {
-            if widget.kind != GtkWidgetType::Window {
+            if !widget.kind.is_toplevel() {
                 continue;
             }
             let Some(handle) = widget.handle else {
@@ -370,7 +428,7 @@ impl GtkLinuxBackend {
         };
         let Some(handle) = widget.handle else { return };
         match widget.kind {
-            GtkWidgetType::Window => gtk.set_window_title(handle, text),
+            GtkWidgetType::Window | GtkWidgetType::Dialog => gtk.set_window_title(handle, text),
             GtkWidgetType::HeaderBar => {
                 let entry = self.header_titles.entry(id).or_default();
                 entry.0 = text.to_string();
@@ -411,6 +469,8 @@ impl GtkLinuxBackend {
                         scroll_anchor: None,
                         attached_events: EventMask::NONE,
                         prevent_close: false,
+                        dialog: DialogConfig::default(),
+                        visibility: WidgetVisibility::Visible,
                     },
                 );
             }
@@ -422,7 +482,7 @@ impl GtkLinuxBackend {
                 let (Some(gtk), Some(widget)) = (&self.gtk, self.widgets.get(node)) else {
                     return;
                 };
-                if widget.kind == GtkWidgetType::Window
+                if widget.kind.is_toplevel()
                     && let Some(handle) = widget.handle
                 {
                     gtk.configure_window_icon(handle, &icon.app_id, &self.icon_search_dir);
@@ -466,11 +526,13 @@ impl GtkLinuxBackend {
             RenderCommand::DestroyWidget { id } => {
                 self.header_titles.remove(id);
                 self.window_states.borrow_mut().remove(id);
+                self.parent_of.remove(id);
+                self.dom_id_to_node.retain(|_, node| node != id);
                 set_window_prevent_close(pack_node_id(*id), false);
                 if let Some(widget) = self.widgets.remove(id)
                     && let (Some(gtk), Some(handle)) = (&self.gtk, widget.handle)
                 {
-                    if widget.kind == GtkWidgetType::Window {
+                    if widget.kind.is_toplevel() {
                         gtk.destroy_window(handle);
                     } else {
                         gtk.unref_widget(handle);
@@ -481,7 +543,7 @@ impl GtkLinuxBackend {
     }
 
     fn insert_widget_record(&mut self, id: NodeId, handle: Option<GtkHandle>, kind: GtkWidgetType) {
-        if kind != GtkWidgetType::Window
+        if !kind.is_toplevel()
             && let (Some(gtk), Some(h)) = (&self.gtk, handle)
         {
             gtk.ref_sink_widget(h);
@@ -504,6 +566,11 @@ impl GtkLinuxBackend {
                 scroll_anchor: None,
                 attached_events: EventMask::NONE,
                 prevent_close: false,
+                dialog: DialogConfig {
+                    modal: kind == GtkWidgetType::Dialog,
+                    transient_for: None,
+                },
+                visibility: WidgetVisibility::Visible,
             },
         );
     }
@@ -665,9 +732,65 @@ impl GtkLinuxBackend {
                 (Some(sb), GtkWidgetType::SpinButton)
             }
             "ng-clamp" | "adw-clamp" => (Some(gtk.create_clamp()), GtkWidgetType::Clamp),
+            "ng-dialog" | "gtk-dialog" | "adw-dialog" => {
+                (Some(gtk.create_dialog()), GtkWidgetType::Dialog)
+            }
             _ => return None,
         };
         Some(pair)
+    }
+
+    pub(super) fn resolve_transient_window_handle(
+        &self,
+        dialog_node: NodeId,
+        explicit_target: Option<&str>,
+    ) -> Option<GtkHandle> {
+        if let Some(target_dom) = explicit_target
+            && !target_dom.trim().is_empty()
+            && let Some(&target_node) = self.dom_id_to_node.get(target_dom.trim())
+            && target_node != dialog_node
+            && let Some(w) = self.widgets.get(&target_node)
+            && w.kind.is_toplevel()
+        {
+            return w.handle;
+        }
+        let mut cursor = self.parent_of.get(&dialog_node).copied();
+        let mut steps = 0;
+        while let Some(curr) = cursor {
+            if steps > 64 {
+                break;
+            }
+            steps += 1;
+            if curr != dialog_node
+                && let Some(w) = self.widgets.get(&curr)
+                && w.kind.is_toplevel()
+                && let Some(h) = w.handle
+            {
+                return Some(h);
+            }
+            cursor = self.parent_of.get(&curr).copied();
+        }
+        None
+    }
+
+    fn sync_dialog_transient_and_present(&self, dialog_node: NodeId) {
+        let (Some(gtk), Some(dialog_w)) = (&self.gtk, self.widgets.get(&dialog_node)) else {
+            return;
+        };
+        if dialog_w.kind != GtkWidgetType::Dialog {
+            return;
+        }
+        let Some(d_h) = dialog_w.handle else {
+            return;
+        };
+        if let Some(parent_h) = self
+            .resolve_transient_window_handle(dialog_node, dialog_w.dialog.transient_for.as_deref())
+        {
+            gtk.set_window_transient_for(d_h, Some(parent_h));
+        }
+        if dialog_w.visibility.is_visible() {
+            gtk.present_window(d_h);
+        }
     }
 
     fn sync_paned_children(&self, paned_id: NodeId) {
@@ -688,11 +811,21 @@ impl GtkLinuxBackend {
     }
 
     fn apply_append_child(&mut self, parent: NodeId, child: NodeId) {
+        self.parent_of.insert(child, parent);
         let (Some(parent_w), Some(child_w)) = (self.widgets.get(&parent), self.widgets.get(&child))
         else {
             return;
         };
         let parent_kind = parent_w.kind;
+        if child_w.kind.is_toplevel() {
+            if let Some(pw) = self.widgets.get_mut(&parent)
+                && !pw.children.contains(&child)
+            {
+                pw.children.push(child);
+            }
+            self.sync_dialog_transient_and_present(child);
+            return;
+        }
         if parent_kind == GtkWidgetType::Paned {
             if let Some(pw) = self.widgets.get_mut(&parent) {
                 pw.children.push(child);
@@ -703,7 +836,7 @@ impl GtkLinuxBackend {
         let child_index = i32::try_from(parent_w.children.len()).unwrap_or(0);
         if let (Some(gtk), Some(p_h), Some(c_h)) = (&self.gtk, parent_w.handle, child_w.handle) {
             match parent_kind {
-                GtkWidgetType::Window => {
+                kind if kind.is_toplevel() => {
                     if child_w.kind == GtkWidgetType::HeaderBar {
                         gtk.set_window_titlebar(p_h, c_h);
                     } else {
@@ -731,11 +864,26 @@ impl GtkLinuxBackend {
     }
 
     fn apply_insert_before(&mut self, parent: NodeId, child: NodeId, ref_child: Option<NodeId>) {
+        self.parent_of.insert(child, parent);
         let (Some(parent_w), Some(child_w)) = (self.widgets.get(&parent), self.widgets.get(&child))
         else {
             return;
         };
         let parent_kind = parent_w.kind;
+        if child_w.kind.is_toplevel() {
+            if let Some(pw) = self.widgets.get_mut(&parent) {
+                pw.children.retain(|c| *c != child);
+                if let Some(ref_id) = ref_child
+                    && let Some(pos) = pw.children.iter().position(|c| *c == ref_id)
+                {
+                    pw.children.insert(pos, child);
+                } else {
+                    pw.children.push(child);
+                }
+            }
+            self.sync_dialog_transient_and_present(child);
+            return;
+        }
 
         let mut prev_real_sibling: Option<GtkHandle> = None;
         let mut real_insert_idx: i32 = 0;
@@ -808,7 +956,7 @@ impl GtkLinuxBackend {
         is_existing_child: bool,
     ) {
         match parent_kind {
-            GtkWidgetType::Window => {
+            kind if kind.is_toplevel() => {
                 if child_kind == GtkWidgetType::HeaderBar {
                     gtk.set_window_titlebar(p_h, c_h);
                 } else {
@@ -844,6 +992,7 @@ impl GtkLinuxBackend {
     }
 
     fn apply_remove_child(&mut self, parent: NodeId, child: NodeId) {
+        self.parent_of.remove(&child);
         let mut is_paned = false;
         if let (Some(gtk), Some(parent_w), Some(child_w)) = (
             &self.gtk,
@@ -853,9 +1002,9 @@ impl GtkLinuxBackend {
         {
             if parent_w.kind == GtkWidgetType::Paned {
                 is_paned = true;
-            } else if child_w.handle.is_some() {
+            } else if !child_w.kind.is_toplevel() && child_w.handle.is_some() {
                 match parent_w.kind {
-                    GtkWidgetType::Window => {
+                    kind if kind.is_toplevel() => {
                         if child_w.kind == GtkWidgetType::HeaderBar {
                             gtk.clear_window_titlebar(p_h);
                         } else {
@@ -915,6 +1064,7 @@ impl PlatformBackend for GtkLinuxBackend {
     fn map_native_widget(&self, tag: &str) -> &'static str {
         match tag {
             "ng-window" | "adw-window" => "AdwApplicationWindow",
+            "ng-dialog" | "gtk-dialog" | "adw-dialog" => "AdwDialog",
             "ng-header-bar" | "adw-header-bar" | "gtk-header-bar" => "AdwHeaderBar",
             "ng-scroll" | "gtk-scrolled-window" => "GtkScrolledWindow",
             "ng-box" | "gtk-box" => "GtkBox",

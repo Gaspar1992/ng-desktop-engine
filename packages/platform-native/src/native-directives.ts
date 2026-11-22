@@ -102,7 +102,7 @@ function isTruthyDisabledInput(value: NativeBoolInput): boolean {
  */
 @Directive({
   selector:
-    'ng-window,adw-window,ng-header-bar,adw-header-bar,gtk-header-bar,ng-scroll,gtk-scrolled-window,ng-box,gtk-box,ng-grid,gtk-grid,ng-separator,gtk-separator,ng-button,gtk-button,ng-label,gtk-label,ng-entry,gtk-entry,ng-switch,gtk-switch,ng-checkbox,ng-check,ng-check-button,gtk-check-button,ng-slider,ng-scale,gtk-scale,ng-select,ng-dropdown,gtk-dropdown,gtk-drop-down,ng-image,adw-image,gtk-picture,ng-picture,ng-level-bar,gtk-level-bar,ng-flow,ng-flow-box,gtk-flow-box,ng-spinner,gtk-spinner,ng-progress-bar,gtk-progress-bar,ng-paned,gtk-paned,ng-stack,gtk-stack,adw-navigation-view,ng-expander,gtk-expander,ng-text-view,gtk-text-view,ng-password-entry,gtk-password-entry,ng-spin-button,gtk-spin-button,ng-search-entry,gtk-search-entry,ng-clamp,adw-clamp,adw-entry-row,adw-password-entry-row,adw-switch-row,adw-combo-row,adw-spin-row',
+    'ng-window,adw-window,ng-dialog,gtk-dialog,adw-dialog,ng-header-bar,adw-header-bar,gtk-header-bar,ng-scroll,gtk-scrolled-window,ng-box,gtk-box,ng-grid,gtk-grid,ng-separator,gtk-separator,ng-button,gtk-button,ng-label,gtk-label,ng-entry,gtk-entry,ng-switch,gtk-switch,ng-checkbox,ng-check,ng-check-button,gtk-check-button,ng-slider,ng-scale,gtk-scale,ng-select,ng-dropdown,gtk-dropdown,gtk-drop-down,ng-image,adw-image,gtk-picture,ng-picture,ng-level-bar,gtk-level-bar,ng-flow,ng-flow-box,gtk-flow-box,ng-spinner,gtk-spinner,ng-progress-bar,gtk-progress-bar,ng-paned,gtk-paned,ng-stack,gtk-stack,adw-navigation-view,ng-expander,gtk-expander,ng-text-view,gtk-text-view,ng-password-entry,gtk-password-entry,ng-spin-button,gtk-spin-button,ng-search-entry,gtk-search-entry,ng-clamp,adw-clamp,adw-entry-row,adw-password-entry-row,adw-switch-row,adw-combo-row,adw-spin-row',
   standalone: true,
 })
 export class NativeElementDirective {
@@ -176,10 +176,12 @@ export class NativeElementDirective {
 }
 
 /**
- * Typed directive for top-level native windows and header bars (`<ng-window>`, `<ng-header-bar>`).
+ * Typed directive for top-level native windows, dialogs, and header bars (`<ng-window>`,
+ * `<ng-dialog>`, `<ng-header-bar>`).
  */
 @Directive({
-  selector: 'ng-window,adw-window,ng-header-bar,adw-header-bar,gtk-header-bar',
+  selector:
+    'ng-window,adw-window,ng-dialog,gtk-dialog,adw-dialog,ng-header-bar,adw-header-bar,gtk-header-bar',
   standalone: true,
 })
 export class NativeWindowDirective {
@@ -203,6 +205,15 @@ export class NativeWindowDirective {
   }
   @Input() set decorated(val: NativeBoolInput) {
     syncNativeAttr(this.renderer, this.el, 'decorated', val);
+  }
+  @Input() set modal(val: NativeBoolInput) {
+    syncNativeAttr(this.renderer, this.el, 'modal', val);
+  }
+  @Input('transient-for') set transientForAttr(val: NativeAttrInput) {
+    syncNativeAttr(this.renderer, this.el, 'transient-for', val);
+  }
+  @Input() set transientFor(val: NativeAttrInput) {
+    syncNativeAttr(this.renderer, this.el, 'transient-for', val);
   }
   @Input() set preventClose(val: NativeBoolInput) {
     syncNativeAttr(this.renderer, this.el, 'prevent-close', val);

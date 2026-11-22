@@ -2,6 +2,7 @@ export { NativeComputeService, type NativeScoredItem } from './compute-service';
 export {
   NativeDesktopService,
   provideNativeDesktop,
+  type ConfirmDialogOptions,
   type NativeCloseRequestEvent,
   type NativeMenuItem,
   type NativeResizeEvent,

@@ -9,6 +9,13 @@ pub enum WidgetKind {
         header_bar: Option<NodeId>,
         child: Option<NodeId>,
     },
+    Dialog {
+        title: String,
+        modal: bool,
+        transient_for: Option<String>,
+        header_bar: Option<NodeId>,
+        child: Option<NodeId>,
+    },
     HeaderBar {
         title: String,
         subtitle: Option<String>,
@@ -251,6 +258,13 @@ impl WidgetKind {
                 max_size: 800,
                 child: None,
             }),
+            "ng-dialog" | "gtk-dialog" | "adw-dialog" => Ok(Self::Dialog {
+                title: String::from("Dialog"),
+                modal: true,
+                transient_for: None,
+                header_bar: None,
+                child: None,
+            }),
             "ng-anchor" | "#comment" => Ok(Self::Anchor {
                 comment: String::new(),
             }),
@@ -273,6 +287,9 @@ impl WidgetKind {
     pub fn child_ids(&self) -> Vec<NodeId> {
         match self {
             Self::Window {
+                header_bar, child, ..
+            }
+            | Self::Dialog {
                 header_bar, child, ..
             } => header_bar.iter().chain(child.iter()).copied().collect(),
             Self::Paned {
@@ -314,7 +331,9 @@ impl WidgetKind {
 
     pub fn set_text(&mut self, id: NodeId, text: impl Into<String>) -> Result<(), EngineError> {
         match self {
-            Self::Window { title, .. } | Self::HeaderBar { title, .. } => *title = text.into(),
+            Self::Window { title, .. }
+            | Self::Dialog { title, .. }
+            | Self::HeaderBar { title, .. } => *title = text.into(),
             Self::Button { label }
             | Self::CheckButton { label, .. }
             | Self::Expander { label, .. } => *label = text.into(),
@@ -376,6 +395,9 @@ impl WidgetKind {
     ) -> Result<(), EngineError> {
         match self {
             Self::Window {
+                header_bar, child, ..
+            }
+            | Self::Dialog {
                 header_bar, child, ..
             } => {
                 if is_header_bar {
@@ -460,6 +482,9 @@ impl WidgetKind {
             }
             Self::Window {
                 header_bar, child, ..
+            }
+            | Self::Dialog {
+                header_bar, child, ..
             } => {
                 if is_header_bar {
                     *header_bar = Some(new_child);
@@ -509,6 +534,9 @@ impl WidgetKind {
     pub fn remove_child(&mut self, parent_id: NodeId, child_id: NodeId) -> Result<(), EngineError> {
         match self {
             Self::Window {
+                header_bar, child, ..
+            }
+            | Self::Dialog {
                 header_bar, child, ..
             } => {
                 if *header_bar == Some(child_id) {
@@ -583,6 +611,7 @@ impl WidgetKind {
     pub const fn tag_name(&self) -> &'static str {
         match self {
             Self::Window { .. } => "ng-window",
+            Self::Dialog { .. } => "ng-dialog",
             Self::HeaderBar { .. } => "ng-header-bar",
             Self::Scroll { .. } => "ng-scroll",
             Self::Box { .. } => "ng-box",
@@ -615,7 +644,9 @@ impl WidgetKind {
     #[must_use]
     pub fn primary_text(&self) -> Option<&str> {
         match self {
-            Self::Window { title, .. } | Self::HeaderBar { title, .. } => Some(title.as_str()),
+            Self::Window { title, .. }
+            | Self::Dialog { title, .. }
+            | Self::HeaderBar { title, .. } => Some(title.as_str()),
             Self::Label { text }
             | Self::Entry { text, .. }
             | Self::SearchEntry { text, .. }
@@ -665,6 +696,9 @@ mod tests {
             "ng-spin-button",
             "ng-search-entry",
             "ng-clamp",
+            "ng-dialog",
+            "gtk-dialog",
+            "adw-dialog",
             "ng-anchor",
         ] {
             assert!(WidgetKind::from_tag(tag).is_ok(), "Failed to parse {tag}");
