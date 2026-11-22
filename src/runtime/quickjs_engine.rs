@@ -95,6 +95,10 @@ impl QuickJsEngine {
             ("setClipboard", [text]) => format!("clipboard {text}"),
             (
                 "listen"
+                | "beginBatch"
+                | "endBatch"
+                | "__dispatchAndDrain"
+                | "__tickAndDrain"
                 | "configureHttp"
                 | "getHttpConfig"
                 | "registerHttpEndpoint"

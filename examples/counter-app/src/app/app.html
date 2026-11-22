@@ -8,16 +8,16 @@
             id="search_entry"
             hexpand="true"
             placeholder="Buscar Pokémon por nombre o N.º (ej. bul, pika, 25)..."
-            (input)="onSearchInput($event)"
+            [formControl]="searchControl"
           />
           <ng-spin-button
             id="poke_id_spin"
             min="1"
             max="1025"
             step="1"
-            [attr.value]="pokedex.selectedId()"
-            (value-changed)="onSpinChanged($event)"
+            [formControl]="spinIdControl"
           />
+          <ng-switch id="sw_filter_favorites" [formControl]="favoritesOnlyControl" />
           <ng-button id="btn_filter_favorites" (click)="toggleFavoritesFilter()">
             {{ pokedex.favoritesOnly() ? 'Ver Todos' : '★ Solo Favoritos' }}
           </ng-button>
@@ -149,12 +149,7 @@
 
               <ng-expander id="notes_expander" label="Notas de Campo de la Pokédex" expanded="true">
                 <ng-box id="notes_box" orientation="vertical" spacing="8px">
-                  <ng-text-view
-                    id="poke_notes"
-                    editable="true"
-                    [textContent]="pokedex.selectedNote()"
-                    (input)="onNoteInput($event)"
-                  />
+                  <ng-text-view id="poke_notes" editable="true" [formControl]="noteControl" />
                   <ng-button id="btn_save_note" class="suggested-action" (click)="saveNote()"
                     >Guardar Nota</ng-button
                   >
@@ -169,6 +164,7 @@
           </ng-paned>
         </ng-box>
         } }
+        <router-outlet />
       </ng-box>
     </ng-clamp>
   </ng-scroll>

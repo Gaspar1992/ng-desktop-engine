@@ -254,4 +254,29 @@ describe('Native template compiler (Angular AST)', () => {
       url: 'https://api.example.test/v2/items/25',
     });
   });
+
+  it('compiles <ng-container> inline and emits a comment anchor for <router-outlet />', () => {
+    const ast = parseTemplateHtml(
+      `
+        <ng-box id="shell">
+          <router-outlet />
+          <ng-container>
+            <ng-label id="inside_lbl">Nested</ng-label>
+          </ng-container>
+        </ng-box>
+      `,
+      {},
+      {},
+      'router.html',
+    );
+
+    const children = ast[0].children;
+    expect(children[0]?.isComment).toBe(true);
+    expect(children[0]?.text).toBe('router-outlet');
+    expect(children[1]?.id).toBe('inside_lbl');
+
+    const bundle = emitNgbBundle([], {}, {}, ast, null, 'router.html');
+    expect(bundle).toContain('comment outlet_1 router-outlet');
+    expect(bundle).toContain('create inside_lbl ng-label');
+  });
 });

@@ -88,9 +88,12 @@ impl JsRuntime {
         event_name: &str,
         payload: &EventPayload,
     ) -> Result<(), EngineError> {
-        self.js_engine
-            .dispatch_js_event_with_payload(var_name, event_name, payload)?;
-        let _ = self.flush_js_mutations(engine)?;
+        let drained = self
+            .js_engine
+            .dispatch_and_drain(var_name, event_name, payload)?;
+        if !drained.trim().is_empty() {
+            self.eval_tick(engine, &drained)?;
+        }
         Ok(())
     }
 
@@ -101,27 +104,15 @@ impl JsRuntime {
         engine: &mut RenderEngine<B>,
     ) -> Result<bool, EngineError> {
         let completions = self.host_bridge.drain_async_completions();
-        for completion in completions {
-            let payload = if completion.payload_json.trim().is_empty() {
-                "null"
-            } else {
-                completion.payload_json.as_str()
-            };
-            let script = format!(
-                "if (globalThis.__NG_NATIVE__ && typeof globalThis.__NG_NATIVE__.__resolveHostCallback === 'function') {{ globalThis.__NG_NATIVE__.__resolveHostCallback({}, {payload}); }}",
-                completion.callback_id
-            );
-            let _ = self.js_engine.eval_script(&script)?;
-        }
-
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0_u64, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
-        let timer_script = format!(
-            "if (globalThis.__NG_NATIVE__ && typeof globalThis.__NG_NATIVE__.__tickTimers === 'function') {{ globalThis.__NG_NATIVE__.__tickTimers({now_ms}); }}"
-        );
-        let _ = self.js_engine.eval_script(&timer_script)?;
-        self.flush_js_mutations(engine)
+        let drained = self.js_engine.tick_and_drain(now_ms, &completions)?;
+        if !drained.trim().is_empty() {
+            self.eval_tick(engine, &drained)?;
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     fn flush_js_mutations<B: PlatformBackend>(

@@ -63,14 +63,26 @@ mod inotify_ffi {
 
     const IN_NONBLOCK: c_int = 0o4000;
     const IN_CLOEXEC: c_int = 0o200_0000;
-    const IN_MODIFY: u32 = 0x0000_0002;
-    const IN_ATTRIB: u32 = 0x0000_0004;
-    const IN_CLOSE_WRITE: u32 = 0x0000_0008;
+    pub(super) const IN_MODIFY: u32 = 0x0000_0002;
+    pub(super) const IN_ATTRIB: u32 = 0x0000_0004;
+    pub(super) const IN_CLOSE_WRITE: u32 = 0x0000_0008;
+    pub(super) const IN_MOVED_TO: u32 = 0x0000_0080;
+    pub(super) const IN_CREATE: u32 = 0x0000_0100;
+    pub(super) const IN_DELETE_SELF: u32 = 0x0000_0400;
+    pub(super) const IN_MOVE_SELF: u32 = 0x0000_0800;
+    pub(super) const IN_IGNORED: u32 = 0x0000_8000;
 
     type InotifyInit1Fn = unsafe extern "C" fn(c_int) -> c_int;
     type InotifyAddWatchFn = unsafe extern "C" fn(c_int, *const c_char, u32) -> c_int;
     type ReadFn = unsafe extern "C" fn(c_int, *mut c_void, usize) -> isize;
     type CloseFn = unsafe extern "C" fn(c_int) -> c_int;
+
+    #[derive(Debug, Clone)]
+    pub(super) struct InotifyRawEvent {
+        pub(super) wd: c_int,
+        pub(super) mask: u32,
+        pub(super) name: Option<String>,
+    }
 
     pub(super) struct InotifyHandle {
         fd: c_int,
@@ -100,21 +112,26 @@ mod inotify_ffi {
             }
         }
 
-        pub(super) fn add_watch(&self, path: &Path) -> Option<c_int> {
+        pub(super) fn add_file_watch(&self, path: &Path) -> Option<c_int> {
+            self.add_watch_with_mask(
+                path,
+                IN_MODIFY | IN_CLOSE_WRITE | IN_ATTRIB | IN_DELETE_SELF | IN_MOVE_SELF,
+            )
+        }
+
+        pub(super) fn add_dir_watch(&self, dir: &Path) -> Option<c_int> {
+            self.add_watch_with_mask(dir, IN_MOVED_TO | IN_CREATE | IN_CLOSE_WRITE | IN_MODIFY)
+        }
+
+        fn add_watch_with_mask(&self, path: &Path, mask: u32) -> Option<c_int> {
             let c_path = CString::new(path.to_string_lossy().as_bytes()).ok()?;
-            let wd = unsafe {
-                (self.inotify_add_watch)(
-                    self.fd,
-                    c_path.as_ptr(),
-                    IN_MODIFY | IN_CLOSE_WRITE | IN_ATTRIB,
-                )
-            };
+            let wd = unsafe { (self.inotify_add_watch)(self.fd, c_path.as_ptr(), mask) };
             if wd >= 0 { Some(wd) } else { None }
         }
 
-        pub(super) fn drain_watch_descriptors(&self) -> Vec<c_int> {
-            let mut buf = [0_u8; 1024];
-            let mut wds = Vec::new();
+        pub(super) fn drain_events(&self) -> Vec<InotifyRawEvent> {
+            let mut buf = [0_u8; 4096];
+            let mut events = Vec::new();
             loop {
                 let n = unsafe { (self.read_fn)(self.fd, buf.as_mut_ptr().cast(), buf.len()) };
                 if n <= 0 {
@@ -129,17 +146,39 @@ mod inotify_ffi {
                         buf[offset + 2],
                         buf[offset + 3],
                     ]);
+                    let mask = u32::from_ne_bytes([
+                        buf[offset + 4],
+                        buf[offset + 5],
+                        buf[offset + 6],
+                        buf[offset + 7],
+                    ]);
                     let name_len = u32::from_ne_bytes([
                         buf[offset + 12],
                         buf[offset + 13],
                         buf[offset + 14],
                         buf[offset + 15],
                     ]) as usize;
-                    wds.push(wd);
-                    offset = offset.saturating_add(16 + name_len);
+                    let name_end = offset.saturating_add(16).saturating_add(name_len);
+                    let name = if name_len > 0 && name_end <= bytes_read {
+                        let raw_name = &buf[offset + 16..name_end];
+                        let nul_pos = raw_name
+                            .iter()
+                            .position(|&b| b == 0)
+                            .unwrap_or(raw_name.len());
+                        let parsed = String::from_utf8_lossy(&raw_name[..nul_pos]).into_owned();
+                        if parsed.is_empty() {
+                            None
+                        } else {
+                            Some(parsed)
+                        }
+                    } else {
+                        None
+                    };
+                    events.push(InotifyRawEvent { wd, mask, name });
+                    offset = name_end;
                 }
             }
-            wds
+            events
         }
     }
 
@@ -170,6 +209,8 @@ pub struct NativeFsManager {
     inotify: Option<inotify_ffi::InotifyHandle>,
     #[cfg(target_os = "linux")]
     wd_to_path: HashMap<std::ffi::c_int, PathBuf>,
+    #[cfg(target_os = "linux")]
+    dir_wd_to_path: HashMap<std::ffi::c_int, PathBuf>,
 }
 
 impl Default for NativeFsManager {
@@ -188,6 +229,8 @@ impl NativeFsManager {
             inotify: inotify_ffi::InotifyHandle::try_new(),
             #[cfg(target_os = "linux")]
             wd_to_path: HashMap::new(),
+            #[cfg(target_os = "linux")]
+            dir_wd_to_path: HashMap::new(),
         }
     }
 
@@ -270,17 +313,77 @@ impl NativeFsManager {
         if let Some(state) = self.watched_files.get_mut(path) {
             state.pending_atomic_change = true;
             #[cfg(target_os = "linux")]
-            if let Some(inotify) = &self.inotify
-                && let Some(wd) = inotify.add_watch(path)
-            {
-                self.wd_to_path.insert(wd, path.to_path_buf());
-            }
+            self.register_linux_watches(path);
         }
         Ok(())
     }
 
     fn snapshot_metadata(path: &Path) -> (Option<SystemTime>, u64) {
         fs::metadata(path).map_or((None, 0), |m| (m.modified().ok(), m.len()))
+    }
+
+    #[cfg(target_os = "linux")]
+    fn register_linux_watches(&mut self, path: &Path) {
+        let Some(inotify) = &self.inotify else {
+            return;
+        };
+        if let Some(wd) = inotify.add_file_watch(path) {
+            self.wd_to_path.insert(wd, path.to_path_buf());
+        }
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+            && !self.dir_wd_to_path.values().any(|dir| dir == parent)
+            && let Some(dir_wd) = inotify.add_dir_watch(parent)
+        {
+            self.dir_wd_to_path.insert(dir_wd, parent.to_path_buf());
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn poll_linux_inotify(&mut self, changed: &mut Vec<PathBuf>) {
+        use inotify_ffi::{IN_CREATE, IN_DELETE_SELF, IN_IGNORED, IN_MOVE_SELF, IN_MOVED_TO};
+
+        let Some(inotify) = &self.inotify else {
+            return;
+        };
+        let events = inotify.drain_events();
+        let mut rearm_paths = Vec::new();
+        let rearm_flags = IN_DELETE_SELF | IN_MOVE_SELF | IN_IGNORED | IN_MOVED_TO | IN_CREATE;
+
+        for ev in events {
+            let needs_rearm = (ev.mask & rearm_flags) != 0;
+
+            if let Some(path) = self.wd_to_path.get(&ev.wd).cloned() {
+                if !changed.contains(&path) {
+                    changed.push(path.clone());
+                }
+                if (ev.mask & IN_IGNORED) != 0 {
+                    self.wd_to_path.remove(&ev.wd);
+                }
+                if needs_rearm && !rearm_paths.contains(&path) {
+                    rearm_paths.push(path);
+                }
+                continue;
+            }
+
+            if let Some(dir) = self.dir_wd_to_path.get(&ev.wd)
+                && let Some(ref file_name) = ev.name
+            {
+                let candidate = dir.join(file_name);
+                if self.watched_files.contains_key(&candidate) {
+                    if !changed.contains(&candidate) {
+                        changed.push(candidate.clone());
+                    }
+                    if needs_rearm && !rearm_paths.contains(&candidate) {
+                        rearm_paths.push(candidate);
+                    }
+                }
+            }
+        }
+
+        for path in rearm_paths {
+            self.register_linux_watches(&path);
+        }
     }
 
     /// Registers `path` with the OS file watcher (`inotify` on Linux + metadata snapshot).
@@ -295,36 +398,41 @@ impl NativeFsManager {
             },
         );
         #[cfg(target_os = "linux")]
-        if let Some(inotify) = &self.inotify
-            && let Some(wd) = inotify.add_watch(path)
-        {
-            self.wd_to_path.insert(wd, path.to_path_buf());
-        }
+        self.register_linux_watches(path);
         Ok(())
     }
 
-    /// Non-blockingly drains kernel `inotify` events and metadata deltas for watched files.
+    /// Non-blockingly drains kernel `inotify` events when active, or polls file metadata deltas
+    /// on platforms without an active kernel watcher.
     pub fn poll_changed_paths(&mut self) -> Vec<PathBuf> {
         let mut changed = Vec::new();
+        for (path, state) in &mut self.watched_files {
+            if state.pending_atomic_change {
+                state.pending_atomic_change = false;
+                changed.push(path.clone());
+            }
+        }
+
         #[cfg(target_os = "linux")]
-        if let Some(inotify) = &self.inotify {
-            for wd in inotify.drain_watch_descriptors() {
-                if let Some(path) = self.wd_to_path.get(&wd)
-                    && !changed.contains(path)
-                {
-                    changed.push(path.clone());
+        if self.is_kernel_watcher_active() {
+            self.poll_linux_inotify(&mut changed);
+            for path in &changed {
+                if let Some(state) = self.watched_files.get_mut(path) {
+                    let (mtime, len) = Self::snapshot_metadata(path);
+                    state.last_mtime = mtime;
+                    state.last_len = len;
                 }
             }
+            return changed;
         }
 
         for (path, state) in &mut self.watched_files {
             let (mtime, len) = Self::snapshot_metadata(path);
             let metadata_changed =
                 (mtime.is_some() && mtime != state.last_mtime) || len != state.last_len;
-            if state.pending_atomic_change || metadata_changed {
+            if metadata_changed {
                 state.last_mtime = mtime;
                 state.last_len = len;
-                state.pending_atomic_change = false;
                 if !changed.contains(path) {
                     changed.push(path.clone());
                 }
@@ -377,5 +485,31 @@ mod tests {
         assert_eq!(changed, vec![tmp_file.clone()]);
 
         let _ = fs::remove_file(&tmp_file);
+    }
+
+    #[test]
+    fn detects_external_atomic_rename_and_direct_write_via_watcher() {
+        let watch_dir =
+            env::temp_dir().join(format!("ng_fs_external_watch_{}", std::process::id()));
+        fs::create_dir_all(&watch_dir).unwrap();
+        let target = watch_dir.join("state.json");
+        let staging = watch_dir.join("state.json.staging");
+        fs::write(&target, r#"{"step":"v1"}"#).unwrap();
+
+        let mut fs_mgr = NativeFsManager::new("ng-native-external-watch");
+        fs_mgr.watch_file(&target).unwrap();
+        assert_eq!(fs_mgr.poll_changed_paths(), Vec::<PathBuf>::new());
+
+        // External atomic swap (staging write + rename over watched target)
+        fs::write(&staging, r#"{"step":"v2-renamed-payload"}"#).unwrap();
+        fs::rename(&staging, &target).unwrap();
+        assert_eq!(fs_mgr.poll_changed_paths(), vec![target.clone()]);
+
+        // Re-armed file watch must still catch direct writes on the new inode
+        fs::write(&target, r#"{"step":"v3-direct-write-after-rename"}"#).unwrap();
+        assert_eq!(fs_mgr.poll_changed_paths(), vec![target.clone()]);
+        assert_eq!(fs_mgr.poll_changed_paths(), Vec::<PathBuf>::new());
+
+        let _ = fs::remove_dir_all(&watch_dir);
     }
 }
