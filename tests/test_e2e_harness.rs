@@ -107,7 +107,7 @@ fn agnostic_headless_test_ipc_e2e_workflow() {
     fs::write(
         &cfg_path,
         format!(
-            r#"{{"projectName":"agnostic-e2e","version":"0.3.0","targetPlatform":"headless","outputPath":"{out_slash}","permissions":{{"sqlite":false,"network":false}}}}"#
+            r#"{{"projectName":"agnostic-e2e","version":"0.4.0","targetPlatform":"headless","outputPath":"{out_slash}","permissions":{{"sqlite":false,"network":false}}}}"#
         ),
     )
     .unwrap();

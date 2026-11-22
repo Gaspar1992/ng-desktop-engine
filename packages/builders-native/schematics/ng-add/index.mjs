@@ -9,9 +9,9 @@ export function applyNgAddToTree(tree, options = {}) {
     const pkgRaw = tree.read('/package.json')?.toString('utf8') ?? '{}';
     const pkg = JSON.parse(pkgRaw);
     pkg.dependencies ??= {};
-    pkg.dependencies['@ng-desktop/platform'] ??= '>=0.3.0';
+    pkg.dependencies['@ng-desktop/platform'] ??= '>=0.4.0';
     pkg.devDependencies ??= {};
-    pkg.devDependencies['@ng-desktop/builders'] ??= '>=0.3.0';
+    pkg.devDependencies['@ng-desktop/builders'] ??= '>=0.4.0';
     tree.overwrite('/package.json', `${JSON.stringify(pkg, null, 2)}\n`);
   }
 

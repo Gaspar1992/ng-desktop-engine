@@ -101,8 +101,8 @@ fn phase11_packager_least_privilege_capabilities() {
         ..ng_native_engine::config::AppPermissions::minimal()
     };
 
-    let win_artifacts = stage_windows_distribution(&cfg, "0.3.0").unwrap();
-    let mac_artifacts = stage_macos_distribution(&cfg, "0.3.0").unwrap();
+    let win_artifacts = stage_windows_distribution(&cfg, "0.4.0").unwrap();
+    let mac_artifacts = stage_macos_distribution(&cfg, "0.4.0").unwrap();
 
     let appx = fs::read_to_string(&win_artifacts[0]).unwrap();
     assert!(!appx.contains("runFullTrust"));
@@ -116,7 +116,7 @@ fn phase11_packager_least_privilege_capabilities() {
 #[test]
 fn phase6_linux_distribution_packager_and_winui_appkit_stateful_backends() {
     let cfg = AngularNativeConfig::from_file("tests/fixtures/sample-app/angular.json").unwrap();
-    let artifacts = stage_linux_distribution(&cfg, "0.3.0").unwrap();
+    let artifacts = stage_linux_distribution(&cfg, "0.4.0").unwrap();
     assert_eq!(artifacts.len(), 7);
     for path in &artifacts {
         assert!(
@@ -125,11 +125,11 @@ fn phase6_linux_distribution_packager_and_winui_appkit_stateful_backends() {
         );
     }
 
-    let win_artifacts = stage_windows_distribution(&cfg, "0.3.0").unwrap();
+    let win_artifacts = stage_windows_distribution(&cfg, "0.4.0").unwrap();
     assert_eq!(win_artifacts.len(), 4);
-    let mac_artifacts = stage_macos_distribution(&cfg, "0.3.0").unwrap();
+    let mac_artifacts = stage_macos_distribution(&cfg, "0.4.0").unwrap();
     assert_eq!(mac_artifacts.len(), 5);
-    let all_artifacts = stage_all_distributions(&cfg, "0.3.0").unwrap();
+    let all_artifacts = stage_all_distributions(&cfg, "0.4.0").unwrap();
     assert_eq!(all_artifacts.len(), 16);
     for path in &all_artifacts {
         assert!(

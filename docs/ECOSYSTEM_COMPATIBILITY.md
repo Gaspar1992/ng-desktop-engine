@@ -20,9 +20,9 @@ Understanding which libraries run out of the box, which need lightweight host br
 
 ---
 
-## 2. Enabling Ecosystem Compatibility Providers
+## 2. Enabling Ecosystem Compatibility Providers & Standard HTML DX
 
-Import `provideNativeEcosystemCompat()` from `@ng-desktop/platform` alongside `provideNativePlatform()` in your root `ApplicationConfig`:
+Import `provideNativeEcosystemCompat()`, `provideNativePlatform()`, and `NATIVE_UI_DIRECTIVES` from `@ng-desktop/platform` in your application:
 
 ```ts
 import { ApplicationConfig } from '@angular/core';
@@ -35,6 +35,8 @@ export const appConfig: ApplicationConfig = {
   ],
 };
 ```
+
+Components can import `NATIVE_UI_DIRECTIVES` (and `NativeVirtualListComponent` when virtualizing large lists) to use strongly typed `<ng-*>` bindings, standard HTML elements (`<div>`, `<span>`, `<button>`, `<input>`, `<table>`, `<dialog>`, `<menu>` via `HTML_TO_NATIVE_TAG`), CSS Flexbox/Grid layouts, and desktop events (`(scrollBottom)`, `(closeRequest)`, `(beforeunload)`, `(rowActivated)`) without `CUSTOM_ELEMENTS_SCHEMA`.
 
 ### Exposed Tokens & Services (`@ng-desktop/platform`)
 
@@ -55,8 +57,8 @@ Because `ng-desktop-engine` intentionally omits WebView/Chromium to stay lightwe
 ### Recommended Architecture for Complex UI Libraries
 
 1. **Logic & State:** Use `@ngrx/signals`, `@ngrx/store`, and `@ngrx/effects` directly.
-2. **Headless Accessibility & Interaction:** Pair **`@angular/aria`** and **`@angular/cdk/collections` / `@angular/cdk/a11y`** controllers with native `<ng-button>`, `<ng-entry>`, `<ng-list>`, `<ng-select>`, `<ng-expander>`, `<ng-stack>`, and `<ng-window>` elements.
-3. **Desktop Styling:** Style native controls with CSS rule subsets supported by the engine's style compiler (`background-color`, `color`, `padding`, `spacing`, font sizing, Libadwaita/Fluent/Cocoa system themes).
+2. **Headless Accessibility & Interaction:** Pair **`@angular/aria`** and **`@angular/cdk/collections` / `@angular/cdk/a11y`** controllers with native `<ng-button>`, `<ng-entry>`, `<ng-list>` / `<ng-virtual-list>`, `<ng-popover>`, `<ng-select>`, `<ng-expander>`, `<ng-stack>`, `<ng-dialog>`, and `<ng-window>` elements.
+3. **Desktop Styling:** Style native controls with CSS rule subsets supported by the engine's style compiler and `parseRuntimeStyles` (`display: flex` / `grid`, `flex-direction`, `flex-wrap`, `gap`, `min-width`, `min-height`, `border-radius`, `background-color`, `color`, `padding`, `spacing`, font sizing, Libadwaita/Fluent/Cocoa system themes).
 
 ---
 

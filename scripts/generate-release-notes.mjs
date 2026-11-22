@@ -8,7 +8,7 @@ import { writeFileSync } from 'node:fs';
  */
 
 const args = process.argv.slice(2);
-const versionArg = (args.find((a) => a.startsWith('--version='))?.split('=')[1] ?? '0.3.0').replace(
+const versionArg = (args.find((a) => a.startsWith('--version='))?.split('=')[1] ?? '0.4.0').replace(
   /^v/,
   '',
 );

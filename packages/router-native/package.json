@@ -1,6 +1,6 @@
 {
   "name": "@ng-desktop/router",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "DOM-free Angular Router PlatformLocation & navigation stack for Native GTK4 / WinUI 3 / AppKit windows",
   "type": "module",
   "main": "./src/index.ts",
@@ -9,6 +9,6 @@
     "@angular/common": ">=22.0.0",
     "@angular/core": ">=22.0.0",
     "@angular/router": ">=22.0.0",
-    "@ng-desktop/platform": ">=0.3.0"
+    "@ng-desktop/platform": ">=0.4.0"
   }
 }

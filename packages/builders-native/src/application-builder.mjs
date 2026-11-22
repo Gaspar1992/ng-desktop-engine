@@ -21,7 +21,7 @@ export function createArchitectBuilder(handlerFn) {
     };
   }
   builderObj[ARCHITECT_BUILDER_SYMBOL] = true;
-  builderObj[ARCHITECT_VERSION_SYMBOL] = builderObj[ARCHITECT_VERSION_SYMBOL] ?? '0.3.0';
+  builderObj[ARCHITECT_VERSION_SYMBOL] = builderObj[ARCHITECT_VERSION_SYMBOL] ?? '0.4.0';
   builderObj.run = handlerFn;
   return builderObj;
 }

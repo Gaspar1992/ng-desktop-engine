@@ -1,6 +1,6 @@
 {
   "name": "@ng-desktop/http",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Native Angular HttpBackend bridging HttpClient, interceptors, and httpResource() to the Rust host",
   "type": "module",
   "main": "./src/index.ts",
@@ -8,7 +8,7 @@
   "peerDependencies": {
     "@angular/common": ">=22.0.0",
     "@angular/core": ">=22.0.0",
-    "@ng-desktop/platform": ">=0.3.0",
+    "@ng-desktop/platform": ">=0.4.0",
     "rxjs": ">=7.8.0"
   }
 }
