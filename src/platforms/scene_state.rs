@@ -1,4 +1,7 @@
-use crate::engine::{NativeEvent, NodeId, RenderCommand, StyleId, StyleRule, WindowIconAsset};
+use crate::engine::{
+    EventMask, NativeEvent, NodeId, RenderCommand, StyleId, StyleRule, WindowIconAsset,
+    coalesce_frame_events,
+};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -10,7 +13,9 @@ pub struct NativeSceneNode {
     pub attributes: HashMap<String, String>,
     pub style_classes: Vec<StyleId>,
     pub children: Vec<NodeId>,
+    pub event_mask: EventMask,
     pub drop_target: bool,
+    pub prevent_close: bool,
     pub scroll_position: Option<(i32, i32)>,
     pub scroll_anchor: Option<String>,
 }
@@ -54,7 +59,7 @@ impl NativeSceneState {
     }
 
     pub fn drain_events(&self) -> Vec<NativeEvent> {
-        std::mem::take(&mut *self.pending_events.borrow_mut())
+        coalesce_frame_events(std::mem::take(&mut *self.pending_events.borrow_mut()))
     }
 
     pub fn parse_scroll_coords(raw: &str) -> Option<(i32, i32)> {
@@ -64,11 +69,28 @@ impl NativeSceneState {
         Some((x, y))
     }
 
+    #[must_use]
+    pub fn parse_truthy_attr(raw: &str) -> bool {
+        let trimmed = raw.trim();
+        !trimmed.is_empty() && !trimmed.eq_ignore_ascii_case("false") && trimmed != "0"
+    }
+
     fn apply_scene_attribute(node: &mut NativeSceneNode, key: &str, value: &str) {
         match key {
+            "event-mask" => {
+                node.event_mask = node.event_mask.union(EventMask::parse_attr(value));
+            }
             "drop-target" => {
                 let trimmed = value.trim();
                 node.drop_target = !trimmed.eq_ignore_ascii_case("false") && trimmed != "0";
+            }
+            "prevent-close" => {
+                node.prevent_close = Self::parse_truthy_attr(value);
+            }
+            "close-window" => {
+                if Self::parse_truthy_attr(value) {
+                    node.prevent_close = false;
+                }
             }
             "scroll-to" => {
                 node.scroll_position = Self::parse_scroll_coords(value);
@@ -98,7 +120,9 @@ impl NativeSceneState {
                         attributes: HashMap::new(),
                         style_classes: Vec::new(),
                         children: Vec::new(),
+                        event_mask: EventMask::NONE,
                         drop_target: false,
+                        prevent_close: false,
                         scroll_position: None,
                         scroll_anchor: None,
                     },
@@ -113,7 +137,9 @@ impl NativeSceneState {
                         attributes: HashMap::new(),
                         style_classes: Vec::new(),
                         children: Vec::new(),
+                        event_mask: EventMask::NONE,
                         drop_target: false,
+                        prevent_close: false,
                         scroll_position: None,
                         scroll_anchor: None,
                     },

@@ -34,12 +34,91 @@ const TEXT_BEARING_TAGS = new Set([
   'gtk-text-view',
 ]);
 
-function isNativeTag(tag: string): boolean {
+const TEXT_INPUT_TAGS = new Set([
+  'ng-entry',
+  'gtk-entry',
+  'ng-search-entry',
+  'gtk-search-entry',
+  'ng-password-entry',
+  'gtk-password-entry',
+  'ng-text-view',
+  'gtk-text-view',
+]);
+
+/**
+ * 1:1 mapping from standard HTML elements to native desktop widget primitives.
+ * Containers map to `ng-box` (1D Flexbox); text elements map to `ng-label`.
+ * Angular component selectors (e.g. `app-*`, `router-outlet`, `ng-container`) are omitted
+ * so they continue operating as virtual hosts.
+ */
+export const HTML_TO_NATIVE_TAG: Readonly<Record<string, string>> = {
+  div: 'ng-box',
+  section: 'ng-box',
+  main: 'ng-box',
+  article: 'ng-box',
+  aside: 'ng-box',
+  nav: 'ng-box',
+  header: 'ng-box',
+  footer: 'ng-box',
+  form: 'ng-box',
+  ul: 'ng-box',
+  ol: 'ng-box',
+  li: 'ng-box',
+  figure: 'ng-box',
+  figcaption: 'ng-box',
+  p: 'ng-label',
+  span: 'ng-label',
+  label: 'ng-label',
+  h1: 'ng-label',
+  h2: 'ng-label',
+  h3: 'ng-label',
+  h4: 'ng-label',
+  h5: 'ng-label',
+  h6: 'ng-label',
+  strong: 'ng-label',
+  em: 'ng-label',
+  small: 'ng-label',
+  code: 'ng-label',
+  pre: 'ng-label',
+  a: 'ng-label',
+  button: 'ng-button',
+  img: 'ng-image',
+  hr: 'ng-separator',
+  input: 'ng-entry',
+  textarea: 'ng-text-view',
+  select: 'ng-select',
+  progress: 'ng-progress-bar',
+  details: 'ng-expander',
+};
+
+/**
+ * Resolves an Angular template element tag into a native desktop widget tag (`ng-*`, `gtk-*`,
+ * `adw-*`), returning `null` for virtual Angular hosts (`ng-container`, `router-outlet`, `app-*`).
+ */
+export function resolveNativeTag(tag: string): string | null {
   const lower = tag.trim().toLowerCase();
   if (VIRTUAL_ANGULAR_TAGS.has(lower)) {
+    return null;
+  }
+  if (lower.startsWith('ng-') || lower.startsWith('adw-') || lower.startsWith('gtk-')) {
+    return lower;
+  }
+  return HTML_TO_NATIVE_TAG[lower] ?? null;
+}
+
+function isImageTag(tag: string): boolean {
+  return tag === 'ng-image' || tag === 'adw-image' || tag === 'ng-picture' || tag === 'gtk-picture';
+}
+
+function parseHtmlBooleanFlag(value: unknown): boolean {
+  if (value === undefined || value === null || value === false || value === 0) {
     return false;
   }
-  return lower.startsWith('ng-') || lower.startsWith('adw-') || lower.startsWith('gtk-');
+  if (typeof value === 'string') {
+    const lower = value.trim().toLowerCase();
+    return lower !== 'false' && lower !== '0' && lower !== 'null' && lower !== 'undefined';
+  }
+  return Boolean(value);
 }
 
 function isInternalAngularAttr(name: string): boolean {
@@ -50,17 +129,185 @@ function mapNativeEventNames(eventName: string): string[] {
   switch (eventName) {
     case 'click':
       return ['clicked'];
-    case 'scrollEdge':
-    case 'scroll-edge':
-      return ['edge-reached', 'viewport-reached'];
+    case 'dblclick':
+    case 'doubleclick':
+      return ['dblclick'];
+    case 'contextmenu':
+    case 'rightclick':
+      return ['contextmenu'];
+    case 'mousedown':
+    case 'pointerdown':
+      return ['mousedown'];
+    case 'mouseup':
+    case 'pointerup':
+      return ['mouseup'];
+    case 'mouseenter':
+    case 'mouseover':
+    case 'pointerenter':
+      return ['mouseenter'];
+    case 'mouseleave':
+    case 'mouseout':
+    case 'pointerleave':
+      return ['mouseleave'];
+    case 'mousemove':
+    case 'pointermove':
+      return ['mousemove'];
+    case 'focus':
+    case 'focusin':
+    case 'windowFocus':
+      return ['focus'];
+    case 'blur':
+    case 'focusout':
+    case 'windowBlur':
+      return ['blur'];
+    case 'keydown':
+      return ['keydown'];
+    case 'keyup':
+      return ['keyup'];
+    case 'input':
+      return ['input'];
     case 'change':
     case 'valueChange':
-      return ['changed'];
+      return ['changed', 'value-changed', 'toggled'];
     case 'submit':
+    case 'search':
+    case 'activate':
       return ['activate'];
+    case 'cancel':
+    case 'escape':
+    case 'stopSearch':
+      return ['cancel'];
+    case 'scroll':
+      return ['scroll'];
+    case 'scrollEdge':
+    case 'scroll-edge':
+      return ['scroll-edge', 'edge-reached'];
+    case 'scrollBottom':
+    case 'scroll-bottom':
+      return ['scroll-bottom'];
+    case 'scrollTop':
+    case 'scroll-top':
+      return ['scroll-top'];
+    case 'wheel':
+    case 'mousewheel':
+      return ['wheel'];
+    case 'resize':
+    case 'windowResize':
+    case 'window-resize':
+      return ['resize'];
+    case 'maximize':
+    case 'windowMaximize':
+      return ['maximize'];
+    case 'closeRequest':
+    case 'close-request':
+    case 'beforeunload':
+      return ['close-request'];
+    case 'dragenter':
+      return ['dragenter'];
+    case 'dragleave':
+      return ['dragleave'];
+    case 'drop':
+      return ['drop', 'files-dropped'];
     default:
       return [eventName];
   }
+}
+
+function lazyControllerTokenFor(eventName: string): string | null {
+  switch (eventName) {
+    case 'click':
+    case 'dblclick':
+    case 'doubleclick':
+    case 'mousedown':
+    case 'mouseup':
+    case 'pointerdown':
+    case 'pointerup':
+      return 'click';
+    case 'contextmenu':
+    case 'rightclick':
+      return 'contextmenu';
+    case 'mouseenter':
+    case 'mouseleave':
+    case 'mousemove':
+    case 'mouseover':
+    case 'mouseout':
+    case 'pointerenter':
+    case 'pointerleave':
+    case 'pointermove':
+      return 'motion';
+    case 'focus':
+    case 'blur':
+    case 'focusin':
+    case 'focusout':
+      return 'focus';
+    case 'keydown':
+    case 'keyup':
+      return 'keyboard';
+    case 'wheel':
+    case 'mousewheel':
+      return 'wheel';
+    case 'closeRequest':
+    case 'close-request':
+    case 'beforeunload':
+      return 'close-request';
+    default:
+      return null;
+  }
+}
+
+function syncTargetFromPayload(
+  target: NativeElementNode | undefined,
+  parsed: Record<string, unknown>,
+): void {
+  if (!target) {
+    return;
+  }
+  if (parsed['value'] !== undefined) {
+    target.value = String(parsed['value']);
+  }
+  if (typeof parsed['checked'] === 'boolean') {
+    target.checked = parsed['checked'];
+  } else if (typeof parsed['active'] === 'boolean') {
+    target.checked = parsed['active'];
+  }
+}
+
+function normalizeNativeEventPayload(
+  eventName: string,
+  rawPayload: unknown,
+  target?: NativeElementNode,
+): unknown {
+  const tryParseJson = (raw: unknown): Record<string, unknown> | null => {
+    if (typeof raw !== 'string') return null;
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null;
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
+  };
+
+  let normalized: Record<string, unknown>;
+  if (typeof rawPayload === 'string') {
+    const parsed = tryParseJson(rawPayload);
+    normalized = parsed ? { type: eventName, ...parsed } : { type: eventName, value: rawPayload };
+  } else if (rawPayload && typeof rawPayload === 'object' && !Array.isArray(rawPayload)) {
+    const obj = rawPayload as Record<string, unknown>;
+    const parsed = tryParseJson(obj['value']);
+    normalized = parsed ? { type: eventName, ...obj, ...parsed } : { type: eventName, ...obj };
+  } else {
+    normalized = { type: eventName };
+  }
+
+  syncTargetFromPayload(target, normalized);
+  if (target && normalized['target'] === undefined) {
+    normalized['target'] = target;
+  }
+  return normalized;
 }
 
 interface ParsedStyleRule {
@@ -72,11 +319,111 @@ interface ParsedStyleRule {
   borderRadius: number | null;
   fontSize: number | null;
   fontWeight: number | null;
+  minWidth: number | null;
+  minHeight: number | null;
+  orientation: 'horizontal' | 'vertical' | null;
+  hexpand: boolean | null;
+  vexpand: boolean | null;
+  halign: string | null;
+  valign: string | null;
+  minChildren: number | null;
+  maxChildren: number | null;
+  homogeneous: boolean | null;
 }
 
 function parsePixelInt(raw: string): number | null {
   const parsed = Number.parseInt(raw.trim().replace(/px$/, ''), 10);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function mapAlignKeyword(raw: string): string | null {
+  switch (raw.trim().toLowerCase()) {
+    case 'center':
+      return 'center';
+    case 'flex-start':
+    case 'start':
+      return 'start';
+    case 'flex-end':
+    case 'end':
+      return 'end';
+    case 'stretch':
+    case 'fill':
+      return 'fill';
+    case 'baseline':
+      return 'baseline';
+    default:
+      return null;
+  }
+}
+
+function applyRuntimeGridColumns(rule: ParsedStyleRule, val: string): void {
+  const match = val
+    .trim()
+    .match(/repeat\(\s*(auto-fit|auto-fill|\d+)\s*,\s*(?:minmax\(\s*(\d+)px\s*,[^)]+\)|[^)]+)\)/i);
+  if (!match) return;
+  const track = match[1].toLowerCase();
+  if (track === 'auto-fit' || track === 'auto-fill') {
+    rule.minChildren = 1;
+    rule.maxChildren = 12;
+  } else {
+    const cols = Number.parseInt(track, 10);
+    if (!Number.isFinite(cols) || cols < 1) return;
+    rule.minChildren = cols;
+    rule.maxChildren = cols;
+  }
+  rule.homogeneous = true;
+  rule.hexpand = true;
+  if (match[2] && rule.minWidth === null) {
+    rule.minWidth = Number.parseInt(match[2], 10);
+  }
+}
+
+function applyRuntimeLayoutDeclaration(rule: ParsedStyleRule, prop: string, val: string): void {
+  const lower = val.trim().toLowerCase();
+  if (prop === 'flex-direction') {
+    if (lower.startsWith('row')) rule.orientation = 'horizontal';
+    else if (lower.startsWith('column')) rule.orientation = 'vertical';
+  } else if (prop === 'flex-wrap' && lower.startsWith('wrap')) {
+    rule.minChildren ??= 1;
+    rule.maxChildren ??= 12;
+    rule.homogeneous = true;
+    rule.hexpand = true;
+  } else if (prop === 'flex' || prop === 'flex-grow') {
+    const grow = Number.parseFloat(lower);
+    if (Number.isFinite(grow) && grow >= 1) rule.hexpand = true;
+    if (prop === 'flex') {
+      const basisMatch = lower.match(/(\d+)px/);
+      if (basisMatch && rule.minWidth === null) {
+        rule.minWidth = Number.parseInt(basisMatch[1], 10);
+      }
+    }
+  } else if (prop === 'width') {
+    if (lower === '100%') rule.hexpand = true;
+    else {
+      const px = parsePixelInt(val);
+      if (px !== null && rule.minWidth === null) rule.minWidth = px;
+    }
+  } else if (prop === 'height') {
+    if (lower === '100%') rule.vexpand = true;
+    else {
+      const px = parsePixelInt(val);
+      if (px !== null && rule.minHeight === null) rule.minHeight = px;
+    }
+  } else if (prop === 'grid-template-columns') {
+    applyRuntimeGridColumns(rule, val);
+  } else if (prop === 'justify-self') {
+    const aligned = mapAlignKeyword(val);
+    if (aligned) rule.halign = aligned;
+  } else if (prop === 'align-self') {
+    const aligned = mapAlignKeyword(val);
+    if (aligned) rule.valign = aligned;
+  } else if (prop === 'justify-content') {
+    const aligned = mapAlignKeyword(val);
+    if (!rule.hexpand && aligned && rule.halign === null) rule.halign = aligned;
+  } else if (prop === 'align-items') {
+    const aligned = mapAlignKeyword(val);
+    if (!rule.vexpand && aligned && rule.valign === null) rule.valign = aligned;
+  }
 }
 
 function parseStylesCssForRuntime(cssSource: string): ParsedStyleRule[] {
@@ -106,6 +453,16 @@ function parseStylesCssForRuntime(cssSource: string): ParsedStyleRule[] {
         borderRadius: null,
         fontSize: null,
         fontWeight: null,
+        minWidth: null,
+        minHeight: null,
+        orientation: null,
+        hexpand: null,
+        vexpand: null,
+        halign: null,
+        valign: null,
+        minChildren: null,
+        maxChildren: null,
+        homogeneous: null,
       };
 
       for (const decl of declarations) {
@@ -128,6 +485,11 @@ function parseStylesCssForRuntime(cssSource: string): ParsedStyleRule[] {
         } else if (prop === 'gap' || prop === 'spacing') {
           const px = parsePixelInt(val);
           if (px !== null) rule.spacing = px;
+        } else if (prop === 'row-gap' || prop === 'column-gap') {
+          if (rule.spacing === 0) {
+            const px = parsePixelInt(val);
+            if (px !== null) rule.spacing = px;
+          }
         } else if (prop === 'border-radius') {
           const px = parsePixelInt(val);
           if (px !== null) rule.borderRadius = px;
@@ -137,6 +499,14 @@ function parseStylesCssForRuntime(cssSource: string): ParsedStyleRule[] {
         } else if (prop === 'font-weight') {
           const kw = val === 'bold' ? 700 : val === 'normal' ? 400 : parsePixelInt(val);
           if (kw !== null) rule.fontWeight = kw;
+        } else if (prop === 'min-width') {
+          const px = parsePixelInt(val);
+          if (px !== null) rule.minWidth = px;
+        } else if (prop === 'min-height') {
+          const px = parsePixelInt(val);
+          if (px !== null) rule.minHeight = px;
+        } else {
+          applyRuntimeLayoutDeclaration(rule, prop, val);
         }
       }
       rulesByClass.set(className, rule);
@@ -156,6 +526,16 @@ function registerParsedStyles(bridge: NgNativeBridge, styles: readonly string[])
       if (rule.borderRadius !== null) extensions.push(`radius=${rule.borderRadius}`);
       if (rule.fontSize !== null) extensions.push(`font-size=${rule.fontSize}`);
       if (rule.fontWeight !== null) extensions.push(`font-weight=${rule.fontWeight}`);
+      if (rule.minWidth !== null) extensions.push(`min-width=${rule.minWidth}`);
+      if (rule.minHeight !== null) extensions.push(`min-height=${rule.minHeight}`);
+      if (rule.orientation !== null) extensions.push(`orientation=${rule.orientation}`);
+      if (rule.hexpand !== null) extensions.push(`hexpand=${rule.hexpand}`);
+      if (rule.vexpand !== null) extensions.push(`vexpand=${rule.vexpand}`);
+      if (rule.halign !== null) extensions.push(`halign=${rule.halign}`);
+      if (rule.valign !== null) extensions.push(`valign=${rule.valign}`);
+      if (rule.minChildren !== null) extensions.push(`min-children=${rule.minChildren}`);
+      if (rule.maxChildren !== null) extensions.push(`max-children=${rule.maxChildren}`);
+      if (rule.homogeneous !== null) extensions.push(`homogeneous=${rule.homogeneous}`);
       bridge.registerStyle(
         rule.className,
         rule.background,
@@ -180,6 +560,7 @@ interface NativeRendererHooks {
 
 interface VirtualListenerRegistration {
   nativeEvents: string[];
+  eventName: string;
   callback: (event: unknown) => boolean | void;
   attachedRealIds: Set<string>;
   activeUnsubs: Set<() => void>;
@@ -196,6 +577,7 @@ export class NativeRenderer2 extends Renderer2 {
   private readonly hooks?: NativeRendererHooks;
   private readonly materializedTextLabels = new Map<NativeElementNode, string>();
   private readonly imageLoadSeq = new WeakMap<NativeElementNode, number>();
+  private readonly enabledEventTokens = new Map<string, Set<string>>();
   private readonly pendingVirtualListeners = new WeakMap<
     NativeElementNode,
     Set<VirtualListenerRegistration>
@@ -225,6 +607,7 @@ export class NativeRenderer2 extends Renderer2 {
     }
     this.nodesById.delete(node.id);
     this.imageLoadSeq.delete(node);
+    this.enabledEventTokens.delete(node.id);
     const pending = this.pendingVirtualListeners.get(node);
     if (pending) {
       for (const reg of pending) {
@@ -256,13 +639,14 @@ export class NativeRenderer2 extends Renderer2 {
   override createElement(name: string, _namespace?: string | null): NativeElementNode {
     const id = this.nextId();
     const trimmed = name.trim();
-    const isNative = isNativeTag(trimmed);
-    const node = new NativeElementNode(id, trimmed, false, !isNative, false);
+    const resolvedTag = resolveNativeTag(trimmed);
+    const isNative = resolvedTag !== null;
+    const node = new NativeElementNode(id, resolvedTag ?? trimmed, false, !isNative, false);
     this.nodesById.set(id, node);
-    if (isNative) {
-      this.hooks?.onRealElementCreated?.(trimmed, id);
-      this.bridge.createElement(id, trimmed);
-      if (trimmed === 'ng-window' || trimmed === 'adw-window') {
+    if (resolvedTag !== null) {
+      this.hooks?.onRealElementCreated?.(resolvedTag, id);
+      this.bridge.createElement(id, resolvedTag);
+      if (resolvedTag === 'ng-window' || resolvedTag === 'adw-window') {
         this.attachGlobalWindowIcon(id);
       }
     }
@@ -425,7 +809,13 @@ export class NativeRenderer2 extends Renderer2 {
     if (el.isVirtual) {
       return;
     }
-    if ((el.tag === 'ng-image' || el.tag === 'adw-image') && (name === 'src' || name === 'ngSrc')) {
+    if (name === 'disabled') {
+      const nextSensitive = parseHtmlBooleanFlag(value) ? 'false' : 'true';
+      el.attributes.set('sensitive', nextSensitive);
+      this.bridge.setAttribute(el.id, 'sensitive', nextSensitive);
+      return;
+    }
+    if (isImageTag(el.tag) && (name === 'src' || name === 'ngSrc')) {
       this.handleImageSource(el, value);
       return;
     }
@@ -457,6 +847,11 @@ export class NativeRenderer2 extends Renderer2 {
       }
       return;
     }
+    if (name === 'disabled') {
+      el.attributes.set('sensitive', 'true');
+      this.bridge.setAttribute(el.id, 'sensitive', 'true');
+      return;
+    }
     this.bridge.setAttribute(el.id, name, '');
   }
 
@@ -486,9 +881,61 @@ export class NativeRenderer2 extends Renderer2 {
     }
     const strVal = String(value);
     el.styles.set(style, strVal);
-    if (!el.isVirtual) {
-      this.bridge.setAttribute(el.id, style, strVal);
+    if (el.isVirtual) {
+      return;
     }
+    const key = style.trim().toLowerCase();
+    const trimmed = strVal.trim();
+    if (key === 'flex' || key === 'flex-grow') {
+      const grow = Number.parseFloat(trimmed);
+      if (Number.isFinite(grow) && grow >= 1) {
+        this.bridge.setAttribute(el.id, 'hexpand', 'true');
+      }
+      return;
+    }
+    if (key === 'flex-direction') {
+      this.bridge.setAttribute(
+        el.id,
+        'orientation',
+        trimmed.toLowerCase().startsWith('row') ? 'horizontal' : 'vertical',
+      );
+      return;
+    }
+    if (key === 'gap' || key === 'row-gap' || key === 'column-gap') {
+      this.bridge.setAttribute(
+        el.id,
+        key === 'gap' ? 'spacing' : key.replace('-gap', '-spacing'),
+        trimmed,
+      );
+      return;
+    }
+    if (key === 'width' && trimmed === '100%') {
+      this.bridge.setAttribute(el.id, 'hexpand', 'true');
+      return;
+    }
+    if (key === 'height' && trimmed === '100%') {
+      this.bridge.setAttribute(el.id, 'vexpand', 'true');
+      return;
+    }
+    if (key === 'justify-self') {
+      const aligned = mapAlignKeyword(trimmed);
+      if (aligned) this.bridge.setAttribute(el.id, 'halign', aligned);
+      return;
+    }
+    if (key === 'align-self') {
+      const aligned = mapAlignKeyword(trimmed);
+      if (aligned) this.bridge.setAttribute(el.id, 'valign', aligned);
+      return;
+    }
+    if (key === 'margin-left') {
+      this.bridge.setAttribute(el.id, 'margin-start', trimmed);
+      return;
+    }
+    if (key === 'margin-right') {
+      this.bridge.setAttribute(el.id, 'margin-end', trimmed);
+      return;
+    }
+    this.bridge.setAttribute(el.id, style, strVal);
   }
 
   override removeStyle(el: NativeElementNode, style: string, _flags?: RendererStyleFlags2): void {
@@ -510,7 +957,30 @@ export class NativeRenderer2 extends Renderer2 {
     if (el.isVirtual) {
       return;
     }
-    if ((el.tag === 'ng-image' || el.tag === 'adw-image') && (name === 'src' || name === 'ngSrc')) {
+    if (name === 'disabled') {
+      const nextSensitive = parseHtmlBooleanFlag(value) ? 'false' : 'true';
+      el.attributes.set('sensitive', nextSensitive);
+      this.bridge.setAttribute(el.id, 'sensitive', nextSensitive);
+      return;
+    }
+    if (name === 'hidden') {
+      const nextVisible = parseHtmlBooleanFlag(value) ? 'false' : 'true';
+      el.attributes.set('visible', nextVisible);
+      this.bridge.setAttribute(el.id, 'visible', nextVisible);
+      return;
+    }
+    if (name === 'checked') {
+      const checked = parseHtmlBooleanFlag(value);
+      el.checked = checked;
+      this.bridge.setAttribute(el.id, 'active', checked ? 'true' : 'false');
+      return;
+    }
+    if (name === 'value' && TEXT_INPUT_TAGS.has(el.tag)) {
+      el.value = strVal;
+      this.bridge.setAttribute(el.id, 'value', strVal);
+      return;
+    }
+    if (isImageTag(el.tag) && (name === 'src' || name === 'ngSrc')) {
       el.attributes.set(name, strVal);
       this.handleImageSource(el, strVal);
       return;
@@ -519,12 +989,14 @@ export class NativeRenderer2 extends Renderer2 {
       name === 'textContent' ||
       name === 'innerText' ||
       name === 'label' ||
+      (name === 'text' && TEXT_BEARING_TAGS.has(el.tag)) ||
       (name === 'title' &&
         (el.tag === 'ng-window' ||
           el.tag === 'adw-window' ||
           el.tag === 'ng-header-bar' ||
           el.tag === 'adw-header-bar'))
     ) {
+      el.attributes.set(name, strVal);
       el.textContent = strVal;
       this.bridge.setText(el.id, strVal);
     } else {
@@ -555,6 +1027,27 @@ export class NativeRenderer2 extends Renderer2 {
     this.bridge.setText(node.id, value);
   }
 
+  private ensureLazyEventController(nodeId: string, tag: string, eventName: string): void {
+    const token = lazyControllerTokenFor(eventName);
+    if (!token) {
+      return;
+    }
+    const lowerTag = tag.trim().toLowerCase();
+    if ((lowerTag === 'ng-button' || lowerTag === 'gtk-button') && eventName === 'click') {
+      return;
+    }
+    let active = this.enabledEventTokens.get(nodeId);
+    if (!active) {
+      active = new Set();
+      this.enabledEventTokens.set(nodeId, active);
+    }
+    if (active.has(token)) {
+      return;
+    }
+    active.add(token);
+    this.bridge.setAttribute(nodeId, 'event-mask', [...active].join(','));
+  }
+
   override listen(
     target: 'window' | 'document' | 'body' | NativeElementNode,
     eventName: string,
@@ -566,9 +1059,19 @@ export class NativeRenderer2 extends Renderer2 {
         target === 'window' || target === 'document' || target === 'body'
           ? (this.hooks?.getPrimaryWindowId?.() ?? 'win')
           : target;
+      const isWindowGlobal = target === 'window' || target === 'document' || target === 'body';
+      if (
+        !isWindowGlobal ||
+        (eventName !== 'focus' &&
+          eventName !== 'blur' &&
+          eventName !== 'windowFocus' &&
+          eventName !== 'windowBlur')
+      ) {
+        this.ensureLazyEventController(nodeId, 'ng-window', eventName);
+      }
       const unsubs = nativeEvents.map((nativeEvent) =>
         this.bridge.listen(nodeId, nativeEvent, (evt) => {
-          callback(evt);
+          callback(normalizeNativeEventPayload(eventName, evt));
         }),
       );
       return () => {
@@ -581,6 +1084,7 @@ export class NativeRenderer2 extends Renderer2 {
     if (target.isVirtual) {
       const reg: VirtualListenerRegistration = {
         nativeEvents,
+        eventName,
         callback,
         attachedRealIds: new Set(),
         activeUnsubs: new Set(),
@@ -609,9 +1113,10 @@ export class NativeRenderer2 extends Renderer2 {
       };
     }
 
+    this.ensureLazyEventController(target.id, target.tag, eventName);
     const unsubs = nativeEvents.map((nativeEvent) =>
       this.bridge.listen(target.id, nativeEvent, (evt) => {
-        callback(evt);
+        callback(normalizeNativeEventPayload(eventName, evt, target));
       }),
     );
     return () => {
@@ -630,9 +1135,12 @@ export class NativeRenderer2 extends Renderer2 {
         continue;
       }
       reg.attachedRealIds.add(realId);
+      const realNode = this.nodesById.get(realId);
+      const realTag = realNode?.tag ?? '';
+      this.ensureLazyEventController(realId, realTag, reg.eventName);
       for (const nativeEvent of reg.nativeEvents) {
         const unlisten = this.bridge.listen(realId, nativeEvent, (evt) => {
-          reg.callback(evt);
+          reg.callback(normalizeNativeEventPayload(reg.eventName, evt, realNode));
         });
         reg.activeUnsubs.add(unlisten);
       }

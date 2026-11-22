@@ -1,17 +1,19 @@
 import { DATE_PIPE_DEFAULT_TIMEZONE, IMAGE_LOADER, ViewportScroller } from '@angular/common';
-import { ErrorHandler, LOCALE_ID } from '@angular/core';
+import { Component, ErrorHandler, LOCALE_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { EVENT_MANAGER_PLUGINS, Title } from '@angular/platform-browser';
 import {
   bootstrapNativeApplication,
   ensureNgNativeBridge,
   matchesKeyboardEvent,
+  NATIVE_UI_DIRECTIVES,
   NativeElementNode,
   NativeKeyEventsPlugin,
   NativeRendererFactory2,
   NativeSystemErrorHandler,
   NativeTitleService,
   provideNativePlatform,
+  resolveNativeTag,
 } from '@ng-desktop/platform';
 
 class TestRootComponent {}
@@ -413,5 +415,435 @@ describe('@ng-desktop/platform — NativeRenderer2 & Bridge', () => {
     } finally {
       bridge.downloadImageAsync = originalDownload;
     }
+  });
+
+  it('translates runtime CSS Grid/Flexbox rules, inline flex/gap styles, and normalized scroll/window events', () => {
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+    const factory = new NativeRendererFactory2();
+    const renderer = factory.createRenderer(null, {
+      id: 'css-layout-test',
+      encapsulation: 0,
+      styles: [
+        `
+        .responsive-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+          gap: 12px;
+        }
+        .flex-card {
+          display: flex;
+          flex-direction: column;
+          flex: 1;
+          min-width: 160px;
+          padding: 10px;
+        }
+      `,
+      ],
+      data: {},
+    });
+
+    const styleCmds = bridge.__drainQueue();
+    expect(styleCmds).toContain(
+      'style responsive-grid none none 0 12 min-width=160 hexpand=true min-children=1 max-children=12 homogeneous=true',
+    );
+    expect(styleCmds).toContain(
+      'style flex-card none none 10 0 min-width=160 orientation=vertical hexpand=true',
+    );
+
+    const win = renderer.createElement('ng-window');
+    const scroll = renderer.createElement('ng-scroll');
+    const box = renderer.createElement('ng-box');
+    renderer.setStyle(box, 'flex', '1');
+    renderer.setStyle(box, 'flex-direction', 'row');
+    renderer.setStyle(box, 'gap', '12px');
+    renderer.setStyle(box, 'justify-self', 'center');
+    const inlineCmds = bridge.__drainQueue();
+    expect(inlineCmds).toContain(`attr ${box.id} hexpand true`);
+    expect(inlineCmds).toContain(`attr ${box.id} orientation horizontal`);
+    expect(inlineCmds).toContain(`attr ${box.id} spacing 12px`);
+    expect(inlineCmds).toContain(`attr ${box.id} halign center`);
+
+    let resizedPayload: Record<string, unknown> | undefined;
+    const unlistenResize = renderer.listen('window', 'resize', (ev) => {
+      resizedPayload = ev as Record<string, unknown>;
+    });
+    bridge.__dispatchEvent(win.id, 'resize', {
+      value: '{"width":1440,"height":820,"maximized":true}',
+    });
+    expect(resizedPayload).toMatchObject({ width: 1440, height: 820, maximized: true });
+    unlistenResize();
+
+    let scrollPayload: Record<string, unknown> | undefined;
+    let bottomHits = 0;
+    const unlistenScroll = renderer.listen(scroll, 'scroll', (ev) => {
+      scrollPayload = ev as Record<string, unknown>;
+    });
+    const unlistenBottom = renderer.listen(scroll, 'scrollBottom', () => {
+      bottomHits += 1;
+    });
+    bridge.__dispatchEvent(scroll.id, 'scroll', {
+      value:
+        '{"scrollTop":420,"scrollHeight":1200,"clientHeight":600,"atTop":false,"atBottom":false,"progress":0.7}',
+    });
+    expect(scrollPayload).toMatchObject({ scrollTop: 420, scrollHeight: 1200, progress: 0.7 });
+    bridge.__dispatchEvent(scroll.id, 'scroll-bottom', {});
+    expect(bottomHits).toBe(1);
+    unlistenScroll();
+    unlistenBottom();
+  });
+
+  it('emits lazy event-mask controllers once per category and unifies change/cancel/keyboard events', async () => {
+    const { TestBed } = await import('@angular/core/testing');
+    const { EVENT_MANAGER_PLUGINS } = await import('@angular/platform-browser');
+    const { RendererFactory2 } = await import('@angular/core');
+    const { provideNativePlatform } = await import('./platform');
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [provideNativePlatform()],
+    });
+    const bridge = ensureNgNativeBridge();
+    const rf = TestBed.inject(RendererFactory2) as NativeRendererFactory2;
+    const renderer = rf.createRenderer(null, null);
+    const win = renderer.createElement('ng-window');
+    const card = renderer.createElement('ng-box');
+    const btn = renderer.createElement('ng-button');
+    const search = renderer.createElement('ng-search-entry');
+    const chk = renderer.createElement('ng-checkbox');
+    bridge.__drainQueue();
+
+    // Button click does not emit redundant lazy event-mask, while container listeners do once per category
+    let btnClicks = 0;
+    const unBtn = renderer.listen(btn, 'click', () => {
+      btnClicks += 1;
+    });
+    expect(bridge.__drainQueue()).toBe('');
+
+    let cardDbl = 0;
+    let menuCtx: Record<string, unknown> | undefined;
+    let wheelEvt: Record<string, unknown> | undefined;
+    const unClick = renderer.listen(card, 'click', () => {});
+    const unDbl = renderer.listen(card, 'dblclick', () => {
+      cardDbl += 1;
+    });
+    const unCtx = renderer.listen(card, 'contextmenu', (ev) => {
+      menuCtx = ev as Record<string, unknown>;
+    });
+    const unHover = renderer.listen(card, 'mouseenter', () => {});
+    const unWheel = renderer.listen(card, 'wheel', (ev) => {
+      wheelEvt = ev as Record<string, unknown>;
+    });
+
+    const maskCmds = bridge.__drainQueue().split('\n');
+    expect(maskCmds).toEqual([
+      `attr ${card.id} event-mask click`,
+      `attr ${card.id} event-mask click,contextmenu`,
+      `attr ${card.id} event-mask click,contextmenu,motion`,
+      `attr ${card.id} event-mask click,contextmenu,motion,wheel`,
+    ]);
+
+    bridge.__dispatchEvent(btn.id, 'clicked', {});
+    bridge.__dispatchEvent(card.id, 'dblclick', { value: '{"x":12,"y":24,"clicks":2}' });
+    bridge.__dispatchEvent(card.id, 'contextmenu', { value: '{"x":40,"y":60,"button":2}' });
+    bridge.__dispatchEvent(card.id, 'wheel', { value: '{"deltaX":0,"deltaY":-1.5}' });
+    expect(btnClicks).toBe(1);
+    expect(cardDbl).toBe(1);
+    expect(menuCtx).toMatchObject({ x: 40, y: 60, button: 2 });
+    expect(wheelEvt).toMatchObject({ deltaX: 0, deltaY: -1.5 });
+
+    let changedHits = 0;
+    let submittedHits = 0;
+    let canceledHits = 0;
+    const unChange = renderer.listen(chk, 'change', () => {
+      changedHits += 1;
+    });
+    const unSubmit = renderer.listen(search, 'submit', () => {
+      submittedHits += 1;
+    });
+    const unCancel = renderer.listen(search, 'cancel', () => {
+      canceledHits += 1;
+    });
+    bridge.__dispatchEvent(chk.id, 'toggled', { active: true, value: true });
+    bridge.__dispatchEvent(search.id, 'activate', {});
+    bridge.__dispatchEvent(search.id, 'cancel', {});
+    expect(changedHits).toBe(1);
+    expect(submittedHits).toBe(1);
+    expect(canceledHits).toBe(1);
+
+    let escHits = 0;
+    const keyPlugin = TestBed.inject(EVENT_MANAGER_PLUGINS).find(
+      (p) => p instanceof NativeKeyEventsPlugin,
+    );
+    bridge.__drainQueue();
+    const unKey = keyPlugin!.addEventListener(
+      'window' as unknown as HTMLElement,
+      'keydown.escape',
+      () => {
+        escHits += 1;
+      },
+    );
+    expect(bridge.__drainQueue()).toContain(`attr ${win.id} event-mask keyboard`);
+    bridge.__dispatchEvent(win.id, 'keydown', {
+      value: '{"key":"Escape","keyval":65307,"ctrlKey":false,"shiftKey":false}',
+    });
+    expect(escHits).toBe(1);
+
+    unBtn();
+    unClick();
+    unDbl();
+    unCtx();
+    unHover();
+    unWheel();
+    unChange();
+    unSubmit();
+    unCancel();
+    unKey();
+  });
+
+  it('maps standard HTML tags to native desktop primitives while keeping Angular component selectors virtual', () => {
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+    const factory = new NativeRendererFactory2();
+    const renderer = factory.createRenderer(null, null);
+
+    expect(resolveNativeTag('div')).toBe('ng-box');
+    expect(resolveNativeTag('SECTION')).toBe('ng-box');
+    expect(resolveNativeTag('span')).toBe('ng-label');
+    expect(resolveNativeTag('h1')).toBe('ng-label');
+    expect(resolveNativeTag('button')).toBe('ng-button');
+    expect(resolveNativeTag('img')).toBe('ng-image');
+    expect(resolveNativeTag('hr')).toBe('ng-separator');
+    expect(resolveNativeTag('input')).toBe('ng-entry');
+    expect(resolveNativeTag('textarea')).toBe('ng-text-view');
+    expect(resolveNativeTag('select')).toBe('ng-select');
+    expect(resolveNativeTag('progress')).toBe('ng-progress-bar');
+    expect(resolveNativeTag('details')).toBe('ng-expander');
+    expect(resolveNativeTag('app-custom-card')).toBeNull();
+    expect(resolveNativeTag('router-outlet')).toBeNull();
+    expect(resolveNativeTag('ng-container')).toBeNull();
+
+    const div = renderer.createElement('div');
+    const sec = renderer.createElement('section');
+    const h1 = renderer.createElement('h1');
+    const span = renderer.createElement('span');
+    const p = renderer.createElement('p');
+    const btn = renderer.createElement('button');
+    const img = renderer.createElement('img');
+    const inp = renderer.createElement('input');
+    const txtArea = renderer.createElement('textarea');
+    const sel = renderer.createElement('select');
+    const hr = renderer.createElement('hr');
+    const prog = renderer.createElement('progress');
+    const det = renderer.createElement('details');
+    const customHost = renderer.createElement('app-custom-card');
+    const outlet = renderer.createElement('router-outlet');
+    const container = renderer.createElement('ng-container');
+
+    expect(div.isVirtual).toBe(false);
+    expect(div.tag).toBe('ng-box');
+    expect(sec.tag).toBe('ng-box');
+    expect(h1.tag).toBe('ng-label');
+    expect(p.tag).toBe('ng-label');
+    expect(customHost.isVirtual).toBe(true);
+    expect(outlet.isVirtual).toBe(true);
+    expect(container.isVirtual).toBe(true);
+
+    const spanTxt = renderer.createText('Status OK');
+    renderer.appendChild(span, spanTxt);
+    const btnTxt = renderer.createText('Save');
+    renderer.appendChild(btn, btnTxt);
+    renderer.setProperty(btn, 'disabled', true);
+    renderer.setProperty(img, 'src', 'assets/logo.png');
+    renderer.appendChild(div, span);
+    renderer.appendChild(div, btn);
+    renderer.appendChild(div, img);
+    renderer.appendChild(div, inp);
+    renderer.appendChild(div, txtArea);
+    renderer.appendChild(div, sel);
+    renderer.appendChild(div, hr);
+    renderer.appendChild(div, prog);
+    renderer.appendChild(div, det);
+
+    let lastTargetValue = '';
+    const unlistenInput = renderer.listen(inp, 'input', (ev) => {
+      const target = (ev as { target?: NativeElementNode }).target;
+      lastTargetValue = target?.value ?? '';
+    });
+    bridge.__dispatchEvent(inp.id, 'input', { value: 'bulbasaur' });
+    expect(lastTargetValue).toBe('bulbasaur');
+    expect(inp.value).toBe('bulbasaur');
+    unlistenInput();
+
+    const cmds = bridge.__drainQueue();
+    expect(cmds).toContain(`create ${div.id} ng-box`);
+    expect(cmds).toContain(`create ${sec.id} ng-box`);
+    expect(cmds).toContain(`create ${span.id} ng-label`);
+    expect(cmds).toContain(`create ${h1.id} ng-label`);
+    expect(cmds).toContain(`create ${p.id} ng-label`);
+    expect(cmds).toContain(`create ${btn.id} ng-button`);
+    expect(cmds).toContain(`create ${img.id} ng-image`);
+    expect(cmds).toContain(`create ${inp.id} ng-entry`);
+    expect(cmds).toContain(`create ${txtArea.id} ng-text-view`);
+    expect(cmds).toContain(`create ${sel.id} ng-select`);
+    expect(cmds).toContain(`create ${hr.id} ng-separator`);
+    expect(cmds).toContain(`create ${prog.id} ng-progress-bar`);
+    expect(cmds).toContain(`create ${det.id} ng-expander`);
+    expect(cmds).toContain(`text ${span.id} Status OK`);
+    expect(cmds).toContain(`text ${btn.id} Save`);
+    expect(cmds).toContain(`attr ${btn.id} sensitive false`);
+    expect(cmds).toContain(`text ${img.id} assets/logo.png`);
+    expect(cmds).not.toContain('app-custom-card');
+    expect(cmds).not.toContain('router-outlet');
+  });
+
+  it('compiles and renders mixed <ng-*> and standard HTML tags via NATIVE_UI_DIRECTIVES without CUSTOM_ELEMENTS_SCHEMA', () => {
+    @Component({
+      standalone: true,
+      imports: [NATIVE_UI_DIRECTIVES],
+      template: `
+        <ng-window id="main_win" [title]="title()">
+          <ng-box id="outer_box" orientation="vertical" hexpand="true">
+            <ng-image id="hero_img" [src]="sprite()" width="84" height="84" />
+            <div class="row">
+              <button id="save_btn" [disabled]="locked()" (click)="onSave()">Save</button>
+              <span id="status_lbl">{{ status() }}</span>
+              <input id="query_in" [value]="query()" />
+            </div>
+          </ng-box>
+        </ng-window>
+      `,
+    })
+    class MixedHostComponent {
+      readonly title = signal('Initial App');
+      readonly sprite = signal('assets/a.png');
+      readonly locked = signal(false);
+      readonly status = signal('Ready');
+      readonly query = signal('pikachu');
+      saveCalls = 0;
+
+      onSave(): void {
+        this.saveCalls += 1;
+      }
+    }
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [MixedHostComponent],
+      providers: [provideNativePlatform()],
+    });
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+
+    const fixture = TestBed.createComponent(MixedHostComponent);
+    fixture.detectChanges();
+    const initialQueue = bridge.__drainQueue().split('\n');
+    const winLine = initialQueue.find(
+      (l) => l.startsWith('create ng_node_') && l.endsWith(' ng-window'),
+    );
+    const boxLine = initialQueue.find(
+      (l) => l.startsWith('create ng_node_') && l.endsWith(' ng-box'),
+    );
+    const imgLine = initialQueue.find((l) => l.endsWith(' ng-image'));
+    const btnLine = initialQueue.find((l) => l.endsWith(' ng-button'));
+    const inpLine = initialQueue.find((l) => l.endsWith(' ng-entry'));
+    expect(winLine).toBeDefined();
+    expect(boxLine).toBeDefined();
+    expect(imgLine).toBeDefined();
+    expect(btnLine).toBeDefined();
+    expect(inpLine).toBeDefined();
+
+    const winId = winLine!.split(' ')[1]!;
+    const boxId = boxLine!.split(' ')[1]!;
+    const imgId = imgLine!.split(' ')[1]!;
+    const btnId = btnLine!.split(' ')[1]!;
+    const inpId = inpLine!.split(' ')[1]!;
+
+    // Static attributes on NATIVE_UI_DIRECTIVES must not emit duplicate commands
+    expect(initialQueue.filter((l) => l === `attr ${boxId} orientation vertical`)).toHaveLength(1);
+    expect(initialQueue.filter((l) => l === `attr ${boxId} hexpand true`)).toHaveLength(1);
+    expect(initialQueue.filter((l) => l === `attr ${imgId} width 84`)).toHaveLength(1);
+    expect(initialQueue.filter((l) => l === `attr ${imgId} height 84`)).toHaveLength(1);
+
+    expect(initialQueue).toContain(`text ${winId} Initial App`);
+    expect(initialQueue).toContain(`text ${imgId} assets/a.png`);
+    expect(initialQueue).toContain(`attr ${btnId} sensitive true`);
+    expect(initialQueue).toContain(`text ${btnId} Save`);
+    expect(initialQueue).toContain(`attr ${inpId} value pikachu`);
+
+    bridge.__dispatchEvent(btnId, 'clicked', {});
+    expect(fixture.componentInstance.saveCalls).toBe(1);
+
+    // Reactive updates flow through directives & standard HTML property bindings
+    fixture.componentInstance.title.set('Updated App');
+    fixture.componentInstance.sprite.set('assets/b.png');
+    fixture.componentInstance.locked.set(true);
+    fixture.componentInstance.status.set('Done');
+    fixture.componentInstance.query.set('raichu');
+    fixture.detectChanges();
+
+    const updateQueue = bridge.__drainQueue();
+    expect(updateQueue).toContain(`text ${winId} Updated App`);
+    expect(updateQueue).toContain(`text ${imgId} assets/b.png`);
+    expect(updateQueue).toContain(`attr ${btnId} sensitive false`);
+    expect(updateQueue).toContain('Done');
+    expect(updateQueue).toContain(`attr ${inpId} value raichu`);
+
+    fixture.destroy();
+  });
+
+  it('wires (closeRequest) / (beforeunload) and [preventClose] on <ng-window> with lazy EventMask', () => {
+    @Component({
+      standalone: true,
+      imports: [NATIVE_UI_DIRECTIVES],
+      template: `
+        <ng-window
+          [title]="'Close Guard'"
+          [preventClose]="dirty()"
+          (closeRequest)="onClose($event)"
+        >
+          <ng-box>
+            <ng-button (click)="dirty.set(false)">Allow</ng-button>
+          </ng-box>
+        </ng-window>
+      `,
+    })
+    class CloseGuardHost {
+      readonly dirty = signal(true);
+      closeEvents: Array<{ preventable?: boolean }> = [];
+
+      onClose(ev: unknown): void {
+        this.closeEvents.push((ev as { preventable?: boolean }) ?? {});
+      }
+    }
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [CloseGuardHost],
+      providers: [provideNativePlatform()],
+    });
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+
+    const fixture = TestBed.createComponent(CloseGuardHost);
+    fixture.detectChanges();
+    const initQueue = bridge.__drainQueue().split('\n');
+    const winLine = initQueue.find(
+      (l) => l.startsWith('create ng_node_') && l.endsWith(' ng-window'),
+    );
+    expect(winLine).toBeDefined();
+    const winId = winLine!.split(' ')[1]!;
+
+    expect(initQueue).toContain(`attr ${winId} prevent-close true`);
+    expect(initQueue).toContain(`attr ${winId} event-mask close-request`);
+
+    bridge.__dispatchEvent(winId, 'close-request', { value: '{"preventable":true}' });
+    expect(fixture.componentInstance.closeEvents).toMatchObject([{ preventable: true }]);
+
+    fixture.componentInstance.dirty.set(false);
+    fixture.detectChanges();
+    expect(bridge.__drainQueue()).toContain(`attr ${winId} prevent-close false`);
+
+    fixture.destroy();
   });
 });

@@ -1,6 +1,7 @@
-import { Component, computed, CUSTOM_ELEMENTS_SCHEMA, input, output } from '@angular/core';
+import { Component, computed, input, output } from '@angular/core';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { NATIVE_FORM_DIRECTIVES } from '@ng-desktop/forms';
+import { NATIVE_UI_DIRECTIVES } from '@ng-desktop/platform';
 import type { PokemonDetailRecord } from '../../../server/pokedex-store';
 import { PokemonCard } from '../../shared/ui/pokemon-card/pokemon-card';
 import { StatMeter } from '../../shared/ui/stat-meter/stat-meter';
@@ -8,8 +9,14 @@ import { TypeBadge } from '../../shared/ui/type-badge/type-badge';
 
 @Component({
   selector: 'app-pokemon-detail-view',
-  imports: [ReactiveFormsModule, NATIVE_FORM_DIRECTIVES, PokemonCard, TypeBadge, StatMeter],
-  schemas: [CUSTOM_ELEMENTS_SCHEMA],
+  imports: [
+    ReactiveFormsModule,
+    NATIVE_FORM_DIRECTIVES,
+    NATIVE_UI_DIRECTIVES,
+    PokemonCard,
+    TypeBadge,
+    StatMeter,
+  ],
   templateUrl: './pokemon-detail-view.html',
   styleUrl: './pokemon-detail-view.css',
 })

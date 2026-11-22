@@ -229,9 +229,7 @@ fn build_test_subtree<B: ng_native_engine::platforms::PlatformBackend>(
         foreground: Some(String::from("#ffffff")),
         padding: 4,
         spacing: 2,
-        border_radius: None,
-        font_size: None,
-        font_weight: None,
+        ..StyleRule::default()
     });
     engine.add_class(lbl, "tag").unwrap();
     engine.set_attribute(lbl, "wrap", "true").unwrap();
@@ -318,9 +316,7 @@ fn gtk_backend_coalesces_css_reloads_per_flush() {
             foreground: None,
             padding: idx,
             spacing: 0,
-            border_radius: None,
-            font_size: None,
-            font_weight: None,
+            ..StyleRule::default()
         });
     }
     engine.flush_frame();
@@ -336,9 +332,7 @@ fn gtk_backend_coalesces_css_reloads_per_flush() {
         foreground: Some(String::from("#00ff88")),
         padding: 2,
         spacing: 0,
-        border_radius: None,
-        font_size: None,
-        font_weight: None,
+        ..StyleRule::default()
     });
     engine.flush_frame();
     assert_eq!(engine.backend().css_reload_count(), 2);
@@ -494,4 +488,150 @@ fn exercise_paned_insert_before_shifts_start_child_to_end_without_uaf(
 fn gtk_backend_paned_insert_before_shifts_start_child_to_end_without_uaf() {
     let mut headless = RenderEngine::new(GtkLinuxBackend::new_headless());
     exercise_paned_insert_before_shifts_start_child_to_end_without_uaf(&mut headless);
+}
+
+#[test]
+fn cross_platform_lazy_event_masks_and_frame_event_coalescing() {
+    use ng_native_engine::engine::{EventMask, EventPayload, NativeEvent};
+    use ng_native_engine::platforms::MacOsAppKitBackend;
+
+    let mut gtk_eng = RenderEngine::new(GtkLinuxBackend::new_headless());
+    let g_card = gtk_eng.create_element("ng-box").unwrap();
+    let g_lbl = gtk_eng.create_element("ng-label").unwrap();
+    gtk_eng.flush_frame();
+    assert_eq!(
+        gtk_eng.backend().attached_event_mask(g_card),
+        EventMask::NONE
+    );
+    assert_eq!(
+        gtk_eng.backend().attached_event_mask(g_lbl),
+        EventMask::NONE
+    );
+
+    gtk_eng
+        .set_attribute(g_card, "event-mask", "click,motion,keyboard,wheel")
+        .unwrap();
+    gtk_eng.flush_frame();
+    let g_mask = gtk_eng.backend().attached_event_mask(g_card);
+    assert!(g_mask.contains(EventMask::CLICK));
+    assert!(g_mask.contains(EventMask::POINTER_MOTION));
+    assert!(g_mask.contains(EventMask::KEYBOARD));
+    assert!(g_mask.contains(EventMask::WHEEL));
+    assert_eq!(
+        gtk_eng.backend().attached_event_mask(g_lbl),
+        EventMask::NONE
+    );
+
+    let mut win_eng = RenderEngine::new(WinUiBackend::new());
+    let w_card = win_eng.create_element("ng-box").unwrap();
+    win_eng
+        .set_attribute(w_card, "event-mask", "click,contextmenu,wheel")
+        .unwrap();
+    win_eng.flush_frame();
+    let w_binding = win_eng.backend().get_control_binding(w_card).unwrap();
+    assert!(w_binding.event_mask.contains(EventMask::CONTEXT_MENU));
+    assert!(
+        w_binding
+            .win32_event_routes
+            .contains(&"WM_CONTEXTMENU/RightTapped")
+    );
+    assert!(
+        w_binding
+            .win32_event_routes
+            .contains(&"WM_MOUSEWHEEL/PointerWheelChanged")
+    );
+
+    let mut mac_eng = RenderEngine::new(MacOsAppKitBackend::new());
+    let m_card = mac_eng.create_element("ng-box").unwrap();
+    mac_eng
+        .set_attribute(m_card, "event-mask", "click,focus,keyboard")
+        .unwrap();
+    mac_eng.flush_frame();
+    let m_binding = mac_eng.backend().get_view_binding(m_card).unwrap();
+    assert!(m_binding.event_mask.contains(EventMask::KEYBOARD));
+    assert!(m_binding.event_selectors.contains(&"mouseUp:"));
+    assert!(m_binding.event_selectors.contains(&"becomeFirstResponder"));
+    assert!(m_binding.event_selectors.contains(&"keyDown:"));
+
+    for i in 0..50 {
+        win_eng.backend().queue_native_event(NativeEvent {
+            node: w_card,
+            event_name: String::from("mousemove"),
+            payload: EventPayload::Int(i),
+        });
+        mac_eng.backend().queue_native_event(NativeEvent {
+            node: m_card,
+            event_name: String::from("scroll"),
+            payload: EventPayload::Int(i),
+        });
+    }
+    let w_drained = win_eng.backend().step_native_events();
+    let m_drained = mac_eng.backend().step_native_events();
+    assert_eq!(w_drained.len(), 1);
+    assert_eq!(w_drained[0].payload, EventPayload::Int(49));
+    assert_eq!(m_drained.len(), 1);
+    assert_eq!(m_drained[0].payload, EventPayload::Int(49));
+}
+
+#[test]
+fn cross_platform_close_request_and_prevent_close_lifecycle() {
+    use ng_native_engine::engine::EventMask;
+    use ng_native_engine::platforms::MacOsAppKitBackend;
+
+    let mut gtk_eng = RenderEngine::new(GtkLinuxBackend::new_headless());
+    let g_win = gtk_eng.create_element("ng-window").unwrap();
+    gtk_eng.flush_frame();
+    assert!(!gtk_eng.backend().is_prevent_close(g_win));
+
+    gtk_eng
+        .set_attribute(g_win, "prevent-close", "true")
+        .unwrap();
+    gtk_eng.flush_frame();
+    assert!(gtk_eng.backend().is_prevent_close(g_win));
+    assert!(
+        gtk_eng
+            .backend()
+            .attached_event_mask(g_win)
+            .contains(EventMask::CLOSE_REQUEST)
+    );
+    gtk_eng
+        .set_attribute(g_win, "close-window", "true")
+        .unwrap();
+    gtk_eng.flush_frame();
+    assert!(!gtk_eng.backend().is_prevent_close(g_win));
+
+    let mut win_eng = RenderEngine::new(WinUiBackend::new());
+    let w_win = win_eng.create_element("ng-window").unwrap();
+    win_eng
+        .set_attribute(w_win, "prevent-close", "true")
+        .unwrap();
+    win_eng.flush_frame();
+    let w_win_binding = win_eng.backend().get_control_binding(w_win).unwrap();
+    assert!(w_win_binding.event_mask.contains(EventMask::CLOSE_REQUEST));
+    assert!(
+        w_win_binding
+            .win32_event_routes
+            .contains(&"WM_CLOSE/Closing")
+    );
+    assert!(win_eng.backend().get_control(w_win).unwrap().prevent_close);
+    win_eng
+        .set_attribute(w_win, "close-window", "true")
+        .unwrap();
+    win_eng.flush_frame();
+    assert!(!win_eng.backend().get_control(w_win).unwrap().prevent_close);
+
+    let mut mac_eng = RenderEngine::new(MacOsAppKitBackend::new());
+    let m_win = mac_eng.create_element("ng-window").unwrap();
+    mac_eng
+        .set_attribute(m_win, "prevent-close", "true")
+        .unwrap();
+    mac_eng.flush_frame();
+    let m_win_binding = mac_eng.backend().get_view_binding(m_win).unwrap();
+    assert!(m_win_binding.event_mask.contains(EventMask::CLOSE_REQUEST));
+    assert!(
+        m_win_binding
+            .event_selectors
+            .contains(&"windowShouldClose:")
+    );
+    assert!(mac_eng.backend().get_view(m_win).unwrap().prevent_close);
 }

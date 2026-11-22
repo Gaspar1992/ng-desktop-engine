@@ -279,4 +279,55 @@ describe('Native template compiler (Angular AST)', () => {
     expect(bundle).toContain('comment outlet_1 router-outlet');
     expect(bundle).toContain('create inside_lbl ng-label');
   });
+
+  it('maps standard HTML tags and typed <input type="..."> variants to native .ngb widgets', () => {
+    const ast = parseTemplateHtml(
+      `
+        <div id="wrap">
+          <h1 id="heading">Catalog</h1>
+          <img id="preview" src="assets/icon.png" />
+          <input id="q" type="search" />
+          <input id="secret" type="password" />
+          <input id="flag" type="checkbox" />
+          <input id="slider" type="range" />
+          <input id="qty" type="number" />
+          <input id="plain" />
+          <textarea id="notes"></textarea>
+          <select id="pick"></select>
+          <hr id="divider" />
+          <progress id="meter" value="0.5"></progress>
+          <details id="more" label="Info"><span>Inner</span></details>
+          <button id="submit_btn">Go</button>
+        </div>
+      `,
+      {},
+      {},
+      'html-tags.html',
+    );
+
+    const tags = ast[0].children.map((node) => `${node.id}:${node.tag}`);
+    expect(ast[0].tag).toBe('ng-box');
+    expect(tags).toEqual([
+      'heading:ng-label',
+      'preview:ng-image',
+      'q:ng-search-entry',
+      'secret:ng-password-entry',
+      'flag:ng-checkbox',
+      'slider:ng-slider',
+      'qty:ng-spin-button',
+      'plain:ng-entry',
+      'notes:ng-text-view',
+      'pick:ng-select',
+      'divider:ng-separator',
+      'meter:ng-progress-bar',
+      'more:ng-expander',
+      'submit_btn:ng-button',
+    ]);
+
+    const bundle = emitNgbBundle([], {}, {}, ast, null, 'html-tags.html');
+    expect(bundle).toContain('create wrap ng-box');
+    expect(bundle).toContain('create q ng-search-entry');
+    expect(bundle).toContain('create flag ng-checkbox');
+    expect(bundle).toContain('create submit_btn ng-button');
+  });
 });

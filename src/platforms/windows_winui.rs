@@ -2,7 +2,7 @@
 
 use super::PlatformBackend;
 use super::scene_state::{NativeSceneNode, NativeSceneState};
-use crate::engine::{NativeEvent, NodeId, RenderCommand};
+use crate::engine::{EventMask, NativeEvent, NodeId, RenderCommand};
 #[cfg(target_os = "windows")]
 use crate::ffi_dl::DynLib;
 use std::collections::{HashMap, HashSet};
@@ -15,6 +15,8 @@ pub struct WinUiControlBinding {
     pub xaml_class: &'static str,
     pub win32_class: &'static str,
     pub symbol_bound: bool,
+    pub event_mask: EventMask,
+    pub win32_event_routes: Vec<&'static str>,
 }
 
 struct WinUiFfiDriver {
@@ -57,6 +59,11 @@ impl WinUiFfiDriver {
             ("SetWindowTextW", c"SetWindowTextW"),
             ("MoveWindow", c"MoveWindow"),
             ("IsWindow", c"IsWindow"),
+            ("GetMessageW", c"GetMessageW"),
+            ("TranslateMessage", c"TranslateMessage"),
+            ("DispatchMessageW", c"DispatchMessageW"),
+            ("TrackMouseEvent", c"TrackMouseEvent"),
+            ("GetKeyState", c"GetKeyState"),
         ] {
             if unsafe { user32.sym::<*mut c_void>(c_name) }.is_some() {
                 resolved_symbols.insert(name);
@@ -90,6 +97,27 @@ impl WinUiFfiDriver {
         }
     }
 
+    fn win32_routes_for_mask(mask: EventMask) -> Vec<&'static str> {
+        const TABLE: &[(EventMask, &str)] = &[
+            (EventMask::CLICK, "WM_LBUTTONUP/Tapped"),
+            (EventMask::CONTEXT_MENU, "WM_CONTEXTMENU/RightTapped"),
+            (EventMask::POINTER_MOTION, "WM_MOUSEMOVE/PointerMoved"),
+            (EventMask::FOCUS, "WM_SETFOCUS/GotFocus"),
+            (EventMask::KEYBOARD, "WM_KEYDOWN/KeyDown"),
+            (EventMask::ACTIVATE, "VK_RETURN/QuerySubmitted"),
+            (EventMask::VALUE_CHANGE, "EN_CHANGE/ValueChanged"),
+            (EventMask::SCROLL, "WM_VSCROLL/ViewChanged"),
+            (EventMask::WHEEL, "WM_MOUSEWHEEL/PointerWheelChanged"),
+            (EventMask::WINDOW_STATE, "WM_SIZE/SizeChanged"),
+            (EventMask::CLOSE_REQUEST, "WM_CLOSE/Closing"),
+            (EventMask::DRAG_DROP, "WM_DROPFILES/Drop"),
+        ];
+        TABLE
+            .iter()
+            .filter_map(|&(bit, route)| mask.contains(bit).then_some(route))
+            .collect()
+    }
+
     fn register_node(&mut self, id: NodeId, xaml_class: &'static str) {
         let win32_class = Self::win32_class_for(xaml_class);
         let symbol_bound = if xaml_class == "Microsoft.UI.Xaml.Window" {
@@ -105,8 +133,17 @@ impl WinUiFfiDriver {
                 xaml_class,
                 win32_class,
                 symbol_bound,
+                event_mask: EventMask::NONE,
+                win32_event_routes: Vec::new(),
             },
         );
+    }
+
+    fn update_event_mask(&mut self, id: NodeId, mask: EventMask) {
+        if let Some(binding) = self.bindings.get_mut(&id) {
+            binding.event_mask = binding.event_mask.union(mask);
+            binding.win32_event_routes = Self::win32_routes_for_mask(binding.event_mask);
+        }
     }
 
     fn unregister_node(&mut self, id: NodeId) {
@@ -247,6 +284,16 @@ impl PlatformBackend for WinUiBackend {
             match cmd {
                 RenderCommand::CreateWidget { id, tag } => {
                     self.ffi_driver.register_node(*id, Self::map_winui_tag(tag));
+                }
+                RenderCommand::SetAttribute { node, key, value } if key == "event-mask" => {
+                    self.ffi_driver
+                        .update_event_mask(*node, EventMask::parse_attr(value));
+                }
+                RenderCommand::SetAttribute { node, key, value }
+                    if key == "prevent-close" && NativeSceneState::parse_truthy_attr(value) =>
+                {
+                    self.ffi_driver
+                        .update_event_mask(*node, EventMask::CLOSE_REQUEST);
                 }
                 RenderCommand::DestroyWidget { id } => {
                     self.ffi_driver.unregister_node(*id);

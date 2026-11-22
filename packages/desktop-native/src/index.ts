@@ -2,7 +2,10 @@ export { NativeComputeService, type NativeScoredItem } from './compute-service';
 export {
   NativeDesktopService,
   provideNativeDesktop,
+  type NativeCloseRequestEvent,
   type NativeMenuItem,
+  type NativeResizeEvent,
+  type NativeScrollEvent,
   type NativeShortcutBinding,
   type NativeThemeMode,
   type NativeTrayState,

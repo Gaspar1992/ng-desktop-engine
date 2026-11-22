@@ -1,9 +1,10 @@
-import { Component, CUSTOM_ELEMENTS_SCHEMA, input, output } from '@angular/core';
+import { Component, input, output } from '@angular/core';
+import { NATIVE_UI_DIRECTIVES } from '@ng-desktop/platform';
 import type { PokedexCatalogCard } from '../../core/services/pokedex.service';
 
 @Component({
   selector: 'app-catalog-view',
-  schemas: [CUSTOM_ELEMENTS_SCHEMA],
+  imports: [NATIVE_UI_DIRECTIVES],
   templateUrl: './catalog-view.html',
   styleUrl: './catalog-view.css',
 })

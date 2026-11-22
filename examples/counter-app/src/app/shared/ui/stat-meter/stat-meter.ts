@@ -1,8 +1,9 @@
-import { Component, CUSTOM_ELEMENTS_SCHEMA, input } from '@angular/core';
+import { Component, input } from '@angular/core';
+import { NATIVE_UI_DIRECTIVES } from '@ng-desktop/platform';
 
 @Component({
   selector: 'app-stat-meter',
-  schemas: [CUSTOM_ELEMENTS_SCHEMA],
+  imports: [NATIVE_UI_DIRECTIVES],
   templateUrl: './stat-meter.html',
   styleUrl: './stat-meter.css',
 })

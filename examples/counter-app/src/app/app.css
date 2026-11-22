@@ -22,12 +22,22 @@
   border-radius: 14px;
 }
 
+.pokemon-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
 .grid-card {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
   background: #1e293b;
   color: #f8fafc;
-  padding: 14px;
-  gap: 8px;
-  border-radius: 12px;
+  padding: 10px;
+  gap: 6px;
+  border-radius: 10px;
+  min-width: 160px;
 }
 
 .section-title {
@@ -53,14 +63,14 @@
 
 .card-name {
   color: #f8fafc;
-  font-size: 16px;
-  font-weight: 800;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .poke-num {
   color: #94a3b8;
-  font-size: 13px;
-  font-weight: 800;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .hero-title {
@@ -74,7 +84,7 @@
 .suggested-action {
   background: #e11d48;
   color: #ffffff;
-  padding: 10px;
+  padding: 6px;
   gap: 8px;
   border-radius: 8px;
   font-weight: bold;

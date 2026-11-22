@@ -1,4 +1,4 @@
-<ng-box id="detail_view" orientation="vertical" spacing="14px">
+<ng-box id="detail_view" orientation="vertical" spacing="10px" hexpand="true">
   <ng-box id="detail_nav" class="toolbar-card" orientation="horizontal" spacing="8px">
     <ng-button id="btn_back" class="secondary-action" (click)="back.emit()"
       >‹ Volver a la Pokédex</ng-button
@@ -16,7 +16,7 @@
     </ng-button>
   </ng-box>
 
-  <ng-paned id="pokedex_split" orientation="horizontal" position="410px">
+  <ng-paned id="pokedex_split" orientation="horizontal" position="410px" hexpand="true">
     <app-pokemon-card
       id="poke_card"
       [name]="detail().displayName"
@@ -32,7 +32,7 @@
       <ng-label id="poke_description" class="lore-description">{{ detail().description }}</ng-label>
     </app-pokemon-card>
 
-    <ng-box id="detail_right_pane" orientation="vertical" spacing="14px">
+    <ng-box id="detail_right_pane" orientation="vertical" spacing="10px" hexpand="true">
       <ng-grid id="specs_grid" class="specs-panel" row-spacing="8px" column-spacing="24px">
         <ng-label id="lbl_h_title" class="spec-label">Altura</ng-label>
         <ng-label id="lbl_w_title" class="spec-label">Peso</ng-label>

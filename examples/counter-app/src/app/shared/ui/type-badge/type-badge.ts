@@ -1,8 +1,9 @@
-import { Component, CUSTOM_ELEMENTS_SCHEMA, input } from '@angular/core';
+import { Component, input } from '@angular/core';
+import { NATIVE_UI_DIRECTIVES } from '@ng-desktop/platform';
 
 @Component({
   selector: 'app-type-badge',
-  schemas: [CUSTOM_ELEMENTS_SCHEMA],
+  imports: [NATIVE_UI_DIRECTIVES],
   templateUrl: './type-badge.html',
   styleUrl: './type-badge.css',
 })
