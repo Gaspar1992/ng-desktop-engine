@@ -110,12 +110,15 @@ impl Drop for GtkLinuxBackend {
         let Some(gtk) = &self.gtk else {
             return;
         };
+        let has_open_windows = gtk.open_window_count() > 0;
         let drained: Vec<NativeGtkWidget> = self.widgets.drain().map(|(_, w)| w).collect();
-        for widget in &drained {
-            if widget.kind == GtkWidgetType::Window
-                && let Some(handle) = widget.handle
-            {
-                gtk.destroy_window(handle);
+        if has_open_windows {
+            for widget in &drained {
+                if widget.kind == GtkWidgetType::Window
+                    && let Some(handle) = widget.handle
+                {
+                    gtk.destroy_window(handle);
+                }
             }
         }
         for widget in &drained {

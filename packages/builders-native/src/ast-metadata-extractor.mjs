@@ -104,12 +104,27 @@ function evaluateDerivedExpression(node, state) {
   return null;
 }
 
-function extractDecoratorMetadata(decorators = []) {
+function extractStaticStringValue(node) {
+  const lit = extractScalarLiteral(node);
+  if (lit?.kind === 'string') {
+    return lit.value;
+  }
+  if (node?.type === 'TemplateLiteral' && (node.expressions?.length ?? 0) === 0) {
+    return (node.quasis ?? []).map((q) => q.value?.cooked ?? q.value?.raw ?? '').join('');
+  }
+  return null;
+}
+
+function extractDecoratorMetadata(decorators = [], isRootApp = false) {
   const component = {
     selector: 'app-root',
-    templateUrl: './app.html',
-    styleUrl: './app.css',
+    template: null,
+    templateUrl: isRootApp ? './app.html' : null,
+    styleUrl: isRootApp ? './app.css' : null,
+    styleUrls: [],
+    styles: [],
     imports: [],
+    hasComponentDecorator: false,
   };
 
   for (const dec of decorators) {
@@ -122,6 +137,7 @@ function extractDecoratorMetadata(decorators = []) {
       continue;
     }
 
+    component.hasComponentDecorator = true;
     const arg = expr.arguments?.[0];
     if (arg?.type !== 'ObjectExpression') continue;
 
@@ -135,12 +151,27 @@ function extractDecoratorMetadata(decorators = []) {
         continue;
       }
 
-      const lit = extractScalarLiteral(prop.value);
-      if (!lit || lit.kind !== 'string') continue;
+      if (prop.key.name === 'styleUrls' && prop.value?.type === 'ArrayExpression') {
+        component.styleUrls = (prop.value.elements || [])
+          .map((el) => extractStaticStringValue(el))
+          .filter((v) => typeof v === 'string' && v.length > 0);
+        continue;
+      }
 
-      if (prop.key.name === 'selector') component.selector = lit.value;
-      if (prop.key.name === 'templateUrl') component.templateUrl = lit.value;
-      if (prop.key.name === 'styleUrl') component.styleUrl = lit.value;
+      if (prop.key.name === 'styles' && prop.value?.type === 'ArrayExpression') {
+        component.styles = (prop.value.elements || [])
+          .map((el) => extractStaticStringValue(el))
+          .filter((v) => typeof v === 'string' && v.length > 0);
+        continue;
+      }
+
+      const strVal = extractStaticStringValue(prop.value);
+      if (strVal === null) continue;
+
+      if (prop.key.name === 'selector') component.selector = strVal;
+      if (prop.key.name === 'template') component.template = strVal;
+      if (prop.key.name === 'templateUrl') component.templateUrl = strVal;
+      if (prop.key.name === 'styleUrl') component.styleUrl = strVal;
     }
   }
 
@@ -228,11 +259,17 @@ export function extractComponentMetadata(tsSource, filename = 'app.ts') {
   const resources = {};
   const methods = {};
   const relativeImports = {};
+  const isRootApp =
+    filename === 'app.ts' || filename.endsWith('/app.ts') || filename.endsWith('\\app.ts');
   let component = {
     selector: 'app-root',
-    templateUrl: './app.html',
-    styleUrl: './app.css',
+    template: null,
+    templateUrl: isRootApp ? './app.html' : null,
+    styleUrl: isRootApp ? './app.css' : null,
+    styleUrls: [],
+    styles: [],
     imports: [],
+    hasComponentDecorator: false,
   };
 
   for (const stmt of parsed.program.body || []) {
@@ -252,7 +289,10 @@ export function extractComponentMetadata(tsSource, filename = 'app.ts') {
 
     if (decl?.type !== 'ClassDeclaration') continue;
 
-    component = extractDecoratorMetadata(decl.decorators);
+    const extractedDec = extractDecoratorMetadata(decl.decorators, isRootApp);
+    if (extractedDec.hasComponentDecorator) {
+      component = extractedDec;
+    }
 
     for (const member of decl.body?.body || []) {
       if (member.type === 'PropertyDefinition' && member.key?.type === 'Identifier') {

@@ -1,9 +1,9 @@
 <ng-window id="win" [title]="windowTitle()">
   <ng-header-bar id="hdr" [attr.subtitle]="subtitle()">{{ windowTitle() }}</ng-header-bar>
   <ng-scroll id="scroll" min-height="540px">
-    <ng-clamp id="main_clamp" max-size="1080px">
-      <ng-box id="vbox" class="main-card" orientation="vertical" spacing="14px">
-        <ng-box id="search_bar" orientation="horizontal" spacing="10px">
+    <ng-clamp id="main_clamp" max-size="1120px">
+      <ng-box id="vbox" class="main-card" orientation="vertical" spacing="16px">
+        <ng-box id="search_bar" class="toolbar-card" orientation="horizontal" spacing="10px">
           <ng-search-entry
             id="search_entry"
             hexpand="true"
@@ -18,7 +18,11 @@
             [formControl]="spinIdControl"
           />
           <ng-switch id="sw_filter_favorites" [formControl]="favoritesOnlyControl" />
-          <ng-button id="btn_filter_favorites" (click)="toggleFavoritesFilter()">
+          <ng-button
+            id="btn_filter_favorites"
+            class="secondary-action"
+            (click)="toggleFavoritesFilter()"
+          >
             {{ pokedex.favoritesOnly() ? 'Ver Todos' : '★ Solo Favoritos' }}
           </ng-button>
         </ng-box>
@@ -30,139 +34,28 @@
         />
 
         @if (pokedex.errorMessage(); as errMsg) {
-        <ng-label id="error_banner" class="section-subtitle">{{ errMsg }}</ng-label>
+        <ng-label id="error_banner" class="error-banner">{{ errMsg }}</ng-label>
         } @if (pokedex.viewMode() === 'list') {
-        <ng-box id="list_view" orientation="vertical" spacing="12px">
-          <ng-box id="list_header" orientation="vertical" spacing="4px">
-            <ng-label id="list_title" class="section-title"
-              >Pokédex Nacional — Explorador Angular + Servidor Nativo</ng-label
-            >
-            <ng-label id="list_subtitle" class="section-subtitle"
-              >Mostrando {{ pokedex.catalogItems().length }} de {{ pokedex.totalCount() }} Pokémon
-              ({{ pokedex.favoriteIds().size }} favoritos)</ng-label
-            >
-          </ng-box>
-
-          <ng-flow
-            id="pokemon_grid"
-            row-spacing="12px"
-            column-spacing="12px"
-            min-children="2"
-            max-children="4"
-          >
-            @for (poke of pokedex.catalogItems(); track poke.id) {
-            <ng-box
-              class="grid-card"
-              orientation="vertical"
-              spacing="6px"
-              [attr.data-testid]="'card-' + poke.id"
-            >
-              <ng-image [src]="poke.spriteUrl" width="96" height="96" />
-              <ng-label class="poke-num">{{ poke.number }}</ng-label>
-              <ng-label class="card-name">
-                {{ pokedex.isFavorite(poke.id) ? '★ ' + poke.displayName : poke.displayName }}
-              </ng-label>
-              <ng-button
-                class="suggested-action"
-                [attr.id]="'open_poke_' + poke.id"
-                [attr.data-testid]="'open-poke-' + poke.id"
-                (click)="openPokemon(poke.id)"
-                >Ver ficha</ng-button
-              >
-            </ng-box>
-            } @empty {
-            <ng-label id="empty_catalog" class="section-subtitle"
-              >No se encontraron Pokémon para tu búsqueda.</ng-label
-            >
-            }
-          </ng-flow>
-
-          @if (pokedex.hasMore()) {
-          <ng-box id="pagination_bar" orientation="horizontal" spacing="12px" halign="center">
-            <ng-button id="btn_load_more" class="suggested-action" (click)="loadMore()"
-              >Cargar más Pokémon (+12) ›</ng-button
-            >
-          </ng-box>
-          }
-        </ng-box>
+        <app-catalog-view
+          [items]="pokedex.catalogItems()"
+          [totalCount]="pokedex.totalCount()"
+          [favoriteIds]="pokedex.favoriteIds()"
+          [hasMore]="pokedex.hasMore()"
+          (selectPokemon)="openPokemon($event)"
+          (loadMore)="loadMore()"
+        />
         } @else { @if (pokedex.selectedDetail(); as detail) {
-        <ng-box id="detail_view" orientation="vertical" spacing="12px">
-          <ng-box id="detail_nav" orientation="horizontal" spacing="8px">
-            <ng-button id="btn_back" class="suggested-action" (click)="backToList()"
-              >‹ Volver a la Pokédex</ng-button
-            >
-            <ng-button id="btn_prev" (click)="previousPokemon()">‹ Pokémon Anterior</ng-button>
-            <ng-button id="btn_next" (click)="nextPokemon()">Siguiente Pokémon ›</ng-button>
-            <ng-button
-              id="btn_toggle_fav"
-              class="suggested-action"
-              (click)="toggleCurrentFavorite()"
-            >
-              {{ pokedex.isFavorite(detail.id) ? '★ En Favoritos' : '☆ Añadir a Favoritos' }}
-            </ng-button>
-          </ng-box>
-
-          <ng-paned id="pokedex_split" orientation="horizontal" position="420px">
-            <app-pokemon-card
-              id="poke_card"
-              [name]="detail.displayName"
-              [number]="detail.number"
-              [sprite]="detail.spriteUrl"
-            >
-              <ng-label id="poke_genus" class="section-subtitle">{{ detail.genus }}</ng-label>
-              <ng-box id="types_box" orientation="horizontal" spacing="8px">
-                @for (t of detail.types; track t.label) {
-                <app-type-badge [badgeClass]="t.badgeClass" [type]="t.label" />
-                }
-              </ng-box>
-              <ng-label id="poke_description" class="section-subtitle"
-                >{{ detail.description }}</ng-label
-              >
-            </app-pokemon-card>
-
-            <ng-box id="detail_right_pane" orientation="vertical" spacing="12px">
-              <ng-grid id="specs_grid" class="specs-panel" row-spacing="6px" column-spacing="24px">
-                <ng-label id="lbl_h_title" class="spec-label">Altura</ng-label>
-                <ng-label id="lbl_w_title" class="spec-label">Peso</ng-label>
-                <ng-label id="lbl_height" class="spec-val">{{ detail.heightMeters }}</ng-label>
-                <ng-label id="lbl_weight" class="spec-val">{{ detail.weightKg }}</ng-label>
-                <ng-label id="lbl_abil_title" class="spec-label">Habilidad</ng-label>
-                <ng-label id="lbl_exp_title" class="spec-label">Exp. Base</ng-label>
-                <ng-label id="lbl_ability" class="spec-val">{{ detail.ability }}</ng-label>
-                <ng-label id="lbl_base_exp" class="spec-val">{{ detail.baseExperience }}</ng-label>
-              </ng-grid>
-
-              <ng-expander
-                id="stats_expander"
-                label="Estadísticas Base Oficiales (PS / ATQ / DEF / AT.ESP / DF.ESP / VEL)"
-                expanded="true"
-              >
-                <ng-box id="stats_box" orientation="vertical" spacing="6px">
-                  @for (stat of detail.stats; track stat.key) {
-                  <ng-label class="section-subtitle"
-                    >{{ stat.label }} ({{ stat.value }} / 255)</ng-label
-                  >
-                  <ng-level-bar [attr.value]="stat.value" max="255" />
-                  }
-                </ng-box>
-              </ng-expander>
-
-              <ng-expander id="notes_expander" label="Notas de Campo de la Pokédex" expanded="true">
-                <ng-box id="notes_box" orientation="vertical" spacing="8px">
-                  <ng-text-view id="poke_notes" editable="true" [formControl]="noteControl" />
-                  <ng-button id="btn_save_note" class="suggested-action" (click)="saveNote()"
-                    >Guardar Nota</ng-button
-                  >
-                  @if (pokedex.noteStatus()) {
-                  <ng-label id="note_status" class="section-subtitle"
-                    >{{ pokedex.noteStatus() }}</ng-label
-                  >
-                  }
-                </ng-box>
-              </ng-expander>
-            </ng-box>
-          </ng-paned>
-        </ng-box>
+        <app-pokemon-detail-view
+          [detail]="detail"
+          [isFavorite]="pokedex.isFavorite(detail.id)"
+          [noteStatus]="pokedex.noteStatus()"
+          [noteControl]="noteControl"
+          (back)="backToList()"
+          (previous)="previousPokemon()"
+          (next)="nextPokemon()"
+          (toggleFavorite)="toggleCurrentFavorite()"
+          (saveNote)="saveNote()"
+        />
         } }
         <router-outlet />
       </ng-box>

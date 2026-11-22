@@ -1,61 +1,78 @@
 .main-card {
-  background: #242424;
-  color: #ffffff;
-  padding: 16px;
-  gap: 12px;
-  border-radius: 14px;
+  background: #0f172a;
+  color: #f8fafc;
+  padding: 20px;
+  gap: 16px;
+  border-radius: 16px;
+}
+
+.toolbar-card {
+  background: #1e293b;
+  color: #f8fafc;
+  padding: 12px;
+  gap: 10px;
+  border-radius: 12px;
 }
 
 .pokemon-card {
-  background: #313131;
-  color: #ffffff;
-  padding: 16px;
+  background: #1e293b;
+  color: #f8fafc;
+  padding: 18px;
+  gap: 10px;
+  border-radius: 14px;
+}
+
+.grid-card {
+  background: #1e293b;
+  color: #f8fafc;
+  padding: 14px;
   gap: 8px;
   border-radius: 12px;
 }
 
-.grid-card {
-  background: #313131;
-  color: #ffffff;
-  padding: 12px;
-  gap: 6px;
-  border-radius: 10px;
-}
-
 .section-title {
-  color: #ffffff;
-  font-size: 18px;
+  color: #f8fafc;
+  font-size: 20px;
   font-weight: 800;
 }
 
 .section-subtitle {
-  color: #919191;
+  color: #94a3b8;
   font-size: 13px;
   font-weight: normal;
 }
 
+.error-banner {
+  background: #450a0a;
+  color: #fecaca;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 .card-name {
-  color: #ffffff;
+  color: #f8fafc;
   font-size: 16px;
   font-weight: 800;
 }
 
 .poke-num {
-  color: #919191;
-  font-size: 14px;
+  color: #94a3b8;
+  font-size: 13px;
   font-weight: 800;
 }
 
 .hero-title {
-  color: #78aeed;
-  padding: 8px;
+  color: #f8fafc;
+  padding: 4px;
   gap: 4px;
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 800;
 }
 
 .suggested-action {
-  background: #e3350d;
+  background: #e11d48;
   color: #ffffff;
   padding: 10px;
   gap: 8px;
@@ -63,24 +80,98 @@
   font-weight: bold;
 }
 
-.badge-grass {
-  background: #9bcc50;
-  color: #212121;
-  padding: 6px;
-  border-radius: 6px;
-  font-weight: 700;
+.secondary-action {
+  background: #334155;
+  color: #f8fafc;
+  padding: 10px;
+  gap: 8px;
+  border-radius: 8px;
+  font-weight: bold;
 }
 
-.badge-poison {
-  background: #b97fc9;
+.fav-active-action {
+  background: #d97706;
+  color: #ffffff;
+  padding: 10px;
+  gap: 8px;
+  border-radius: 8px;
+  font-weight: bold;
+}
+
+.badge-normal {
+  background: #64748b;
   color: #ffffff;
   padding: 6px;
   border-radius: 6px;
   font-weight: 700;
 }
 
+.badge-fighting {
+  background: #c2410c;
+  color: #ffffff;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-flying {
+  background: #38bdf8;
+  color: #0f172a;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-poison {
+  background: #a855f7;
+  color: #ffffff;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-ground {
+  background: #ca8a04;
+  color: #0f172a;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-rock {
+  background: #78716c;
+  color: #ffffff;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-bug {
+  background: #65a30d;
+  color: #ffffff;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-ghost {
+  background: #6366f1;
+  color: #ffffff;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-steel {
+  background: #94a3b8;
+  color: #0f172a;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
 .badge-fire {
-  background: #fd7d24;
+  background: #ea580c;
   color: #ffffff;
   padding: 6px;
   border-radius: 6px;
@@ -88,7 +179,15 @@
 }
 
 .badge-water {
-  background: #4592c4;
+  background: #0284c7;
+  color: #ffffff;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-grass {
+  background: #16a34a;
   color: #ffffff;
   padding: 6px;
   border-radius: 6px;
@@ -96,58 +195,69 @@
 }
 
 .badge-electric {
-  background: #eed535;
-  color: #212121;
+  background: #eab308;
+  color: #0f172a;
   padding: 6px;
   border-radius: 6px;
   font-weight: 700;
 }
 
-.badge-flying {
-  background: #3dc7ef;
-  color: #212121;
-  padding: 6px;
-  border-radius: 6px;
-  font-weight: 700;
-}
-
-.badge-ghost {
-  background: #7b62a3;
+.badge-psychic {
+  background: #db2777;
   color: #ffffff;
   padding: 6px;
   border-radius: 6px;
   font-weight: 700;
 }
 
-.badge-normal {
-  background: #475569;
+.badge-ice {
+  background: #22d3ee;
+  color: #0f172a;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-dragon {
+  background: #4f46e5;
   color: #ffffff;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-dark {
+  background: #334155;
+  color: #f8fafc;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-fairy {
+  background: #f472b6;
+  color: #0f172a;
   padding: 6px;
   border-radius: 6px;
   font-weight: 700;
 }
 
 .specs-panel {
-  background: #30a7d7;
-  color: #ffffff;
-  padding: 10px;
-  border-radius: 8px;
+  background: #0284c7;
+  color: #f8fafc;
+  padding: 14px;
+  border-radius: 12px;
   gap: 12px;
 }
 
 .spec-label {
-  color: #212121;
+  color: #e0f2fe;
   font-weight: 700;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .spec-val {
-  color: #212121;
+  color: #ffffff;
   font-weight: 800;
   font-size: 16px;
-}
-
-.stats-label {
-  color: #78aeed;
-  font-weight: bold;
 }

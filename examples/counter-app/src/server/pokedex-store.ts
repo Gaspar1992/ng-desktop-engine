@@ -34,6 +34,7 @@ export interface PokemonDetailRecord {
   baseExperience: string;
   types: PokemonTypeBadge[];
   stats: PokemonStatItem[];
+  totalStats?: number;
 }
 
 export interface FavoritePokemonRow {
@@ -70,13 +71,24 @@ interface RawSpeciesApiResponse {
 }
 
 const TYPE_BADGE_MAP: Record<string, PokemonTypeBadge> = {
-  grass: { label: 'PLANTA', badgeClass: 'badge-grass' },
+  normal: { label: 'NORMAL', badgeClass: 'badge-normal' },
+  fighting: { label: 'LUCHA', badgeClass: 'badge-fighting' },
+  flying: { label: 'VOLADOR', badgeClass: 'badge-flying' },
   poison: { label: 'VENENO', badgeClass: 'badge-poison' },
+  ground: { label: 'TIERRA', badgeClass: 'badge-ground' },
+  rock: { label: 'ROCA', badgeClass: 'badge-rock' },
+  bug: { label: 'BICHO', badgeClass: 'badge-bug' },
+  ghost: { label: 'FANTASMA', badgeClass: 'badge-ghost' },
+  steel: { label: 'ACERO', badgeClass: 'badge-steel' },
   fire: { label: 'FUEGO', badgeClass: 'badge-fire' },
   water: { label: 'AGUA', badgeClass: 'badge-water' },
+  grass: { label: 'PLANTA', badgeClass: 'badge-grass' },
   electric: { label: 'ELÉCTRICO', badgeClass: 'badge-electric' },
-  flying: { label: 'VOLADOR', badgeClass: 'badge-flying' },
-  ghost: { label: 'FANTASMA', badgeClass: 'badge-ghost' },
+  psychic: { label: 'PSÍQUICO', badgeClass: 'badge-psychic' },
+  ice: { label: 'HIELO', badgeClass: 'badge-ice' },
+  dragon: { label: 'DRAGÓN', badgeClass: 'badge-dragon' },
+  dark: { label: 'SINIESTRO', badgeClass: 'badge-dark' },
+  fairy: { label: 'HADA', badgeClass: 'badge-fairy' },
 };
 
 const STAT_LABEL_MAP: Record<string, string> = {
@@ -280,5 +292,6 @@ export function normalizePokemonPayload(
       typeof rawPokemon.base_experience === 'number' ? `${rawPokemon.base_experience} EXP` : '--',
     types,
     stats,
+    totalStats: stats.reduce((acc, s) => acc + s.value, 0),
   };
 }
