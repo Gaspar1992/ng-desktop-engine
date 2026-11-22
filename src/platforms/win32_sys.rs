@@ -154,6 +154,10 @@ type DispatchMessageWFn = unsafe extern "system" fn(*const Win32Msg) -> isize;
 type EnableWindowFn = unsafe extern "system" fn(*mut c_void, c_int) -> c_int;
 #[cfg(target_os = "windows")]
 type GetModuleHandleWFn = unsafe extern "system" fn(*const u16) -> *mut c_void;
+#[cfg(target_os = "windows")]
+type GetLastErrorFn = unsafe extern "system" fn() -> u32;
+#[cfg(target_os = "windows")]
+const ERROR_CLASS_ALREADY_EXISTS: u32 = 1410;
 
 #[cfg(target_os = "windows")]
 #[repr(C)]
@@ -387,30 +391,17 @@ impl Win32Sys {
         let def_window_proc_w: WndProcFn = unsafe { user32.sym(c"DefWindowProcW") }?;
         let enable_window: EnableWindowFn = unsafe { user32.sym(c"EnableWindow") }?;
         let get_module_handle_w: GetModuleHandleWFn = unsafe { kernel32.sym(c"GetModuleHandleW") }?;
+        let get_last_error: Option<GetLastErrorFn> = unsafe { kernel32.sym(c"GetLastError") };
 
         let _ = WIN32_DEF_WNDPROC.set(def_window_proc_w);
         let h_instance = unsafe { get_module_handle_w(std::ptr::null()) };
-
-        let class_ok = *WIN32_CLASS_REGISTERED.get_or_init(|| {
-            let class_w = to_wide_null(NG_WIN32_CLASS_NAME);
-            let wc = WndClassExW {
-                cb_size: u32::try_from(size_of::<WndClassExW>()).unwrap_or(80),
-                style: 0,
-                lpfn_wnd_proc: ng_win32_wndproc,
-                cb_cls_extra: 0,
-                cb_wnd_extra: 0,
-                h_instance,
-                h_icon: std::ptr::null_mut(),
-                h_cursor: std::ptr::null_mut(),
-                hbr_background: std::ptr::null_mut(),
-                lpsz_menu_name: std::ptr::null(),
-                lpsz_class_name: class_w.as_ptr(),
-                h_icon_sm: std::ptr::null_mut(),
-            };
-            let _ = unsafe { register_class_ex_w(&raw const wc) };
-            true
-        });
-        if !class_ok {
+        if !Self::ensure_class_and_probe(
+            register_class_ex_w,
+            create_window_ex_w,
+            destroy_window,
+            get_last_error,
+            h_instance,
+        ) {
             return None;
         }
 
@@ -427,6 +418,77 @@ impl Win32Sys {
             dispatch_message_w,
             enable_window,
         })
+    }
+
+    fn ensure_class_and_probe(
+        register_class_ex_w: RegisterClassExWFn,
+        create_window_ex_w: CreateWindowExWFn,
+        destroy_window: DestroyWindowFn,
+        get_last_error: Option<GetLastErrorFn>,
+        h_instance: *mut c_void,
+    ) -> bool {
+        let class_ok = *WIN32_CLASS_REGISTERED.get_or_init(|| {
+            let class_w = to_wide_null(NG_WIN32_CLASS_NAME);
+            let wc = WndClassExW {
+                cb_size: u32::try_from(size_of::<WndClassExW>()).unwrap_or(80),
+                style: 0,
+                lpfn_wnd_proc: ng_win32_wndproc,
+                cb_cls_extra: 0,
+                cb_wnd_extra: 0,
+                h_instance,
+                h_icon: std::ptr::null_mut(),
+                h_cursor: std::ptr::null_mut(),
+                hbr_background: std::ptr::null_mut(),
+                lpsz_menu_name: std::ptr::null(),
+                lpsz_class_name: class_w.as_ptr(),
+                h_icon_sm: std::ptr::null_mut(),
+            };
+            let atom = unsafe { register_class_ex_w(&raw const wc) };
+            if atom == 0 {
+                let err = get_last_error.map_or(0, |f| unsafe { f() });
+                if err != ERROR_CLASS_ALREADY_EXISTS {
+                    eprintln!(
+                        "[Win32Sys] RegisterClassExW failed (error={err}); using headless mode"
+                    );
+                    return false;
+                }
+            }
+            true
+        });
+        if !class_ok {
+            return false;
+        }
+
+        // Probe whether this Windows session allows real HWND creation (Session 0 CI runners may deny GUI).
+        let class_w = to_wide_null(NG_WIN32_CLASS_NAME);
+        let title_w = to_wide_null("NgDesktop Probe");
+        let probe_hwnd = unsafe {
+            create_window_ex_w(
+                0,
+                class_w.as_ptr(),
+                title_w.as_ptr(),
+                WS_OVERLAPPEDWINDOW,
+                0,
+                0,
+                64,
+                64,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                h_instance,
+                std::ptr::null_mut(),
+            )
+        };
+        if probe_hwnd.is_null() {
+            let err = get_last_error.map_or(0, |f| unsafe { f() });
+            eprintln!(
+                "[Win32Sys] CreateWindowExW probe returned NULL (error={err}); falling back to headless mode"
+            );
+            return false;
+        }
+        unsafe {
+            let _ = destroy_window(probe_hwnd);
+        }
+        true
     }
 
     pub(super) fn create_toplevel(

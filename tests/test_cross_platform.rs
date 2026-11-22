@@ -498,14 +498,17 @@ fn winui_and_appkit_headless_guards_and_native_live_drivers() {
         live_win.append_child(w, btn).unwrap();
         live_win.flush_frame();
 
-        assert!(live_win.backend().is_native_display_active());
-        assert!(live_win.backend().live_handle_count() >= 2);
+        assert!(live_win.backend().is_ffi_loaded());
         assert!(live_win.backend().open_window_count() >= 1);
-        let _ = live_win.backend().step_native_events();
+        if live_win.backend().is_native_display_active() {
+            assert!(live_win.backend().live_handle_count() >= 2);
+            let _ = live_win.backend().step_native_events();
+        }
         live_win.destroy_node(dlg).unwrap();
         live_win.destroy_node(w).unwrap();
         live_win.flush_frame();
         assert_eq!(live_win.backend().live_handle_count(), 0);
+        assert_eq!(live_win.backend().open_window_count(), 0);
     }
 
     #[cfg(target_os = "macos")]
