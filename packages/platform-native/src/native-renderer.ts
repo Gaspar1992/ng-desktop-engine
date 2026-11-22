@@ -214,30 +214,39 @@ export class NativeRenderer2 extends Renderer2 {
     this.hooks = hooks;
     this.destroyNode = (node: unknown) => {
       if (node instanceof NativeElementNode) {
-        this.nodesById.delete(node.id);
-        this.imageLoadSeq.delete(node);
-        const pending = this.pendingVirtualListeners.get(node);
-        if (pending) {
-          for (const reg of pending) {
-            reg.disposed = true;
-            for (const unlisten of reg.activeUnsubs) {
-              unlisten();
-            }
-            reg.activeUnsubs.clear();
-            reg.attachedRealIds.clear();
-          }
-          this.pendingVirtualListeners.delete(node);
-        }
-        const materializedId = this.materializedTextLabels.get(node);
-        if (materializedId) {
-          this.materializedTextLabels.delete(node);
-          this.bridge.destroyNode(materializedId);
-        }
-        if (!node.isVirtual) {
-          this.bridge.destroyNode(node.id);
-        }
+        this.destroySubtreeNodes(node, true);
       }
     };
+  }
+
+  private destroySubtreeNodes(node: NativeElementNode, emitBridgeDestroy: boolean): void {
+    for (const child of node.children) {
+      this.destroySubtreeNodes(child, emitBridgeDestroy && node.isVirtual);
+    }
+    this.nodesById.delete(node.id);
+    this.imageLoadSeq.delete(node);
+    const pending = this.pendingVirtualListeners.get(node);
+    if (pending) {
+      for (const reg of pending) {
+        reg.disposed = true;
+        for (const unlisten of reg.activeUnsubs) {
+          unlisten();
+        }
+        reg.activeUnsubs.clear();
+        reg.attachedRealIds.clear();
+      }
+      this.pendingVirtualListeners.delete(node);
+    }
+    const materializedId = this.materializedTextLabels.get(node);
+    if (materializedId) {
+      this.materializedTextLabels.delete(node);
+      if (emitBridgeDestroy) {
+        this.bridge.destroyNode(materializedId);
+      }
+    }
+    if (!node.isVirtual && emitBridgeDestroy) {
+      this.bridge.destroyNode(node.id);
+    }
   }
 
   override destroy(): void {

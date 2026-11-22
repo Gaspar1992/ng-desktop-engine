@@ -6,6 +6,7 @@ import {
   bootstrapNativeApplication,
   ensureNgNativeBridge,
   matchesKeyboardEvent,
+  NativeElementNode,
   NativeKeyEventsPlugin,
   NativeRendererFactory2,
   NativeSystemErrorHandler,
@@ -372,5 +373,45 @@ describe('@ng-desktop/platform — NativeRenderer2 & Bridge', () => {
     bridge.__dispatchEvent(win.id, 'clicked', {});
     expect(winListenerHits).toBe(1);
     unlistenWin();
+  });
+
+  it('recursively purges descendant nodes and cancels in-flight image downloads when destroyNode is called on a subtree root', async () => {
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+    const factory = new NativeRendererFactory2();
+    const renderer = factory.createRenderer(null, null);
+
+    const parentBox = renderer.createElement('ng-box') as NativeElementNode;
+    const childCard = renderer.createElement('ng-box') as NativeElementNode;
+    const childImg = renderer.createElement('ng-image') as NativeElementNode;
+    renderer.appendChild(childCard, childImg);
+    renderer.appendChild(parentBox, childCard);
+    expect(factory.getNode(childCard.id)).toBe(childCard);
+    expect(factory.getNode(childImg.id)).toBe(childImg);
+
+    let resolveDownload!: (res: { ok: boolean; path: string }) => void;
+    const originalDownload = bridge.downloadImageAsync;
+    bridge.downloadImageAsync = () =>
+      new Promise((resolve) => {
+        resolveDownload = resolve;
+      });
+    try {
+      bridge.__drainQueue();
+      renderer.setAttribute(childImg, 'src', 'https://cdn.example.test/sprite-25.png');
+
+      // Simulate Angular Ivy view teardown calling destroyNode only on parentBox
+      renderer.destroyNode!(parentBox);
+      const destroyCmds = bridge.__drainQueue();
+      expect(destroyCmds).toBe(`destroy ${parentBox.id}`);
+      expect(factory.getNode(parentBox.id)).toBeUndefined();
+      expect(factory.getNode(childCard.id)).toBeUndefined();
+      expect(factory.getNode(childImg.id)).toBeUndefined();
+
+      resolveDownload({ ok: true, path: '/cache/sprite-25.png' });
+      await Promise.resolve();
+      expect(bridge.__drainQueue()).toBe('');
+    } finally {
+      bridge.downloadImageAsync = originalDownload;
+    }
   });
 });
