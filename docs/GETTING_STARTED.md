@@ -167,9 +167,43 @@ export class HomeComponent {
 
 ## 5. Core Feature Recipes
 
-### A. Reactive Forms (`@ng-desktop/forms`)
+### A. Forms — Signal Forms & Reactive Forms (`@ng-desktop/forms`)
 
-Import `ReactiveFormsModule` (or `FormsModule`) alongside `NATIVE_FORM_DIRECTIVES` and `NATIVE_UI_DIRECTIVES`:
+**Angular Signal Forms (`[formField]`):** Import `NATIVE_SIGNAL_FORM_DIRECTIVES` and `NATIVE_UI_DIRECTIVES`. Schema constraints (`required`, `min`, `max`, `maxLength`, `disabled`, `readonly`, `hidden`) sync automatically to native GTK4/OS attributes, ARIA state, and `ng-invalid`/`ng-touched`/`ng-dirty` classes:
+
+```ts
+import { Component, signal } from '@angular/core';
+import { form, max, min, NATIVE_SIGNAL_FORM_DIRECTIVES, required } from '@ng-desktop/forms';
+import { NATIVE_UI_DIRECTIVES } from '@ng-desktop/platform';
+
+@Component({
+  selector: 'app-settings',
+  standalone: true,
+  imports: [NATIVE_UI_DIRECTIVES, NATIVE_SIGNAL_FORM_DIRECTIVES],
+  template: `
+    <ng-box orientation="vertical" spacing="10px">
+      <ng-entry placeholder="Workspace name" [formField]="settingsForm.workspace" />
+      <ng-switch [formField]="settingsForm.notifications" />
+      <ng-slider [formField]="settingsForm.refreshRate" />
+    </ng-box>
+  `,
+})
+export class SettingsComponent {
+  readonly model = signal({
+    workspace: 'Desktop CRM',
+    notifications: true,
+    refreshRate: 30,
+  });
+
+  readonly settingsForm = form(this.model, (path) => {
+    required(path.workspace);
+    min(path.refreshRate, 10);
+    max(path.refreshRate, 100);
+  });
+}
+```
+
+**Reactive & Template Forms (`[formGroup]`, `[(ngModel)]`):** Import `ReactiveFormsModule` (or `FormsModule`) alongside `NATIVE_FORM_DIRECTIVES` and `NATIVE_UI_DIRECTIVES`:
 
 ```ts
 import { Component } from '@angular/core';
@@ -178,7 +212,7 @@ import { NATIVE_FORM_DIRECTIVES } from '@ng-desktop/forms';
 import { NATIVE_UI_DIRECTIVES } from '@ng-desktop/platform';
 
 @Component({
-  selector: 'app-settings',
+  selector: 'app-reactive-settings',
   standalone: true,
   imports: [ReactiveFormsModule, NATIVE_FORM_DIRECTIVES, NATIVE_UI_DIRECTIVES],
   template: `
@@ -189,7 +223,7 @@ import { NATIVE_UI_DIRECTIVES } from '@ng-desktop/platform';
     </ng-box>
   `,
 })
-export class SettingsComponent {
+export class ReactiveSettingsComponent {
   readonly form = new FormGroup({
     workspace: new FormControl('Desktop CRM', {
       nonNullable: true,

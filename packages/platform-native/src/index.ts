@@ -45,6 +45,7 @@ export {
   NativeInputWidgetDirective,
   NativeListDirective,
   NativeMediaAndMeterDirective,
+  NativeNumericRangeDirective,
   NativePopoverDirective,
   NativeTextWidgetDirective,
   NativeWindowDirective,
