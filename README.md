@@ -70,7 +70,7 @@ A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22
 | `<ng-select>` (`select`, `ng-dropdown`, `gtk-drop-down`) | Form Select          | `GtkDropDown`             | `Microsoft.UI.Xaml.Controls.ComboBox`        | `NSPopUpButton`       | `options` (CSV), `selected` / `value`, `(valueChange)` + `NativeNumberValueAccessor`                                              |
 | `<ng-anchor>` (`#comment`)                               | Virtual Control Flow | `GtkAnchorComment`        | `Microsoft.UI.Xaml.AnchorComment`            | `NSAnchorComment`     | `@if`, `@for`, `@switch`, `@defer`, `<router-outlet />` anchor                                                                    |
 
-> **Common Widget Attributes & Standalone Virtualization:** All widgets support `visible`, `hexpand`, `vexpand`, `halign`, `valign`, `margin*`, `min-width`, `min-height`, and `sensitive`. For high-volume lists, `@ng-desktop/platform` also exports standalone `<ng-virtual-list>` (`NativeVirtualListComponent`) backed by `computeVirtualSliceRange`. Import `NATIVE_UI_DIRECTIVES` to use all primitives and mapped HTML tags (`HTML_TO_NATIVE_TAG`) without `CUSTOM_ELEMENTS_SCHEMA`.
+> **Common Widget Attributes, Forms & Virtualization:** All widgets support `visible`, `hexpand`, `vexpand`, `halign`, `valign`, `margin*`, `min-width`, `min-height`, and `sensitive`. Interactive inputs support both **Angular Signal Forms (`[formField]` via `NATIVE_SIGNAL_FORM_DIRECTIVES`)** and classic **`ReactiveFormsModule`/`FormsModule` (`NATIVE_FORM_DIRECTIVES`)**. For high-volume lists, `@ng-desktop/platform` also exports standalone `<ng-virtual-list>` (`NativeVirtualListComponent`) backed by `computeVirtualSliceRange`. Import `NATIVE_UI_DIRECTIVES` to use all primitives and mapped HTML tags (`HTML_TO_NATIVE_TAG`) without `CUSTOM_ELEMENTS_SCHEMA`.
 
 ---
 
@@ -138,7 +138,7 @@ ng-native-engine/
 │       └── parser.rs             # Bytecode (.ngb) instruction IR & syntax parser
 ├── packages/
 │   ├── platform-native/          # @ng-desktop/platform (Renderer2, NATIVE_UI_DIRECTIVES, VirtualList, Ecosystem compat)
-│   ├── forms-native/             # @ng-desktop/forms (NATIVE_FORM_DIRECTIVES ControlValueAccessors)
+│   ├── forms-native/             # @ng-desktop/forms (Signal Forms [formField] controls & ControlValueAccessors)
 │   ├── router-native/            # @ng-desktop/router (NativePlatformLocation, NativeTitleStrategy, RouteReuseStrategy)
 │   ├── http-native/              # @ng-desktop/http (NativeHttpBackend, provideHttpClient features, createNativeHttpResource)
 │   ├── desktop-native/           # @ng-desktop/desktop (Desktop, SQLite, Network, Compute, FileSystem, DropTarget)
@@ -248,7 +248,7 @@ cargo run                # or: NG_NATIVE_BATCH=1 cargo run
 | `pnpm run format:all`                               | Format both TypeScript/Angular/Markdown (`oxfmt`) and Rust (`cargo fmt`) |
 | `pnpm run format:check`                             | Verify formatting with `oxfmt`                                           |
 | `pnpm run lint`                                     | Lint TypeScript & Angular templates via `oxlint` + `angular-eslint`      |
-| `pnpm run test --watch=false`                       | Run all 87 Vitest specs across 16 test files in a single pass            |
+| `pnpm run test --watch=false`                       | Run all 90 Vitest specs across 16 test files in a single pass            |
 | `pnpm run test:containers`                          | Run Xvfb + GTK4 + FFI test suite in Ubuntu 24.04 & Fedora 41 containers  |
 | `cargo fmt --all -- --check`                        | Verify Rust formatting                                                   |
 | `cargo clippy --all-targets -- -D warnings`         | Run strict Rust Clippy lints (pedantic + nursery, zero warnings)         |

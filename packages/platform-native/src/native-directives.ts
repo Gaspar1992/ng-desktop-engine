@@ -406,15 +406,6 @@ export class NativeInputWidgetDirective {
   @Input() set label(val: NativeAttrInput) {
     syncNativeAttr(this.renderer, this.el, 'label', val);
   }
-  @Input() set min(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'min', val);
-  }
-  @Input() set max(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'max', val);
-  }
-  @Input() set step(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'step', val);
-  }
   @Input() set options(val: NativeAttrInput) {
     syncNativeAttr(this.renderer, this.el, 'options', val);
   }
@@ -498,6 +489,29 @@ export class NativePopoverDirective {
 }
 
 /**
+ * Typed directive for native numeric range & stepper inputs (`<ng-slider>`, `<ng-spin-button>`),
+ * isolating `min`/`max`/`step` away from boolean toggles for Signal Forms type safety.
+ */
+@Directive({
+  selector: 'ng-slider,ng-scale,gtk-scale,ng-spin-button,gtk-spin-button,adw-spin-row',
+  standalone: true,
+})
+export class NativeNumericRangeDirective {
+  private readonly renderer = inject(Renderer2);
+  private readonly el = inject<ElementRef<unknown>>(ElementRef).nativeElement;
+
+  @Input() set min(val: NativeNumberInput) {
+    syncNativeAttr(this.renderer, this.el, 'min', val);
+  }
+  @Input() set max(val: NativeNumberInput) {
+    syncNativeAttr(this.renderer, this.el, 'max', val);
+  }
+  @Input() set step(val: NativeNumberInput) {
+    syncNativeAttr(this.renderer, this.el, 'step', val);
+  }
+}
+
+/**
  * Convenience directive bundle enabling typed bindings on `<ng-*>`, `<gtk-*>`, and `<adw-*>` tags
  * in standalone Angular components without `CUSTOM_ELEMENTS_SCHEMA`.
  */
@@ -508,6 +522,7 @@ export const NATIVE_UI_DIRECTIVES = [
   NativeTextWidgetDirective,
   NativeMediaAndMeterDirective,
   NativeInputWidgetDirective,
+  NativeNumericRangeDirective,
   NativeListDirective,
   NativePopoverDirective,
 ] as const;

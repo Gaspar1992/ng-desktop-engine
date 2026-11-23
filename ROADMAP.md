@@ -6,7 +6,7 @@ This document defines the deep technical analysis and phased engineering roadmap
 
 ## 📍 Current Status Snapshot (`v0.4.0`)
 
-**At a glance:** Release **`v0.4.0`** | **`29` native widget primitives + `<ng-anchor>`** | **`7` `@ng-desktop/*` npm packages + `5` prebuilt `@ng-desktop/engine-*` binaries** | **`195` automated tests** (`87` Vitest across `16` suites, `65` Rust unit, `43` Rust integration across `8` suites).
+**At a glance:** Release **`v0.4.0`** (`main` includes post-tag docs & Signal Forms updates) | **`29` native widget primitives + `<ng-anchor>`** | **`7` `@ng-desktop/*` npm packages + `5` prebuilt `@ng-desktop/engine-*` binaries** | **`198` automated tests** (`90` Vitest across `16` suites, `65` Rust unit, `43` Rust integration across `8` suites).
 
 ### Platform Maturity Matrix (`v0.4.0`)
 
@@ -271,11 +271,10 @@ The audit of `v0.4.0` on `main` identified six concrete engineering gaps that dr
 
 ## 🚀 Upcoming Roadmap
 
-### Phase 14 (`v0.4.x`): Documentation Refresh, External-App Tutorial & Release Polish (Next Up 🔜)
+### Phase 14 (`v0.4.x`): Documentation Refresh, External-App Tutorial, Signal Forms & Release Polish (In Progress 🔜)
 
-- [ ] **Refresh Core Repository Documentation to `v0.4.0`:** Bring `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, and `SUPPORT.md` into alignment with the 29 primitives + `<ng-anchor>`, all 7 `@ng-desktop/*` packages (including `@ng-desktop/server`), Flexbox/Grid CSS, `(closeRequest)`, `NATIVE_UI_DIRECTIVES`, live Win32/AppKit FFI, and the 195-test suite.
-- [ ] **External Angular 22+ / Nx Tutorial (`docs/GETTING_STARTED.md`):** Publish a step-by-step integration guide for external applications covering OS maturity expectations, `ng add @ng-desktop/builders` vs manual setup, `bootstrapNativeApplication` / `provideNativePlatform`, zero-`CUSTOM_ELEMENTS_SCHEMA` templates (`NATIVE_UI_DIRECTIVES`), forms, `<router-outlet>`, `<ng-virtual-list>`, `<ng-popover>`/`<ng-dialog>`, `(closeRequest)`, `@ng-desktop/desktop`, `@ng-desktop/server`, and `ng-desktop permissions` / `package`.
-- [ ] **Per-Package npm Documentation (`packages/*/README.md`):** Add concise `README.md` pages to all 7 `@ng-desktop/*` packages so npmjs.com listings show install commands, minimal examples, and links back to `docs/GETTING_STARTED.md`.
+- [x] **First-Class Angular Signal Forms (`@ng-desktop/forms` + `@ng-desktop/platform`):** Implemented `NativeTextFieldControl` (`FormValueControl<string>`), `NativeBooleanFieldControl` (`FormCheckboxControl`), and `NativeNumberFieldControl` (`FormValueControl<number>`) exported via `NATIVE_SIGNAL_FORM_DIRECTIVES` and `NATIVE_FORM_DIRECTIVES`, alongside `NativeNumericRangeDirective` ISP separation for strict `[formField]` type safety on boolean toggles.
+- [x] **Refresh Core Repository Documentation & External Tutorial (`README.md`, `docs/GETTING_STARTED.md`, `packages/*/README.md`):** Brought docs in sync with `v0.4.0`, added the external Angular 22+ / Nx guide, and added npm READMEs to all 7 packages.
 - [ ] **Finish OIDC Publishing Polish (`.github/workflows/release.yml`):** Replace `npm publish --dry-run` in the non-OIDC offline branch so `release.yml` validates tarballs without `ENEEDAUTH` when `NPM_TRUSTED_PUBLISHING` is unset, and complete Trusted Publisher enrollment on npmjs.org.
 
 ### Phase 15 (`v0.5.0`): Cross-Platform Runtime Parity — Windows & macOS (Planned 🎯)

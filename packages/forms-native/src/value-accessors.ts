@@ -10,7 +10,7 @@ interface NativeWidgetEvent {
   detail?: unknown;
 }
 
-const SELECT_NUMBER_TAGS = new Set([
+export const SELECT_NUMBER_TAGS = new Set([
   'ng-select',
   'ng-dropdown',
   'gtk-dropdown',
