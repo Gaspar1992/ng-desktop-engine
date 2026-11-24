@@ -1,5 +1,4 @@
 import {
-  ChangeDetectionStrategy,
   Component,
   effect,
   ElementRef,
@@ -19,7 +18,6 @@ import { PokedexService } from './core/services/pokedex.service';
 
 @Component({
   selector: 'app-root',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NATIVE_SIGNAL_FORM_DIRECTIVES, NATIVE_UI_DIRECTIVES, RouterOutlet],
   templateUrl: './app.html',
   styleUrl: './app.css',

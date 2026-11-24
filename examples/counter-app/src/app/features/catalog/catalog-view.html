@@ -9,35 +9,52 @@
     >
   </ng-box>
 
-  <ng-flow id="pokemon_grid" class="pokemon-grid" row-spacing="12px" column-spacing="12px">
-    @for (poke of items(); track poke.id) {
-    <ng-box
-      class="grid-card"
-      [attr.data-testid]="'card-' + poke.id"
-      (dblclick)="selectPokemon.emit(poke.id)"
-    >
-      <ng-image [src]="poke.spriteUrl" width="84" height="84" halign="center" />
-      <ng-label class="poke-num">{{ poke.number }}</ng-label>
-      <ng-label class="card-name">
-        {{ favoriteIds().has(poke.id) ? '★ ' + poke.displayName : poke.displayName }}
-      </ng-label>
-      <ng-button
-        class="suggested-action"
-        hexpand="true"
-        [attr.id]="'open_poke_' + poke.id"
-        [attr.data-testid]="'open-poke-' + poke.id"
-        (click)="selectPokemon.emit(poke.id)"
-        >Ver ficha ›</ng-button
+  <ng-virtual-grid
+    gridId="pokemon_grid"
+    gridClass="pokemon-grid"
+    [items]="items()"
+    [rowHeight]="220"
+    [minColumnWidth]="190"
+    [viewportHeight]="460"
+    [rowGap]="12"
+    [columnGap]="12"
+    [trackBy]="trackByPokemonId"
+    (scrollBottom)="loadMore.emit()"
+  >
+    <ng-template let-poke>
+      <ng-box
+        class="grid-card"
+        [attr.data-testid]="'card-' + poke.id"
+        (dblclick)="selectPokemon.emit(poke.id)"
       >
-    </ng-box>
-    } @empty {
-    <ng-box id="empty_catalog_box" class="empty-state" orientation="vertical" spacing="8px">
+        <ng-image [src]="poke.spriteUrl" width="84" height="84" halign="center" />
+        <ng-label class="poke-num">{{ poke.number }}</ng-label>
+        <ng-label class="card-name">
+          {{ favoriteIds().has(poke.id) ? '★ ' + poke.displayName : poke.displayName }}
+        </ng-label>
+        <ng-button
+          class="suggested-action"
+          hexpand="true"
+          [attr.id]="'open_poke_' + poke.id"
+          [attr.data-testid]="'open-poke-' + poke.id"
+          (click)="selectPokemon.emit(poke.id)"
+          >Ver ficha ›</ng-button
+        >
+      </ng-box>
+    </ng-template>
+
+    <ng-box
+      ngVirtualEmpty
+      id="empty_catalog_box"
+      class="empty-state"
+      orientation="vertical"
+      spacing="8px"
+    >
       <ng-label id="empty_catalog" class="section-subtitle"
         >No se encontraron Pokémon para tu búsqueda.</ng-label
       >
     </ng-box>
-    }
-  </ng-flow>
+  </ng-virtual-grid>
 
   @if (hasMore()) {
   <ng-box id="pagination_bar" orientation="horizontal" spacing="12px" halign="center">

@@ -289,4 +289,27 @@ describe('App (100% Angular + @ng-desktop/server API)', () => {
 
     fixture.destroy();
   });
+
+  it('renders catalog inside 2D <ng-virtual-grid> and performs instant local fuzzy filtering', async () => {
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+
+    const fixture = TestBed.createComponent(App);
+    const service = TestBed.inject(PokedexService);
+    fixture.detectChanges();
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    fixture.detectChanges();
+
+    const mountCmds = bridge.__drainQueue();
+    expect(mountCmds).not.toContain(' ng-virtual-grid');
+    expect(mountCmds).toContain(' ng-grid');
+    expect(mountCmds).toContain('Bulbasaur');
+    expect(mountCmds).toContain('Pikachu');
+
+    expect(service.displayedCatalogItems().map((item) => item.id)).toEqual([1, 25]);
+    service.searchQuery.set('pika');
+    expect(service.displayedCatalogItems().map((item) => item.id)).toEqual([25]);
+
+    fixture.destroy();
+  });
 });

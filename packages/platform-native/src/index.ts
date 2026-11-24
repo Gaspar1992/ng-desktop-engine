@@ -84,10 +84,22 @@ export {
 } from './system-providers';
 export { NativeViewportScroller, provideNativeViewportScroller } from './viewport-scroller';
 export {
+  computeVariableVirtualSliceRange,
+  computeVirtualGridSliceRange,
   computeVirtualSliceRange,
+  FenwickOffsetTree,
+  type VirtualGridSliceOptions,
+  type VirtualGridSliceRange,
+  type VirtualSliceRange,
+} from './virtual-layout';
+export {
+  NativeVirtualGridComponent,
+  type NativeVirtualGridEntry,
+  type NativeVirtualGridItemContext,
+} from './virtual-grid.component';
+export {
   NativeVirtualListComponent,
   type NativeVirtualItemContext,
   type NativeVirtualListEntry,
   type NativeVirtualRowActivatedEvent,
-  type VirtualSliceRange,
 } from './virtual-list.component';

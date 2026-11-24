@@ -1,11 +1,10 @@
-import { ChangeDetectionStrategy, Component, effect, inject, input } from '@angular/core';
+import { Component, effect, inject, input } from '@angular/core';
 import { Router } from '@ng-desktop/router';
 import { PokedexService } from '../../core/services/pokedex.service';
 import { PokemonDetailView } from './pokemon-detail-view';
 
 @Component({
   selector: 'app-detail-route',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [PokemonDetailView],
   template: `
     @if (pokedex.selectedDetail(); as detail) {
