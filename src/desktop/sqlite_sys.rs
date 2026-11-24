@@ -172,7 +172,11 @@ unsafe impl Send for SqliteFfi {}
 impl SqliteFfi {
     fn open_sqlite_lib() -> Option<*mut c_void> {
         let candidates: &[&CStr] = if cfg!(target_os = "macos") {
-            &[c"/usr/lib/libsqlite3.dylib", c"libsqlite3.dylib"]
+            &[
+                c"libsqlite3.dylib",
+                c"/usr/lib/libsqlite3.dylib",
+                c"libsqlite3.0.dylib",
+            ]
         } else if cfg!(target_os = "windows") {
             &[c"winsqlite3.dll", c"sqlite3.dll"]
         } else {
@@ -630,9 +634,11 @@ impl NativeSqliteDatabase {
             {
                 let name = tbl.split('(').next().unwrap_or(tbl).trim().to_string();
                 self.fallback_tables.entry(name).or_default();
-            } else if upper.starts_with("INSERT INTO")
+            } else if (upper.starts_with("INSERT INTO")
+                || upper.starts_with("INSERT OR REPLACE INTO"))
                 && let Some((head, vals_part)) = stmt.split_once('(')
             {
+                let replace = upper.starts_with("INSERT OR REPLACE");
                 let table_name = head.split_whitespace().last().unwrap_or("default").trim();
                 let (cols_raw, rest_after_cols) =
                     vals_part.split_once(')').unwrap_or((vals_part, ""));
@@ -641,22 +647,44 @@ impl NativeSqliteDatabase {
                     .and_then(|(_, v)| v.rsplit_once(')').map(|(inner, _)| inner))
                     .unwrap_or("");
                 let mut row = HashMap::new();
+                let mut param_idx = 0usize;
                 for (idx, (col, val)) in cols_raw.split(',').zip(vals_inner.split(',')).enumerate()
                 {
                     let key = col.trim();
-                    let cleaned_val = val.trim().trim_matches('\'').trim_matches('"').to_string();
+                    let raw_val = val.trim();
+                    let resolved_val = if raw_val == "?" {
+                        let out = match params.get(param_idx) {
+                            Some(SqlParam::Integer(n)) => n.to_string(),
+                            Some(SqlParam::Real(f)) => f.to_string(),
+                            Some(SqlParam::Text(s)) => s.clone(),
+                            Some(SqlParam::Null) | None => String::new(),
+                        };
+                        param_idx += 1;
+                        out
+                    } else {
+                        raw_val.trim_matches('\'').trim_matches('"').to_string()
+                    };
                     let col_name = if key.is_empty() {
                         format!("col_{idx}")
                     } else {
                         key.to_string()
                     };
-                    row.insert(col_name, cleaned_val);
+                    row.insert(col_name, resolved_val);
                 }
                 if !row.is_empty() {
-                    self.fallback_tables
+                    let rows = self
+                        .fallback_tables
                         .entry(table_name.to_string())
-                        .or_default()
-                        .push(row);
+                        .or_default();
+                    if replace
+                        && let Some(id_val) = row.get("id")
+                        && let Some(existing) =
+                            rows.iter_mut().find(|r| r.get("id") == Some(id_val))
+                    {
+                        *existing = row;
+                    } else {
+                        rows.push(row);
+                    }
                 }
             }
         }
@@ -684,7 +712,21 @@ impl NativeSqliteDatabase {
         if let Some(ref ffi) = self.ffi {
             return ffi.query_json_params(sql, params);
         }
-        let rows = self.query(sql)?;
+        let mut rows = self.query(sql)?;
+        if let Some(where_pos) = sql.to_ascii_uppercase().find("WHERE ")
+            && let Some(cond) = sql[where_pos + 6..].split_whitespace().next()
+        {
+            let col_name = cond.trim().trim_end_matches('=');
+            if let Some(param) = params.first() {
+                let target = match param {
+                    SqlParam::Integer(n) => n.to_string(),
+                    SqlParam::Real(f) => f.to_string(),
+                    SqlParam::Text(s) => s.clone(),
+                    SqlParam::Null => String::new(),
+                };
+                rows.retain(|r| r.get(col_name) == Some(&target));
+            }
+        }
         let encoded_rows: Vec<String> = rows
             .into_iter()
             .map(|row| {
@@ -692,7 +734,12 @@ impl NativeSqliteDatabase {
                 entries.sort_by(|a, b| a.0.cmp(&b.0));
                 let fields: Vec<String> = entries
                     .into_iter()
-                    .map(|(k, v)| format!("\"{}\":\"{}\"", escape_json(&k), escape_json(&v)))
+                    .map(|(k, v)| {
+                        v.parse::<i64>().map_or_else(
+                            |_| format!("\"{}\":\"{}\"", escape_json(&k), escape_json(&v)),
+                            |num| format!("\"{}\":{num}", escape_json(&k)),
+                        )
+                    })
                     .collect();
                 format!("{{{}}}", fields.join(","))
             })

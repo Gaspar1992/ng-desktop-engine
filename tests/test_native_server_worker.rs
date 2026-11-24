@@ -214,6 +214,8 @@ fn routes_local_api_calls_to_isolated_server_worker_sqlite_and_hmr() {
             "lbl_err",
             `missing=${missingRes.status};extDenied=${JSON.parse(extRes.body).upstreamStatus}`
           );
+        }).catch((err) => {
+          __NG_NATIVE__.setText("lbl_err", `ERR:${err && err.stack ? err.stack : String(err)}`);
         });
     "#;
     rt.eval_js(&mut engine, ui_script).unwrap();
