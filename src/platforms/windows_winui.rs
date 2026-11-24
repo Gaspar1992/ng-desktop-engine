@@ -1,6 +1,9 @@
 #![allow(unsafe_code)]
 
 use super::PlatformBackend;
+#[cfg(target_os = "windows")]
+use super::layout_solver::compute_parent_relative_bounds;
+use super::layout_solver::{LayoutRect, solve_scene_layout};
 use super::scene_state::{NativeSceneNode, NativeSceneState};
 #[cfg(target_os = "windows")]
 use super::win32_sys::{Win32Handle, Win32Sys, is_headless_env};
@@ -285,6 +288,26 @@ impl WinUiFfiDriver {
     }
 
     #[cfg(target_os = "windows")]
+    fn apply_live_layout(
+        &self,
+        state: &NativeSceneState,
+        layout_rects: &HashMap<NodeId, LayoutRect>,
+    ) {
+        let Some(win32) = &self.win32 else {
+            return;
+        };
+        let rel_rects = compute_parent_relative_bounds(state, layout_rects, false);
+        for (&node_id, rect) in &rel_rects {
+            if self.live_toplevels.contains(&node_id) {
+                continue;
+            }
+            if let Some(&handle) = self.live_handles.get(&node_id) {
+                win32.set_bounds(handle, rect.x, rect.y, rect.width, rect.height);
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
     fn apply_live_command(&mut self, cmd: &RenderCommand, state: &NativeSceneState) {
         match cmd {
             RenderCommand::SetText { id, text } => {
@@ -360,6 +383,7 @@ impl WinUiFfiDriver {
 pub struct WinUiBackend {
     pub flushed_frames: u64,
     state: NativeSceneState,
+    layout_rects: HashMap<NodeId, LayoutRect>,
     ffi_driver: WinUiFfiDriver,
 }
 
@@ -391,6 +415,7 @@ impl WinUiBackend {
         Self {
             flushed_frames: 0,
             state: NativeSceneState::default(),
+            layout_rects: HashMap::new(),
             ffi_driver: WinUiFfiDriver::new(false),
         }
     }
@@ -399,6 +424,7 @@ impl WinUiBackend {
         Self {
             flushed_frames: 0,
             state: NativeSceneState::default(),
+            layout_rects: HashMap::new(),
             ffi_driver: WinUiFfiDriver::new(true),
         }
     }
@@ -458,6 +484,29 @@ impl WinUiBackend {
 
     pub fn get_control(&self, id: NodeId) -> Option<&NativeSceneNode> {
         self.state.get_node(id)
+    }
+
+    #[must_use]
+    pub fn get_layout_rect(&self, id: NodeId) -> Option<LayoutRect> {
+        self.layout_rects.get(&id).copied()
+    }
+
+    fn recompute_layout(&mut self) {
+        self.layout_rects.clear();
+        let roots: Vec<(NodeId, i32, i32)> = self
+            .ffi_driver
+            .bindings
+            .iter()
+            .filter_map(|(&id, binding)| match binding.win32_class {
+                "Window" => Some((id, 1020, 720)),
+                "Dialog" => Some((id, 460, 280)),
+                _ => None,
+            })
+            .collect();
+        for (root_id, default_w, default_h) in roots {
+            let solved = solve_scene_layout(&self.state, root_id, default_w, default_h);
+            self.layout_rects.extend(solved);
+        }
     }
 
     pub fn queue_native_event(&self, event: NativeEvent) {
@@ -567,5 +616,9 @@ impl PlatformBackend for WinUiBackend {
             #[cfg(target_os = "windows")]
             self.ffi_driver.apply_live_command(cmd, &self.state);
         }
+        self.recompute_layout();
+        #[cfg(target_os = "windows")]
+        self.ffi_driver
+            .apply_live_layout(&self.state, &self.layout_rects);
     }
 }

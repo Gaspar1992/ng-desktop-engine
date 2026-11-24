@@ -8,6 +8,7 @@ use std::collections::HashMap;
 /// Platform-agnostic native control/view state node shared by WinUI 3 and macOS AppKit backends.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NativeSceneNode {
+    pub source_tag: String,
     pub native_class: &'static str,
     pub text: String,
     pub attributes: HashMap<String, String>,
@@ -136,6 +137,7 @@ impl NativeSceneState {
                 self.nodes.insert(
                     *id,
                     NativeSceneNode {
+                        source_tag: tag.clone(),
                         native_class: map_tag(tag),
                         text: String::new(),
                         attributes: HashMap::new(),
@@ -155,6 +157,7 @@ impl NativeSceneState {
                 self.nodes.insert(
                     *id,
                     NativeSceneNode {
+                        source_tag: String::from("#comment"),
                         native_class: comment_class,
                         text: text.clone(),
                         attributes: HashMap::new(),

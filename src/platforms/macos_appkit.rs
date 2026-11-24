@@ -5,7 +5,12 @@ use super::PlatformBackend;
 use super::appkit_sys::{
     AppKitHandle, AppKitSys, NsPoint, NsRect, NsSize, can_activate_live_appkit,
 };
+#[cfg(target_os = "macos")]
+use super::layout_solver::compute_parent_relative_bounds;
+use super::layout_solver::{LayoutRect, solve_scene_layout};
 use super::scene_state::{NativeSceneNode, NativeSceneState};
+#[cfg(target_os = "macos")]
+use crate::engine::coalesce_frame_events;
 use crate::engine::{EventMask, NativeEvent, NodeId, RenderCommand};
 #[cfg(target_os = "macos")]
 use crate::ffi_dl::DynLib;
@@ -273,32 +278,30 @@ impl AppKitFfiDriver {
         {
             let created = match objc_class {
                 "NSWindow" => {
-                    let h = sys.create_window(false, 1020.0, 720.0);
+                    let h = sys.create_window(id, false, 1020.0, 720.0);
                     if h.is_some() {
                         self.live_toplevels.insert(id);
                     }
                     h
                 }
                 "NSPanel" => {
-                    let h = sys.create_window(true, 460.0, 280.0);
+                    let h = sys.create_window(id, true, 460.0, 280.0);
                     if h.is_some() {
                         self.live_toplevels.insert(id);
                     }
                     h
                 }
-                cls => {
-                    let view_cls = if cls == "NSPopover" { "NSView" } else { cls };
-                    sys.create_view(
-                        view_cls,
-                        NsRect {
-                            origin: NsPoint { x: 0.0, y: 0.0 },
-                            size: NsSize {
-                                width: 320.0,
-                                height: 36.0,
-                            },
+                cls => sys.create_view(
+                    id,
+                    cls,
+                    NsRect {
+                        origin: NsPoint { x: 0.0, y: 0.0 },
+                        size: NsSize {
+                            width: 320.0,
+                            height: 36.0,
                         },
-                    )
-                }
+                    },
+                ),
             };
             if let Some(handle) = created {
                 self.live_handles.insert(id, handle);
@@ -321,6 +324,10 @@ impl AppKitFfiDriver {
         if let Some(binding) = self.bindings.get_mut(&id) {
             binding.event_mask = next_mask;
             binding.event_selectors = selectors;
+        }
+        #[cfg(target_os = "macos")]
+        if let Some(&handle) = self.live_handles.get(&id) {
+            AppKitSys::set_event_mask(handle, mask);
         }
     }
 
@@ -364,6 +371,29 @@ impl AppKitFfiDriver {
     }
 
     #[cfg(target_os = "macos")]
+    fn apply_live_layout(
+        &self,
+        state: &NativeSceneState,
+        layout_rects: &HashMap<NodeId, LayoutRect>,
+    ) {
+        if !self.live_active {
+            return;
+        }
+        let Some(sys) = &self.live_sys else {
+            return;
+        };
+        let rel_rects = compute_parent_relative_bounds(state, layout_rects, true);
+        for (&node_id, rect) in &rel_rects {
+            if self.live_toplevels.contains(&node_id) {
+                continue;
+            }
+            if let Some(&handle) = self.live_handles.get(&node_id) {
+                sys.set_frame(handle, rect.to_ns_rect());
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
     fn apply_live_command(&self, cmd: &RenderCommand) {
         if !self.live_active {
             return;
@@ -401,6 +431,12 @@ impl AppKitFfiDriver {
                             } else {
                                 sys.set_hidden(h, !visible);
                             }
+                        }
+                        "prevent-close" => {
+                            AppKitSys::set_prevent_close(
+                                h,
+                                NativeSceneState::parse_truthy_attr(value),
+                            );
                         }
                         "close-window" if NativeSceneState::parse_truthy_attr(value) => {
                             if matches!(cls, "NSWindow" | "NSPanel") {
@@ -440,6 +476,7 @@ impl AppKitFfiDriver {
 pub struct MacOsAppKitBackend {
     pub flushed_frames: u64,
     state: NativeSceneState,
+    layout_rects: HashMap<NodeId, LayoutRect>,
     ffi_driver: AppKitFfiDriver,
 }
 
@@ -473,6 +510,7 @@ impl MacOsAppKitBackend {
         Self {
             flushed_frames: 0,
             state: NativeSceneState::default(),
+            layout_rects: HashMap::new(),
             ffi_driver: AppKitFfiDriver::new(false),
         }
     }
@@ -481,6 +519,7 @@ impl MacOsAppKitBackend {
         Self {
             flushed_frames: 0,
             state: NativeSceneState::default(),
+            layout_rects: HashMap::new(),
             ffi_driver: AppKitFfiDriver::new(true),
         }
     }
@@ -562,6 +601,29 @@ impl MacOsAppKitBackend {
         self.state.get_node(id)
     }
 
+    #[must_use]
+    pub fn get_layout_rect(&self, id: NodeId) -> Option<LayoutRect> {
+        self.layout_rects.get(&id).copied()
+    }
+
+    fn recompute_layout(&mut self) {
+        self.layout_rects.clear();
+        let roots: Vec<(NodeId, i32, i32)> = self
+            .ffi_driver
+            .bindings
+            .iter()
+            .filter_map(|(&id, binding)| match binding.objc_class {
+                "NSWindow" => Some((id, 1020, 720)),
+                "NSPanel" => Some((id, 460, 280)),
+                _ => None,
+            })
+            .collect();
+        for (root_id, default_w, default_h) in roots {
+            let solved = solve_scene_layout(&self.state, root_id, default_w, default_h);
+            self.layout_rects.extend(solved);
+        }
+    }
+
     pub fn queue_native_event(&self, event: NativeEvent) {
         self.state.push_event(event);
     }
@@ -571,7 +633,10 @@ impl MacOsAppKitBackend {
         if self.ffi_driver.live_active
             && let Some(sys) = &self.ffi_driver.live_sys
         {
-            sys.pump_events();
+            let mut merged = sys.pump_events();
+            merged.retain(|ev| self.state.get_node(ev.node).is_some());
+            merged.extend(self.state.drain_events());
+            return coalesce_frame_events(merged);
         }
         self.state.drain_events()
     }
@@ -659,5 +724,9 @@ impl PlatformBackend for MacOsAppKitBackend {
             #[cfg(target_os = "macos")]
             self.ffi_driver.apply_live_command(cmd);
         }
+        self.recompute_layout();
+        #[cfg(target_os = "macos")]
+        self.ffi_driver
+            .apply_live_layout(&self.state, &self.layout_rects);
     }
 }

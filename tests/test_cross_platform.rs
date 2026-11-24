@@ -2,14 +2,15 @@ use ng_native_engine::config::AngularNativeConfig;
 use ng_native_engine::desktop::{
     DesktopServices, OsFileWatcherBackend, OsHttpPlatform, OsSqliteBackend, OsSystemEnvBackend,
 };
-use ng_native_engine::engine::{EventPayload, NativeEvent, RenderEngine};
+use ng_native_engine::engine::{EventMask, EventPayload, NativeEvent, NodeId, RenderEngine};
 use ng_native_engine::packager::{
     stage_all_distributions, stage_linux_distribution, stage_macos_distribution,
     stage_windows_distribution,
 };
 use ng_native_engine::platforms::{
-    AnyPlatformBackend, GtkLinuxBackend, HeadlessBackend, MacOsAppKitBackend, PlatformBackend,
-    WinUiBackend,
+    AnyPlatformBackend, GtkLinuxBackend, HeadlessBackend, LayoutRect, MacOsAppKitBackend,
+    PlatformBackend, WinUiBackend, appkit_sys::translate_appkit_delegate_event,
+    win32_sys::translate_win32_control_command,
 };
 use ng_native_engine::runtime::JsRuntime;
 use std::fs;
@@ -517,4 +518,143 @@ fn winui_and_appkit_headless_guards_and_native_live_drivers() {
             Some("NgDesktop AppKit")
         );
     }
+}
+
+#[test]
+fn winui_and_appkit_share_flexbox_grid_layout_and_typed_event_translation() {
+    let layout_script = r"
+        create win ng-window
+        attr win width 820
+        attr win height 620
+        attr win padding 10
+        create root ng-box
+        attr root vexpand true
+        attr root spacing 10
+        create header ng-label
+        attr header width 200
+        attr header height 40
+        attr header halign center
+        create grid ng-grid
+        attr grid columns 2
+        attr grid vexpand true
+        attr grid spacing 10
+        create c1 ng-button
+        create c2 ng-entry
+        create clamp ng-clamp
+        attr clamp padding 12
+        create clamped_lbl ng-label
+        attr clamped_lbl width 100
+        attr clamped_lbl height 24
+        append win root
+        append root header
+        append root grid
+        append root clamp
+        append clamp clamped_lbl
+        append grid c1
+        append grid c2
+    ";
+
+    let mut win_rt = JsRuntime::new();
+    let mut win_eng = RenderEngine::new(WinUiBackend::new_headless());
+    win_rt.eval_tick(&mut win_eng, layout_script).unwrap();
+
+    let mut mac_rt = JsRuntime::new();
+    let mut mac_eng = RenderEngine::new(MacOsAppKitBackend::new_headless());
+    mac_rt.eval_tick(&mut mac_eng, layout_script).unwrap();
+
+    for var in [
+        "win",
+        "root",
+        "header",
+        "grid",
+        "clamp",
+        "clamped_lbl",
+        "c1",
+        "c2",
+    ] {
+        let win_rect = win_eng
+            .backend()
+            .get_layout_rect(win_rt.resolve_var(var).unwrap())
+            .expect("winui layout rect");
+        let mac_rect = mac_eng
+            .backend()
+            .get_layout_rect(mac_rt.resolve_var(var).unwrap())
+            .expect("appkit layout rect");
+        assert_eq!(win_rect, mac_rect, "layout parity mismatch for {var}");
+    }
+
+    let hdr_id = win_rt.resolve_var("header").unwrap();
+    let c1_id = win_rt.resolve_var("c1").unwrap();
+    let c2_id = win_rt.resolve_var("c2").unwrap();
+    assert_eq!(
+        win_eng.backend().get_layout_rect(hdr_id).unwrap(),
+        LayoutRect {
+            x: 310,
+            y: 10,
+            width: 200,
+            height: 40
+        }
+    );
+    assert_eq!(win_eng.backend().get_layout_rect(c1_id).unwrap().width, 395);
+    assert_eq!(win_eng.backend().get_layout_rect(c2_id).unwrap().x, 415);
+}
+
+#[test]
+fn winui_and_appkit_translate_typed_control_and_delegate_events() {
+    let target_id = NodeId {
+        index: 7,
+        generation: 1,
+    };
+
+    let win32_input = translate_win32_control_command(
+        target_id,
+        "EDIT",
+        "Microsoft.UI.Xaml.Controls.TextBox",
+        0x0300,
+        "pikachu",
+        false,
+        -1,
+    )
+    .unwrap();
+    assert_eq!(win32_input.event_name, "input");
+    assert_eq!(
+        win32_input.payload,
+        EventPayload::Text(String::from("pikachu"))
+    );
+
+    let cocoa_input = translate_appkit_delegate_event(
+        target_id,
+        "NSTextFieldEditable",
+        EventMask::VALUE_CHANGE,
+        false,
+        "controlTextDidChange:",
+        "pikachu",
+        false,
+        0,
+        (0, 0),
+    )
+    .unwrap();
+    assert_eq!(cocoa_input.event_name, "input");
+    assert_eq!(
+        cocoa_input.payload,
+        EventPayload::Text(String::from("pikachu"))
+    );
+
+    let cocoa_text_view = translate_appkit_delegate_event(
+        target_id,
+        "NSTextView",
+        EventMask::VALUE_CHANGE,
+        false,
+        "textDidChange:",
+        "multiline",
+        false,
+        0,
+        (0, 0),
+    )
+    .unwrap();
+    assert_eq!(cocoa_text_view.event_name, "input");
+    assert_eq!(
+        cocoa_text_view.payload,
+        EventPayload::Text(String::from("multiline"))
+    );
 }
