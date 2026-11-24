@@ -65,7 +65,7 @@ pub trait JsEngineBackend {
 /// High-performance Apple/WebKit `JavaScriptCore` (JSC) adapter with 4-tier JIT (`libjavascriptcoregtk-6.0.so.1`).
 pub struct JscEngine {
     jsc: Option<JscSys>,
-    fallback: QuickJsEngine,
+    fallback: Option<QuickJsEngine>,
 }
 
 impl Default for JscEngine {
@@ -77,13 +77,14 @@ impl Default for JscEngine {
 impl JscEngine {
     pub fn new() -> Self {
         let jsc = JscSys::try_load();
-        if let Some(sys) = &jsc {
-            let _ = sys.eval(NG_NATIVE_BOOTSTRAP_JS);
-        }
-        Self {
-            jsc,
-            fallback: QuickJsEngine::new(),
-        }
+        let fallback = jsc.as_ref().map_or_else(
+            || Some(QuickJsEngine::new()),
+            |sys| {
+                let _ = sys.eval(NG_NATIVE_BOOTSTRAP_JS);
+                None
+            },
+        );
+        Self { jsc, fallback }
     }
 
     pub fn is_native_jsc_loaded(&self) -> bool {
@@ -133,24 +134,28 @@ impl JsEngineBackend for JscEngine {
     fn attach_http_engine(&mut self, engine: Arc<Mutex<NativeHttpEngine>>) {
         if let Some(jsc) = &self.jsc {
             jsc.set_http_engine(engine);
-        } else {
-            self.fallback.attach_http_engine(engine);
+        } else if let Some(fallback) = &mut self.fallback {
+            fallback.attach_http_engine(engine);
         }
     }
 
     fn attach_host_bridge(&mut self, bridge: Arc<HostBridge>) {
         if let Some(jsc) = &self.jsc {
             jsc.set_host_bridge(bridge);
-        } else {
-            self.fallback.attach_host_bridge(bridge);
+        } else if let Some(fallback) = &mut self.fallback {
+            fallback.attach_host_bridge(bridge);
         }
     }
 
     fn eval_script(&mut self, js_code: &str) -> Result<String, EngineError> {
         if let Some(jsc) = &self.jsc {
             jsc.eval(js_code).map_err(EngineError::ScriptSyntaxError)
+        } else if let Some(fallback) = &mut self.fallback {
+            fallback.eval_script(js_code)
         } else {
-            self.fallback.eval_script(js_code)
+            Err(EngineError::ScriptSyntaxError(String::from(
+                "No JavaScript engine initialized",
+            )))
         }
     }
 
@@ -167,9 +172,10 @@ impl JsEngineBackend for JscEngine {
             );
             let _ = jsc.eval(&call).map_err(EngineError::ScriptSyntaxError)?;
             Ok(())
+        } else if let Some(fallback) = &mut self.fallback {
+            fallback.dispatch_js_event_with_payload(node_var, event_name, payload)
         } else {
-            self.fallback
-                .dispatch_js_event_with_payload(node_var, event_name, payload)
+            Ok(())
         }
     }
 
@@ -185,9 +191,10 @@ impl JsEngineBackend for JscEngine {
                 "globalThis.__NG_NATIVE__.__dispatchAndDrain({node_var:?}, {event_name:?}, {payload_js})"
             );
             jsc.eval(&call).map_err(EngineError::ScriptSyntaxError)
+        } else if let Some(fallback) = &mut self.fallback {
+            fallback.dispatch_and_drain(node_var, event_name, payload)
         } else {
-            self.fallback
-                .dispatch_and_drain(node_var, event_name, payload)
+            Ok(String::new())
         }
     }
 
@@ -204,8 +211,10 @@ impl JsEngineBackend for JscEngine {
                 format!("globalThis.__NG_NATIVE__.__tickAndDrain({now_ms}, {completions_js})")
             };
             jsc.eval(&call).map_err(EngineError::ScriptSyntaxError)
+        } else if let Some(fallback) = &mut self.fallback {
+            fallback.tick_and_drain(now_ms, completions)
         } else {
-            self.fallback.tick_and_drain(now_ms, completions)
+            Ok(String::new())
         }
     }
 
@@ -213,8 +222,10 @@ impl JsEngineBackend for JscEngine {
         if let Some(jsc) = &self.jsc {
             jsc.eval("globalThis.__NG_NATIVE__.__drainQueue()")
                 .map_err(EngineError::ScriptSyntaxError)
+        } else if let Some(fallback) = &mut self.fallback {
+            fallback.drain_native_commands()
         } else {
-            self.fallback.drain_native_commands()
+            Ok(String::new())
         }
     }
 }

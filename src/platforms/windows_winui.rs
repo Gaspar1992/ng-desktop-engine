@@ -504,7 +504,8 @@ impl WinUiBackend {
             })
             .collect();
         for (root_id, default_w, default_h) in roots {
-            let solved = solve_scene_layout(&self.state, root_id, default_w, default_h);
+            let (win_w, win_h) = self.state.window_size_or(root_id, default_w, default_h);
+            let solved = solve_scene_layout(&self.state, root_id, win_w, win_h);
             self.layout_rects.extend(solved);
         }
     }
@@ -519,7 +520,9 @@ impl WinUiBackend {
             let mut merged = win32.pump_messages();
             merged.retain(|ev| self.state.get_node(ev.node).is_some());
             merged.extend(self.state.drain_events());
-            return coalesce_frame_events(merged);
+            let coalesced = coalesce_frame_events(merged);
+            self.state.record_window_resize_events(&coalesced);
+            return coalesced;
         }
         self.state.drain_events()
     }

@@ -275,9 +275,6 @@ fn attach_server_worker_if_present(
     js_runtime: &JsRuntime,
     quiet_stdout: bool,
 ) -> ServerWatchState {
-    if !js_runtime.js_engine().is_jit_enabled() {
-        return None;
-    }
     let server_path = resolve_server_bundle_path(cfg)?;
     let server_path_str = server_path.to_string_lossy().into_owned();
     let server_source = fs::read_to_string(&server_path).ok()?;
@@ -296,9 +293,7 @@ fn boot_application(
     engine: &mut RenderEngine<AnyPlatformBackend>,
     js_runtime: &mut JsRuntime,
 ) -> Result<BootedBundle, String> {
-    if let Some(js_path) = resolve_app_bundle_path(cfg)
-        && js_runtime.js_engine().is_jit_enabled()
-    {
+    if let Some(js_path) = resolve_app_bundle_path(cfg) {
         let path_str = js_path.to_string_lossy().into_owned();
         let js_source = fs::read_to_string(&js_path)
             .map_err(|e| format!("Failed reading '{path_str}': {e}"))?;

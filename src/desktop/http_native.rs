@@ -775,7 +775,7 @@ fn execute_curl_fallback(
         cmd.arg("-H").arg(format!("{k}: {v}"));
     }
     if let Some(body) = &request.body {
-        cmd.arg("-d").arg(body);
+        cmd.arg("--data-raw").arg(body);
     }
     cmd.arg(&request.url);
 

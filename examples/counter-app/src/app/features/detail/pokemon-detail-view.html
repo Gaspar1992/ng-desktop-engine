@@ -10,7 +10,7 @@
     <ng-button
       id="btn_toggle_fav"
       [class]="isFavorite() ? 'fav-active-action' : 'suggested-action'"
-      (click)="toggleFavorite.emit()"
+      (click)="toggleFavorite.emit(noteModel().note)"
     >
       {{ isFavorite() ? '★ En Favoritos' : '☆ Añadir a Favoritos' }}
     </ng-button>
@@ -56,8 +56,11 @@
 
       <ng-expander id="notes_expander" label="Notas de Campo de la Pokédex" expanded="true">
         <ng-box id="notes_box" class="panel-card" orientation="vertical" spacing="10px">
-          <ng-text-view id="poke_notes" editable="true" [formControl]="noteControl()" />
-          <ng-button id="btn_save_note" class="suggested-action" (click)="saveNote.emit()"
+          <ng-text-view id="poke_notes" editable="true" [formField]="noteForm.note" />
+          <ng-button
+            id="btn_save_note"
+            class="suggested-action"
+            (click)="saveNote.emit(noteModel().note)"
             >Guardar Nota</ng-button
           >
           @if (noteStatus()) {

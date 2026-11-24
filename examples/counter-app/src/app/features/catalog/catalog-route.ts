@@ -1,10 +1,11 @@
-import { Component, inject, OnInit } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, OnInit } from '@angular/core';
 import { Router } from '@ng-desktop/router';
 import { PokedexService } from '../../core/services/pokedex.service';
 import { CatalogView } from './catalog-view';
 
 @Component({
   selector: 'app-catalog-route',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [CatalogView],
   template: `
     <app-catalog-view

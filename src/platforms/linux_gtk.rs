@@ -137,6 +137,10 @@ pub(super) struct NativeGtkWidget {
     pub(super) prevent_close: bool,
     /// Dialog modality and transient parent metadata.
     pub(super) dialog: DialogConfig,
+    /// Explicit column count for `GtkGrid` parents (`columns` / `max-children`), and optional child cell (`col`/`row`).
+    pub(super) grid_columns: i32,
+    pub(super) grid_col: Option<i32>,
+    pub(super) grid_row: Option<i32>,
     /// Popover open state and optional anchor ID metadata.
     pub(super) popover: PopoverConfig,
     /// Tracks explicit visibility flag (notably to defer presenting hidden dialogs until visible=true).
@@ -502,6 +506,9 @@ impl GtkLinuxBackend {
                         attached_events: EventMask::NONE,
                         prevent_close: false,
                         dialog: DialogConfig::default(),
+                        grid_columns: 2,
+                        grid_col: None,
+                        grid_row: None,
                         popover: PopoverConfig::default(),
                         visibility: WidgetVisibility::Visible,
                     },
@@ -606,6 +613,9 @@ impl GtkLinuxBackend {
                     modal: kind == GtkWidgetType::Dialog,
                     transient_for: None,
                 },
+                grid_columns: 2,
+                grid_col: None,
+                grid_row: None,
                 popover: PopoverConfig::default(),
                 visibility: WidgetVisibility::Visible,
             },
@@ -896,6 +906,22 @@ impl GtkLinuxBackend {
         gtk.paned_set_end_child(p_h, end);
     }
 
+    fn resolve_grid_cell(&self, parent: NodeId, child: NodeId, fallback_idx: i32) -> (i32, i32) {
+        let cols = self
+            .widgets
+            .get(&parent)
+            .map_or(2, |w| w.grid_columns)
+            .max(1);
+        let child_w = self.widgets.get(&child);
+        let col = child_w
+            .and_then(|w| w.grid_col)
+            .unwrap_or(fallback_idx % cols);
+        let row = child_w
+            .and_then(|w| w.grid_row)
+            .unwrap_or(fallback_idx / cols);
+        (col, row)
+    }
+
     fn apply_append_child(&mut self, parent: NodeId, child: NodeId) {
         self.parent_of.insert(child, parent);
         let (Some(parent_w), Some(child_w)) = (self.widgets.get(&parent), self.widgets.get(&child))
@@ -929,6 +955,15 @@ impl GtkLinuxBackend {
             return;
         }
         let child_index = i32::try_from(parent_w.children.len()).unwrap_or(0);
+        let grid_cell = if parent_kind == GtkWidgetType::Grid {
+            Some(self.resolve_grid_cell(parent, child, child_index))
+        } else {
+            None
+        };
+        let (Some(parent_w), Some(child_w)) = (self.widgets.get(&parent), self.widgets.get(&child))
+        else {
+            return;
+        };
         if let (Some(gtk), Some(p_h), Some(c_h)) = (&self.gtk, parent_w.handle, child_w.handle) {
             match parent_kind {
                 kind if kind.is_toplevel() => {
@@ -950,7 +985,8 @@ impl GtkLinuxBackend {
                 GtkWidgetType::Expander => gtk.set_expander_child(p_h, Some(c_h)),
                 GtkWidgetType::Clamp => gtk.set_clamp_child(p_h, Some(c_h)),
                 GtkWidgetType::Grid => {
-                    gtk.grid_attach(p_h, c_h, child_index % 2, child_index / 2);
+                    let (col, row) = grid_cell.unwrap_or((child_index % 2, child_index / 2));
+                    gtk.grid_attach(p_h, c_h, col, row);
                 }
                 _ => {}
             }
@@ -1023,6 +1059,16 @@ impl GtkLinuxBackend {
             total_real_children
         };
 
+        let grid_cell = if parent_kind == GtkWidgetType::Grid {
+            Some(self.resolve_grid_cell(parent, child, target_idx))
+        } else {
+            None
+        };
+        let (Some(parent_w), Some(child_w)) = (self.widgets.get(&parent), self.widgets.get(&child))
+        else {
+            return;
+        };
+
         if parent_kind != GtkWidgetType::Paned
             && let (Some(gtk), Some(c_h), Some(p_h)) = (&self.gtk, child_w.handle, parent_w.handle)
         {
@@ -1035,6 +1081,7 @@ impl GtkLinuxBackend {
                 ref_child.is_some(),
                 prev_real_sibling,
                 target_idx,
+                grid_cell,
                 parent_w.children.contains(&child),
             );
         }
@@ -1064,6 +1111,7 @@ impl GtkLinuxBackend {
         has_ref: bool,
         prev_real_sibling: Option<GtkHandle>,
         target_idx: i32,
+        grid_cell: Option<(i32, i32)>,
         is_existing_child: bool,
     ) {
         match parent_kind {
@@ -1106,7 +1154,10 @@ impl GtkLinuxBackend {
                 }
             }
             GtkWidgetType::Popover => gtk.set_popover_child(p_h, Some(c_h)),
-            GtkWidgetType::Grid => gtk.grid_attach(p_h, c_h, target_idx % 2, target_idx / 2),
+            GtkWidgetType::Grid => {
+                let (col, row) = grid_cell.unwrap_or((target_idx % 2, target_idx / 2));
+                gtk.grid_attach(p_h, c_h, col, row);
+            }
             GtkWidgetType::Stack => gtk.stack_add_named(p_h, c_h, &format!("page_{target_idx}")),
             _ => {}
         }

@@ -11,20 +11,15 @@
     >
       <ng-box id="search_bar" class="toolbar-card" orientation="horizontal" spacing="10px">
         <ng-search-entry
+          #searchEntry
           id="search_entry"
           hexpand="true"
           placeholder="Buscar Pokémon por nombre o N.º (ej. bul, pika, 25)..."
-          [formControl]="searchControl"
-          (cancel)="searchControl.setValue('')"
+          [formField]="filterForm.query"
+          (cancel)="clearSearch()"
         />
-        <ng-spin-button
-          id="poke_id_spin"
-          min="1"
-          max="1025"
-          step="1"
-          [formControl]="spinIdControl"
-        />
-        <ng-switch id="sw_filter_favorites" [formControl]="favoritesOnlyControl" />
+        <ng-spin-button id="poke_id_spin" step="1" [formField]="filterForm.pokeId" />
+        <ng-switch id="sw_filter_favorites" [formField]="filterForm.favoritesOnly" />
         <ng-button
           id="btn_filter_favorites"
           class="secondary-action"

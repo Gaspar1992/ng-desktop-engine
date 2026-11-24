@@ -1,9 +1,10 @@
-import { Component, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import { NATIVE_UI_DIRECTIVES } from '@ng-desktop/platform';
 import type { PokedexCatalogCard } from '../../core/services/pokedex.service';
 
 @Component({
   selector: 'app-catalog-view',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NATIVE_UI_DIRECTIVES],
   templateUrl: './catalog-view.html',
   styleUrl: './catalog-view.css',

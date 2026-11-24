@@ -3,8 +3,11 @@
 use std::collections::HashMap;
 use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
+
+static ATOMIC_WRITE_SEQ: AtomicU64 = AtomicU64::new(1);
 
 /// Cross-platform OS kernel file-watcher backend identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -562,7 +565,7 @@ impl NativeFsManager {
         PathBuf::from(root).join(&self.app_id)
     }
 
-    /// Resolves a relative path inside an XDG directory while rejecting path traversal (`..`).
+    /// Resolves a relative path inside an XDG directory while rejecting path traversal (`..`) and root/prefix components.
     pub fn resolve_xdg_path(&self, kind: XdgDirKind, rel_path: &str) -> Result<PathBuf, String> {
         let trimmed = rel_path.trim().trim_start_matches(['/', '\\']);
         if trimmed.is_empty() {
@@ -572,7 +575,7 @@ impl NativeFsManager {
         for comp in candidate.components() {
             if matches!(
                 comp,
-                std::path::Component::ParentDir | std::path::Component::RootDir
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
             ) {
                 return Err(format!(
                     "Path traversal rejected in XDG relative path: '{rel_path}'"
@@ -582,11 +585,58 @@ impl NativeFsManager {
         Ok(self.base_xdg_dir(kind).join(candidate))
     }
 
+    /// Returns `true` when `candidate` resolves inside one of the app's XDG Config/Data/Cache sandboxes.
+    #[must_use]
+    pub fn is_within_xdg_sandbox(&self, candidate: &Path) -> bool {
+        let Some(norm_candidate) = Self::normalize_for_sandbox(candidate) else {
+            return false;
+        };
+        [XdgDirKind::Config, XdgDirKind::Data, XdgDirKind::Cache]
+            .into_iter()
+            .any(|kind| {
+                Self::normalize_for_sandbox(&self.base_xdg_dir(kind))
+                    .is_some_and(|base| norm_candidate.starts_with(&base))
+            })
+    }
+
+    fn normalize_for_sandbox(path: &Path) -> Option<PathBuf> {
+        let abs = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            env::current_dir().ok()?.join(path)
+        };
+        let mut clean = PathBuf::new();
+        for comp in abs.components() {
+            match comp {
+                Component::ParentDir => return None,
+                Component::CurDir => {}
+                other => clean.push(other.as_os_str()),
+            }
+        }
+        let mut existing = clean.as_path();
+        let mut tail: Vec<&std::ffi::OsStr> = Vec::new();
+        while !existing.exists() {
+            let Some(name) = existing.file_name() else {
+                break;
+            };
+            tail.push(name);
+            let Some(parent) = existing.parent() else {
+                break;
+            };
+            existing = parent;
+        }
+        let mut resolved = fs::canonicalize(existing).unwrap_or_else(|_| existing.to_path_buf());
+        for segment in tail.into_iter().rev() {
+            resolved.push(segment);
+        }
+        Some(resolved)
+    }
+
     pub fn read_text(&self, path: &Path) -> Result<String, String> {
         fs::read_to_string(path).map_err(|e| format!("Failed to read '{}': {e}", path.display()))
     }
 
-    /// Atomically writes `content` to `path` via a sibling `.tmp.<pid>` file + rename.
+    /// Atomically writes `content` to `path` via a unique sibling `.tmp.<pid>.<seq>` file + rename.
     pub fn write_text_atomic(&mut self, path: &Path, content: &str) -> Result<(), String> {
         if let Some(parent) = path.parent()
             && !parent.as_os_str().is_empty()
@@ -595,15 +645,21 @@ impl NativeFsManager {
                 .map_err(|e| format!("Failed to create dir '{}': {e}", parent.display()))?;
         }
         let pid = std::process::id();
+        let seq = ATOMIC_WRITE_SEQ.fetch_add(1, Ordering::Relaxed);
         let file_name = path
             .file_name()
             .and_then(|s| s.to_str())
             .unwrap_or("atomic");
-        let tmp_path = path.with_file_name(format!(".{file_name}.tmp.{pid}"));
+        let tmp_path = path.with_file_name(format!(".{file_name}.tmp.{pid}.{seq}"));
         fs::write(&tmp_path, content)
             .map_err(|e| format!("Failed to write temp file '{}': {e}", tmp_path.display()))?;
-        fs::rename(&tmp_path, path)
-            .map_err(|e| format!("Failed to rename temp file to '{}': {e}", path.display()))?;
+        if let Err(e) = fs::rename(&tmp_path, path) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(format!(
+                "Failed to rename temp file to '{}': {e}",
+                path.display()
+            ));
+        }
 
         if let Some(state) = self.watched_files.get_mut(path) {
             state.pending_atomic_change = true;
