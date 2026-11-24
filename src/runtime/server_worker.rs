@@ -478,6 +478,7 @@ impl NativeServerWorker {
         }
 
         let deadline = Instant::now() + Duration::from_secs(30);
+        let mut idle_pumps: u32 = 0;
         loop {
             if let Some(payload) = Self::take_resolved_payload(resolve_slot, request_id) {
                 return payload;
@@ -495,8 +496,31 @@ impl NativeServerWorker {
                 if let Some(payload) = Self::take_resolved_payload(resolve_slot, request_id) {
                     return payload;
                 }
-                break;
+                if idle_pumps >= 64 {
+                    break;
+                }
+                idle_pumps += 1;
+                let _ = jsc.eval("Promise.resolve(); globalThis.__tickServerTimers();");
+                if let Some(payload) = Self::take_resolved_payload(resolve_slot, request_id) {
+                    return payload;
+                }
+                if let Ok(guard) = resolve_slot.0.lock() {
+                    let wait_dur = Duration::from_millis(1).min(remaining);
+                    let (mut after_wait, _) = resolve_slot
+                        .1
+                        .wait_timeout(guard, wait_dur)
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    if after_wait
+                        .as_ref()
+                        .is_some_and(|(rid, _)| *rid == request_id)
+                        && let Some((_, payload)) = after_wait.take()
+                    {
+                        return payload;
+                    }
+                }
+                continue;
             }
+            idle_pumps = 0;
             if let Ok(guard) = resolve_slot.0.lock() {
                 let wait_dur = Duration::from_millis(u64::try_from(delay_ms.max(1)).unwrap_or(1))
                     .min(remaining);
