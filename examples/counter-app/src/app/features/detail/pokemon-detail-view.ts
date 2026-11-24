@@ -1,5 +1,4 @@
 import {
-  ChangeDetectionStrategy,
   Component,
   computed,
   effect,
@@ -19,7 +18,6 @@ import { TypeBadge } from '../../shared/ui/type-badge/type-badge';
 
 @Component({
   selector: 'app-pokemon-detail-view',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NATIVE_SIGNAL_FORM_DIRECTIVES, NATIVE_UI_DIRECTIVES, PokemonCard, TypeBadge, StatMeter],
   templateUrl: './pokemon-detail-view.html',
   styleUrl: './pokemon-detail-view.css',

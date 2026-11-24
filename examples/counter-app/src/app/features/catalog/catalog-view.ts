@@ -1,11 +1,10 @@
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
-import { NATIVE_UI_DIRECTIVES } from '@ng-desktop/platform';
+import { Component, input, output } from '@angular/core';
+import { NATIVE_UI_DIRECTIVES, NativeVirtualGridComponent } from '@ng-desktop/platform';
 import type { PokedexCatalogCard } from '../../core/services/pokedex.service';
 
 @Component({
   selector: 'app-catalog-view',
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [NATIVE_UI_DIRECTIVES],
+  imports: [NATIVE_UI_DIRECTIVES, NativeVirtualGridComponent],
   templateUrl: './catalog-view.html',
   styleUrl: './catalog-view.css',
 })
@@ -17,4 +16,6 @@ export class CatalogView {
 
   readonly selectPokemon = output<number>();
   readonly loadMore = output<void>();
+
+  readonly trackByPokemonId = (_index: number, poke: PokedexCatalogCard): number => poke.id;
 }

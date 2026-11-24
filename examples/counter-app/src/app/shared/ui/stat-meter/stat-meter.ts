@@ -1,9 +1,8 @@
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { Component, input } from '@angular/core';
 import { NATIVE_UI_DIRECTIVES } from '@ng-desktop/platform';
 
 @Component({
   selector: 'app-stat-meter',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NATIVE_UI_DIRECTIVES],
   templateUrl: './stat-meter.html',
   styleUrl: './stat-meter.css',

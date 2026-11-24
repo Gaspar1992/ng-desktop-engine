@@ -1,9 +1,8 @@
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { Component, input } from '@angular/core';
 import { NATIVE_UI_DIRECTIVES } from '@ng-desktop/platform';
 
 @Component({
   selector: 'app-pokemon-card',
-  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [NATIVE_UI_DIRECTIVES],
   templateUrl: './pokemon-card.html',
   styleUrl: './pokemon-card.css',

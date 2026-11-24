@@ -173,6 +173,12 @@ export class NativeElementDirective {
   @Input('drop-target') set dropTarget(val: NativeBoolInput) {
     syncNativeAttr(this.renderer, this.el, 'drop-target', val);
   }
+  @Input() set col(val: NativeNumberInput) {
+    syncNativeAttr(this.renderer, this.el, 'col', val);
+  }
+  @Input() set row(val: NativeNumberInput) {
+    syncNativeAttr(this.renderer, this.el, 'row', val);
+  }
 }
 
 /**
@@ -262,6 +268,9 @@ export class NativeContainerDirective {
   }
   @Input('max-per-row') set maxPerRow(val: NativeNumberInput) {
     syncNativeAttr(this.renderer, this.el, 'max-per-row', val);
+  }
+  @Input() set columns(val: NativeNumberInput) {
+    syncNativeAttr(this.renderer, this.el, 'columns', val);
   }
   @Input() set homogeneous(val: NativeBoolInput) {
     syncNativeAttr(this.renderer, this.el, 'homogeneous', val);

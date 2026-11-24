@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { inject, Injectable, signal } from '@angular/core';
+import { computed, inject, Injectable, signal } from '@angular/core';
 import {
   NativeComputeService,
   NativeFileSystemService,
@@ -56,6 +56,18 @@ export class PokedexService {
   readonly draftNote = signal('');
   readonly noteStatus = signal('');
   readonly isOnline = this.network.isOnline;
+
+  readonly displayedCatalogItems = computed<PokedexCatalogCard[]>(() => {
+    const items = this.catalogItems();
+    const favsOnly = this.favoritesOnly();
+    const favSet = this.favoriteIds();
+    const base = favsOnly ? items.filter((item) => favSet.has(item.id)) : items;
+    const query = this.searchQuery().trim();
+    if (!query) {
+      return base;
+    }
+    return this.filterCatalog(base, query, base.length);
+  });
 
   private catalogSeq = 0;
   private detailSeq = 0;
