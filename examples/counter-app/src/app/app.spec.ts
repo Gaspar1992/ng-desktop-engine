@@ -2,8 +2,10 @@ import { TestBed } from '@angular/core/testing';
 import { NativeDesktopService } from '@ng-desktop/desktop';
 import {
   ensureNgNativeBridge,
+  getNativeActiveElement,
   NativeTitleService,
   provideNativePlatform,
+  setNativeActiveElement,
 } from '@ng-desktop/platform';
 import { NativePlatformLocation, Router } from '@ng-desktop/router';
 import { App } from './app';
@@ -96,6 +98,7 @@ describe('App (100% Angular + @ng-desktop/server API)', () => {
       JSON.stringify({ saved: true, id: 25, note: 'Nota inicial' }),
     );
 
+    setNativeActiveElement(null);
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [App],
@@ -128,7 +131,7 @@ describe('App (100% Angular + @ng-desktop/server API)', () => {
     expect(filtered.map((item) => item.id)).toEqual([25]);
   });
 
-  it('opens detail view via @ng-desktop/router, binds @ng-desktop/forms, toggles favorites, and returns to list', async () => {
+  it('opens detail view via @ng-desktop/router, binds Signal Forms ([formField]), toggles favorites, and returns to list', async () => {
     const fixture = TestBed.createComponent(App);
     const app = fixture.componentInstance;
     const service = TestBed.inject(PokedexService);
@@ -136,25 +139,32 @@ describe('App (100% Angular + @ng-desktop/server API)', () => {
     const location = TestBed.inject(NativePlatformLocation);
     fixture.detectChanges();
 
-    app.searchControl.setValue('pika');
+    app.filterForm.query().value.set('pika');
+    fixture.detectChanges();
     await Promise.resolve();
     expect(service.searchQuery()).toBe('pika');
 
-    app.favoritesOnlyControl.setValue(true);
+    app.filterForm.favoritesOnly().value.set(true);
+    fixture.detectChanges();
     await Promise.resolve();
     expect(service.favoritesOnly()).toBe(true);
-    app.favoritesOnlyControl.setValue(false, { emitEvent: false });
+    app.filterModel.update((prev) => ({ ...prev, favoritesOnly: false }));
+    fixture.detectChanges();
     await service.setFavoritesOnly(false);
 
     await app.openPokemon(25);
+    fixture.detectChanges();
+    await Promise.resolve();
+    await Promise.resolve();
+    fixture.detectChanges();
     expect(location.pathname).toBe('/pokemon/25');
     expect(service.viewMode()).toBe('detail');
     expect(service.selectedDetail()?.displayName).toBe('Pikachu');
-    expect(app.spinIdControl.value).toBe(25);
+    expect(app.filterModel().pokeId).toBe(25);
     expect(titleService.getTitle()).toBe('Pokédex Nacional — N.º 0025 Pikachu');
 
-    app.noteControl.setValue('Nota Reactive Form');
-    expect(app.noteControl.value).toBe('Nota Reactive Form');
+    service.draftNote.set('Nota Signal Form');
+    expect(service.draftNote()).toBe('Nota Signal Form');
 
     const bridge = ensureNgNativeBridge();
     bridge.registerHttpEndpoint(
@@ -180,17 +190,24 @@ describe('App (100% Angular + @ng-desktop/server API)', () => {
     expect(service.isFavorite(25)).toBe(false);
 
     await app.backToList();
+    fixture.detectChanges();
+    await Promise.resolve();
+    await Promise.resolve();
     expect(location.pathname).toBe('/pokemon');
     expect(service.viewMode()).toBe('list');
     expect(titleService.getTitle()).toBe('Pokédex Nacional');
 
     location.back();
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    fixture.detectChanges();
     await Promise.resolve();
     await Promise.resolve();
     expect(location.pathname).toBe('/pokemon/25');
     expect(service.viewMode()).toBe('detail');
 
     location.forward();
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    fixture.detectChanges();
     await Promise.resolve();
     await Promise.resolve();
     expect(location.pathname).toBe('/pokemon');
@@ -226,15 +243,20 @@ describe('App (100% Angular + @ng-desktop/server API)', () => {
     expect(desktop.triggerShortcut('<Control>b')).toBe(true);
     expect(service.favoritesOnly()).toBe(false);
 
-    app.searchControl.setValue('pika');
-    await Promise.resolve();
+    app.filterForm.query().value.set('pika');
+    fixture.detectChanges();
     expect(desktop.triggerShortcut('<Control>f')).toBe(true);
-    expect(app.searchControl.value).toBe('');
+    expect(getNativeActiveElement()?.getAttribute('id')).toBe('search_entry');
+    expect(app.filterModel().query).toBe('pika');
 
     await app.openPokemon(25);
+    fixture.detectChanges();
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
     expect(service.viewMode()).toBe('detail');
     expect(desktop.triggerShortcut('Escape')).toBe(true);
     await new Promise<void>((resolve) => setTimeout(resolve, 25));
+    fixture.detectChanges();
+    await Promise.resolve();
     expect(service.viewMode()).toBe('list');
   });
 

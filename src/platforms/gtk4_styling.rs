@@ -316,6 +316,17 @@ impl GtkLinuxBackend {
                 "scroll-anchor" => {
                     w.scroll_anchor = Some(value.to_string());
                 }
+                "columns" | "max-children" if w.kind == GtkWidgetType::Grid => {
+                    if let Ok(cols) = value.trim().parse::<i32>() {
+                        w.grid_columns = cols.max(1);
+                    }
+                }
+                "col" | "column" => {
+                    w.grid_col = value.trim().parse::<i32>().ok().filter(|&c| c >= 0);
+                }
+                "row" => {
+                    w.grid_row = value.trim().parse::<i32>().ok().filter(|&r| r >= 0);
+                }
                 _ => {}
             }
         }

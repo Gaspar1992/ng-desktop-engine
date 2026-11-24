@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideNativePlatform } from '@ng-desktop/platform';
 import { PokemonCard } from './pokemon-card';
 
 describe('PokemonCard', () => {
@@ -6,8 +7,10 @@ describe('PokemonCard', () => {
   let component: PokemonCard;
 
   beforeEach(async () => {
+    TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [PokemonCard],
+      providers: [provideNativePlatform()],
     }).compileComponents();
 
     fixture = TestBed.createComponent(PokemonCard);

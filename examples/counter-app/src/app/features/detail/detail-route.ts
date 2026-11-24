@@ -1,10 +1,11 @@
-import { Component, effect, inject, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, effect, inject, input } from '@angular/core';
 import { Router } from '@ng-desktop/router';
 import { PokedexService } from '../../core/services/pokedex.service';
 import { PokemonDetailView } from './pokemon-detail-view';
 
 @Component({
   selector: 'app-detail-route',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [PokemonDetailView],
   template: `
     @if (pokedex.selectedDetail(); as detail) {
@@ -12,12 +13,13 @@ import { PokemonDetailView } from './pokemon-detail-view';
         [detail]="detail"
         [isFavorite]="pokedex.isFavorite(detail.id)"
         [noteStatus]="pokedex.noteStatus()"
-        [noteControl]="pokedex.noteControl"
+        [note]="pokedex.draftNote()"
+        (noteChange)="pokedex.draftNote.set($event)"
         (back)="backToList()"
         (previous)="previousPokemon()"
         (next)="nextPokemon()"
-        (toggleFavorite)="toggleCurrentFavorite()"
-        (saveNote)="saveNote()"
+        (toggleFavorite)="toggleCurrentFavorite($event)"
+        (saveNote)="saveNote($event)"
       />
     }
   `,
@@ -59,23 +61,19 @@ export class DetailRouteComponent {
     void this.router.navigate(['/pokemon', next]);
   }
 
-  toggleCurrentFavorite(): void {
+  toggleCurrentFavorite(draftNote: string): void {
     const detail = this.pokedex.selectedDetail();
     if (!detail) {
       return;
     }
-    void this.pokedex.toggleFavorite(
-      detail.id,
-      detail.displayName,
-      this.pokedex.noteControl.getRawValue(),
-    );
+    void this.pokedex.toggleFavorite(detail.id, detail.displayName, draftNote);
   }
 
-  saveNote(): void {
+  saveNote(draftNote: string): void {
     const detail = this.pokedex.selectedDetail();
     if (!detail) {
       return;
     }
-    void this.pokedex.saveFieldNote(detail.id, this.pokedex.noteControl.getRawValue());
+    void this.pokedex.saveFieldNote(detail.id, draftNote);
   }
 }

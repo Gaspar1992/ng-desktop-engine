@@ -29,18 +29,33 @@ pub(super) fn dispatch_host_bridge_call(
     host_slot: &HostBridgeSlot,
 ) -> String {
     match kind {
-        JscCallbackKind::Http | JscCallbackKind::HttpConfig => {
-            if let Ok(slot_guard) = http_slot.lock()
-                && let Ok(mut engine) = slot_guard.lock()
+        JscCallbackKind::Http => {
+            if let Some(bridge) = host_slot.lock().ok().and_then(|g| g.clone())
+                && !bridge.allows_network()
             {
-                if matches!(kind, JscCallbackKind::HttpConfig) {
-                    engine.apply_bridge_config_json(payload)
-                } else {
-                    engine.execute_bridge_json(payload)
-                }
-            } else {
-                String::from(r#"{"status":500,"statusText":"Engine Lock Error","body":""}"#)
+                return String::from(
+                    r#"{"status":403,"statusText":"Forbidden","body":"Permission denied: network"}"#,
+                );
             }
+            let Ok(engine_arc) = http_slot.lock().map(|guard| Arc::clone(&*guard)) else {
+                return String::from(
+                    r#"{"status":500,"statusText":"Engine Lock Error","body":""}"#,
+                );
+            };
+            NativeHttpEngine::execute_bridge_detached(&engine_arc, payload)
+        }
+        JscCallbackKind::HttpConfig => {
+            let Ok(engine_arc) = http_slot.lock().map(|guard| Arc::clone(&*guard)) else {
+                return String::from(
+                    r#"{"status":500,"statusText":"Engine Lock Error","body":""}"#,
+                );
+            };
+            let Ok(mut engine) = engine_arc.lock() else {
+                return String::from(
+                    r#"{"status":500,"statusText":"Engine Lock Error","body":""}"#,
+                );
+            };
+            engine.apply_bridge_config_json(payload)
         }
         JscCallbackKind::HostService => {
             let bridge = host_slot.lock().ok().and_then(|g| g.clone());
@@ -720,5 +735,52 @@ mod tests {
 
         let err = sys.eval("function () { broken syntax !!!");
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn jsc_http_callback_enforces_network_permission_without_holding_slot_lock() {
+        let http_engine = Arc::new(Mutex::new(NativeHttpEngine::new()));
+        http_engine.lock().unwrap().register_http_endpoint(
+            "GET",
+            "https://capi.ng-native.test/blocked",
+            200,
+            r#"{"ok":true}"#,
+        );
+        let http_slot: HttpEngineSlot = Arc::new(Mutex::new(http_engine));
+
+        let blocked_desktop = DesktopServices::with_app_config(
+            "capi-net-blocked",
+            AppPermissions {
+                network: false,
+                full_system_access: false,
+                ..AppPermissions::minimal()
+            },
+        );
+        let blocked_host: HostBridgeSlot = Arc::new(Mutex::new(Some(Arc::new(HostBridge::new(
+            &blocked_desktop,
+        )))));
+        let denied = dispatch_host_bridge_call(
+            JscCallbackKind::Http,
+            r#"{"method":"GET","url":"https://capi.ng-native.test/blocked"}"#,
+            &http_slot,
+            &blocked_host,
+        );
+        assert!(denied.contains("403"), "{denied}");
+        assert!(denied.contains("Permission denied: network"), "{denied}");
+
+        let allowed_desktop = DesktopServices::with_app_config(
+            "capi-net-allowed",
+            AppPermissions::allow_all_sandboxed(),
+        );
+        let allowed_host: HostBridgeSlot = Arc::new(Mutex::new(Some(Arc::new(HostBridge::new(
+            &allowed_desktop,
+        )))));
+        let ok = dispatch_host_bridge_call(
+            JscCallbackKind::Http,
+            r#"{"method":"GET","url":"https://capi.ng-native.test/blocked"}"#,
+            &http_slot,
+            &allowed_host,
+        );
+        assert!(ok.contains(r#""status":200"#), "{ok}");
     }
 }

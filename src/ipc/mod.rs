@@ -1,5 +1,6 @@
 pub mod test_harness;
 
+use crate::desktop::http_codec::{escape_json, extract_json_string};
 use crate::engine::EngineError;
 use std::collections::HashMap;
 use std::fs;
@@ -8,6 +9,9 @@ use std::net::{TcpListener, TcpStream};
 #[cfg(unix)]
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
+
+/// Maximum permitted size (16 MiB) for a single newline-delimited HMR IPC frame.
+const MAX_IPC_FRAME_BYTES: usize = 16 * 1024 * 1024;
 
 /// Strongly-typed Hot Module Replacement (HMR) IPC message.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -119,7 +123,7 @@ pub struct HmrIpcServer {
     socket_path: PathBuf,
     listener: HmrListener,
     clients: HashMap<ClientId, HmrStream>,
-    in_buffers: HashMap<ClientId, String>,
+    in_buffers: HashMap<ClientId, Vec<u8>>,
     next_client_id: ClientId,
 }
 
@@ -192,7 +196,7 @@ impl HmrIpcServer {
             let cid = self.next_client_id;
             self.next_client_id += 1;
             self.clients.insert(cid, stream);
-            self.in_buffers.insert(cid, String::new());
+            self.in_buffers.insert(cid, Vec::new());
         }
 
         let mut disconnected = Vec::new();
@@ -206,10 +210,12 @@ impl HmrIpcServer {
                         break;
                     }
                     Ok(n) => {
-                        if let Ok(chunk) = std::str::from_utf8(&read_buf[..n]) {
-                            let buf = self.in_buffers.entry(cid).or_default();
-                            buf.push_str(chunk);
+                        let buf = self.in_buffers.entry(cid).or_default();
+                        if buf.len().saturating_add(n) > MAX_IPC_FRAME_BYTES {
+                            disconnected.push(cid);
+                            break;
                         }
+                        buf.extend_from_slice(&read_buf[..n]);
                     }
                     Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
                     Err(_) => {
@@ -220,11 +226,12 @@ impl HmrIpcServer {
             }
 
             if let Some(buf) = self.in_buffers.get_mut(&cid) {
-                while let Some(pos) = buf.find('\n') {
-                    let line = buf[..pos].trim().to_string();
-                    buf.drain(..=pos);
+                while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
+                    let frame: Vec<u8> = buf.drain(..=pos).collect();
+                    let decoded = String::from_utf8_lossy(&frame[..pos]);
+                    let line = decoded.trim();
                     if !line.is_empty()
-                        && let Some(msg) = parse_hmr_json(&line)
+                        && let Some(msg) = parse_hmr_json(line)
                     {
                         messages.push((cid, msg));
                     }
@@ -342,101 +349,44 @@ impl HmrIpcClient {
     }
 
     pub fn read_response(&mut self) -> Result<String, EngineError> {
-        let mut line = String::new();
+        let mut bytes = Vec::new();
         let mut byte = [0u8; 1];
         while self.stream.read_exact(&mut byte).is_ok() {
             if byte[0] == b'\n' {
                 break;
             }
-            line.push(byte[0] as char);
+            if bytes.len() >= MAX_IPC_FRAME_BYTES {
+                return Err(EngineError::ConfigError(String::from(
+                    "HMR response exceeded maximum IPC frame size",
+                )));
+            }
+            bytes.push(byte[0]);
         }
-        Ok(line)
+        String::from_utf8(bytes)
+            .map_err(|e| EngineError::ConfigError(format!("Invalid UTF-8 in HMR response: {e}")))
     }
 }
 
 pub fn parse_hmr_json(line: &str) -> Option<HmrMessage> {
-    let msg_type = extract_json_value(line, "type")?;
+    let msg_type = extract_json_string(line, "type")?;
     match msg_type.as_str() {
         "reload" => {
-            let script = extract_json_value(line, "script").unwrap_or_default();
+            let script = extract_json_string(line, "script").unwrap_or_default();
             Some(HmrMessage::Reload { script })
         }
         "reload_server" => {
-            let bundle_js = extract_json_value(line, "bundle")
-                .or_else(|| extract_json_value(line, "script"))
+            let bundle_js = extract_json_string(line, "bundle")
+                .or_else(|| extract_json_string(line, "script"))
                 .unwrap_or_default();
             Some(HmrMessage::ReloadServer { bundle_js })
         }
         "eval" => {
-            let code = extract_json_value(line, "code").unwrap_or_default();
+            let code = extract_json_string(line, "code").unwrap_or_default();
             Some(HmrMessage::Eval { code })
         }
         "ping" => Some(HmrMessage::Ping),
         _ => None,
     }
-}
-
-fn extract_json_value(json: &str, key: &str) -> Option<String> {
-    let pattern = format!("\"{key}\"");
-    let start = json.find(&pattern)? + pattern.len();
-    let rest = &json[start..];
-    let colon = rest.find(':')? + 1;
-    let after_colon = rest[colon..].trim_start();
-    if !after_colon.starts_with('"') {
-        return None;
-    }
-    let after_quote = &after_colon[1..];
-    let mut end_idx = 0;
-    let mut escaped = false;
-    for (i, c) in after_quote.char_indices() {
-        if escaped {
-            escaped = false;
-        } else if c == '\\' {
-            escaped = true;
-        } else if c == '"' {
-            end_idx = i;
-            break;
-        }
-    }
-    Some(unescape_json(&after_quote[..end_idx]))
-}
-
-fn escape_json(raw: &str) -> String {
-    let mut out = String::with_capacity(raw.len() + 16);
-    for c in raw.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            other => out.push(other),
-        }
-    }
-    out
-}
-
-fn unescape_json(raw: &str) -> String {
-    let mut out = String::with_capacity(raw.len());
-    let mut chars = raw.chars();
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            match chars.next() {
-                Some('n') => out.push('\n'),
-                Some('r') => out.push('\r'),
-                Some('t') => out.push('\t'),
-                Some('"') => out.push('"'),
-                Some('\\') | None => out.push('\\'),
-                Some(other) => {
-                    out.push('\\');
-                    out.push(other);
-                }
-            }
-        } else {
-            out.push(c);
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -530,5 +480,61 @@ mod tests {
         assert!(pointer.trim().starts_with("tcp://127.0.0.1:"), "{pointer}");
         drop(server);
         assert!(!pointer_path.exists());
+    }
+
+    #[test]
+    fn roundtrips_non_ascii_utf8_split_writes_and_responses() {
+        let socket_path = std::env::temp_dir().join(format!(
+            "ng-native-test-hmr-utf8-{}.tcp",
+            std::process::id()
+        ));
+        let mut server = HmrIpcServer::bind(&socket_path).unwrap();
+        let mut client = HmrIpcClient::connect(&socket_path).unwrap();
+
+        // Send a multi-byte UTF-8 eval payload split mid-codepoint across writes
+        let code = r#"console.log("Pokédex ⚡ — áéíóú 🚀");"#;
+        let escaped = escape_json(code);
+        let full_frame = format!(r#"{{"type":"eval","code":"{escaped}"}}"#) + "\n";
+        let bytes = full_frame.as_bytes();
+        // Cut right inside a multi-byte character if present so server must buffer raw bytes
+        let split_at = bytes
+            .iter()
+            .position(|&b| b >= 0x80)
+            .map_or(bytes.len() / 2, |pos| pos + 1);
+        client.stream.write_all(&bytes[..split_at]).unwrap();
+        client.stream.flush().unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        assert_eq!(server.poll_messages(), Vec::new());
+
+        client.stream.write_all(&bytes[split_at..]).unwrap();
+        client.stream.flush().unwrap();
+
+        let mut msgs = Vec::new();
+        for _ in 0..20 {
+            msgs = server.poll_messages();
+            if !msgs.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(
+            msgs[0].1,
+            HmrMessage::Eval {
+                code: String::from(code),
+            }
+        );
+
+        server.send_response(
+            msgs[0].0,
+            &HmrResponse::EvalResult(String::from("Éxito ⚡")),
+        );
+        let resp = client.read_response().unwrap();
+        assert_eq!(
+            extract_json_string(&resp, "result").as_deref(),
+            Some("Éxito ⚡")
+        );
+
+        drop(server);
     }
 }

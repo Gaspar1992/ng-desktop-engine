@@ -254,6 +254,11 @@ impl HostBridge {
         granted || self.permissions.full_system_access
     }
 
+    #[must_use]
+    pub(crate) const fn allows_network(&self) -> bool {
+        self.has_permission(self.permissions.network)
+    }
+
     fn push_completion(
         queue: &Arc<Mutex<Vec<HostAsyncCompletion>>>,
         callback_id: u64,
@@ -546,7 +551,11 @@ impl HostBridge {
                 if Self::has_parent_dir(&path) {
                     return Self::err_json("Path traversal '..' is not allowed");
                 }
-                match fs_mgr.read_text(Path::new(&path)) {
+                let candidate = Path::new(&path);
+                if !fs_mgr.is_within_xdg_sandbox(candidate) {
+                    return Self::err_json("Permission denied: path is outside XDG sandbox");
+                }
+                match fs_mgr.read_text(candidate) {
                     Ok(content) => {
                         format!(r#"{{"ok":true,"content":"{}"}}"#, escape_json(&content))
                     }
@@ -561,8 +570,12 @@ impl HostBridge {
                 if Self::has_parent_dir(&path) {
                     return Self::err_json("Path traversal '..' is not allowed");
                 }
+                let candidate = Path::new(&path);
+                if !fs_mgr.is_within_xdg_sandbox(candidate) {
+                    return Self::err_json("Permission denied: path is outside XDG sandbox");
+                }
                 let content = extract_json_string(req_json, "content").unwrap_or_default();
-                match fs_mgr.write_text_atomic(Path::new(&path), &content) {
+                match fs_mgr.write_text_atomic(candidate, &content) {
                     Ok(()) => String::from(r#"{"ok":true}"#),
                     Err(e) => Self::err_json(&e),
                 }
@@ -572,7 +585,11 @@ impl HostBridge {
                 if Self::has_parent_dir(&path) {
                     return Self::err_json("Path traversal '..' is not allowed");
                 }
-                match fs_mgr.watch_file(Path::new(&path)) {
+                let candidate = Path::new(&path);
+                if !fs_mgr.is_within_xdg_sandbox(candidate) {
+                    return Self::err_json("Permission denied: path is outside XDG sandbox");
+                }
+                match fs_mgr.watch_file(candidate) {
                     Ok(()) => String::from(r#"{"ok":true}"#),
                     Err(e) => Self::err_json(&e),
                 }
@@ -994,6 +1011,26 @@ mod tests {
         let env_res = bridge.handle_service_call(r#"{"action":"systemEnv"}"#);
         assert!(env_res.contains(r#""ok":true"#));
         assert!(env_res.contains(&app_id));
+
+        let outside_read =
+            bridge.handle_service_call(r#"{"action":"fsReadText","path":"/etc/passwd"}"#);
+        assert!(
+            outside_read.contains("outside XDG sandbox"),
+            "{outside_read}"
+        );
+        let outside_write = bridge.handle_service_call(
+            r#"{"action":"fsWriteText","path":"/etc/ng_native_forbidden.txt","content":"nope"}"#,
+        );
+        assert!(
+            outside_write.contains("outside XDG sandbox"),
+            "{outside_write}"
+        );
+        let outside_watch =
+            bridge.handle_service_call(r#"{"action":"fsWatchFile","path":"/etc/passwd"}"#);
+        assert!(
+            outside_watch.contains("outside XDG sandbox"),
+            "{outside_watch}"
+        );
     }
 
     #[test]

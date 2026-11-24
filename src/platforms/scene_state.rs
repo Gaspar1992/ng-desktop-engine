@@ -29,6 +29,7 @@ pub struct NativeSceneState {
     nodes: HashMap<NodeId, NativeSceneNode>,
     styles: HashMap<StyleId, StyleRule>,
     window_icons: HashMap<NodeId, WindowIconAsset>,
+    window_sizes: RefCell<HashMap<NodeId, (i32, i32)>>,
     pending_events: RefCell<Vec<NativeEvent>>,
 }
 
@@ -74,7 +75,58 @@ impl NativeSceneState {
     }
 
     pub fn drain_events(&self) -> Vec<NativeEvent> {
-        coalesce_frame_events(std::mem::take(&mut *self.pending_events.borrow_mut()))
+        let events = coalesce_frame_events(std::mem::take(&mut *self.pending_events.borrow_mut()));
+        self.record_window_resize_events(&events);
+        events
+    }
+
+    pub fn record_window_resize_events(&self, events: &[NativeEvent]) {
+        for ev in events {
+            if ev.event_name == "resize"
+                && let crate::engine::EventPayload::Text(payload) = &ev.payload
+                && let (Some(w), Some(h)) = (
+                    Self::extract_positive_json_i32(payload, "width"),
+                    Self::extract_positive_json_i32(payload, "height"),
+                )
+            {
+                self.window_sizes.borrow_mut().insert(ev.node, (w, h));
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn window_size_or(&self, id: NodeId, default_w: i32, default_h: i32) -> (i32, i32) {
+        if let Some(&dims) = self.window_sizes.borrow().get(&id) {
+            return dims;
+        }
+        let Some(node) = self.nodes.get(&id) else {
+            return (default_w, default_h);
+        };
+        let w = node
+            .attributes
+            .get("width")
+            .and_then(|v| v.trim().trim_end_matches("px").parse::<i32>().ok())
+            .filter(|&v| v > 0)
+            .unwrap_or(default_w);
+        let h = node
+            .attributes
+            .get("height")
+            .and_then(|v| v.trim().trim_end_matches("px").parse::<i32>().ok())
+            .filter(|&v| v > 0)
+            .unwrap_or(default_h);
+        (w, h)
+    }
+
+    fn extract_positive_json_i32(json: &str, key: &str) -> Option<i32> {
+        let pattern = format!("\"{key}\"");
+        let after_key = json.find(&pattern)? + pattern.len();
+        let after_colon = json[after_key..].find(':')? + 1;
+        let digits: String = json[after_key + after_colon..]
+            .trim_start()
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect();
+        digits.parse::<i32>().ok().filter(|&v| v > 0)
     }
 
     pub fn parse_scroll_coords(raw: &str) -> Option<(i32, i32)> {
@@ -123,6 +175,20 @@ impl NativeSceneState {
             _ => {}
         }
         node.attributes.insert(key.to_string(), value.to_string());
+    }
+
+    fn insert_child_before(&mut self, parent: NodeId, child: NodeId, ref_child: Option<NodeId>) {
+        let Some(p) = self.nodes.get_mut(&parent) else {
+            return;
+        };
+        p.children.retain(|c| *c != child);
+        if let Some(r) = ref_child
+            && let Some(pos) = p.children.iter().position(|c| *c == r)
+        {
+            p.children.insert(pos, child);
+        } else {
+            p.children.push(child);
+        }
     }
 
     pub fn apply_command<F>(&mut self, cmd: &RenderCommand, comment_class: &'static str, map_tag: F)
@@ -207,18 +273,7 @@ impl NativeSceneState {
                 parent,
                 child,
                 ref_child,
-            } => {
-                if let Some(p) = self.nodes.get_mut(parent) {
-                    p.children.retain(|c| *c != *child);
-                    if let Some(r) = ref_child
-                        && let Some(pos) = p.children.iter().position(|c| *c == *r)
-                    {
-                        p.children.insert(pos, *child);
-                    } else {
-                        p.children.push(*child);
-                    }
-                }
-            }
+            } => self.insert_child_before(*parent, *child, *ref_child),
             RenderCommand::RemoveChild { parent, child } => {
                 if let Some(p) = self.nodes.get_mut(parent) {
                     p.children.retain(|c| *c != *child);
@@ -227,6 +282,7 @@ impl NativeSceneState {
             RenderCommand::DestroyWidget { id } => {
                 self.nodes.remove(id);
                 self.window_icons.remove(id);
+                self.window_sizes.borrow_mut().remove(id);
             }
         }
     }
@@ -322,5 +378,16 @@ mod tests {
         assert_eq!(state.style_count(), 1);
         assert_eq!(state.get_node(win).unwrap().children, vec![lbl, anchor]);
         assert_eq!(state.get_node(lbl).unwrap().style_classes, vec![style]);
+
+        state.push_event(NativeEvent {
+            node: win,
+            event_name: String::from("resize"),
+            payload: crate::engine::EventPayload::Text(String::from(
+                r#"{"width":1440,"height":900,"maximized":false}"#,
+            )),
+        });
+        let drained = state.drain_events();
+        assert_eq!(drained.len(), 1);
+        assert_eq!(state.window_size_or(win, 1020, 720), (1440, 900));
     }
 }

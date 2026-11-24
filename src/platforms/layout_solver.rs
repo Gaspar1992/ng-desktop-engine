@@ -162,8 +162,12 @@ fn default_intrinsic_size(node: &NativeSceneNode) -> (i32, i32) {
 }
 
 fn apply_style_rule(props: &mut EffectiveLayoutProps, rule: &StyleRule) {
-    props.padding = i32::from(rule.padding);
-    props.spacing = i32::from(rule.spacing);
+    if rule.padding > 0 {
+        props.padding = i32::from(rule.padding);
+    }
+    if rule.spacing > 0 {
+        props.spacing = i32::from(rule.spacing);
+    }
     if let Some(mw) = rule.min_width {
         props.min_width = i32::from(mw);
     }
@@ -196,13 +200,13 @@ fn apply_style_rule(props: &mut EffectiveLayoutProps, rule: &StyleRule) {
 fn apply_attr_override(props: &mut EffectiveLayoutProps, key: &str, val: &str) {
     match key {
         "padding" => props.padding = parse_px(val).unwrap_or(props.padding),
-        "spacing" => props.spacing = parse_px(val).unwrap_or(props.spacing),
+        "spacing" | "gap" => props.spacing = parse_px(val).unwrap_or(props.spacing),
         "margin" => props.margin = parse_px(val).unwrap_or(props.margin),
         "width" => props.width = parse_px(val),
         "height" => props.height = parse_px(val),
         "min-width" => props.min_width = parse_px(val).unwrap_or(props.min_width),
         "min-height" => props.min_height = parse_px(val).unwrap_or(props.min_height),
-        "max-width" => props.max_width = parse_px(val),
+        "max-width" | "max-size" | "maximum-size" => props.max_width = parse_px(val),
         "orientation" | "flex-direction" => {
             if let Some(axis) = parse_axis(val) {
                 props.orientation = Some(axis);
@@ -714,7 +718,7 @@ pub fn compute_parent_relative_bounds<S: std::hash::BuildHasher>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::RenderCommand;
+    use crate::engine::{RenderCommand, StyleId};
 
     const fn nid(index: usize) -> NodeId {
         NodeId {
@@ -1012,5 +1016,82 @@ mod tests {
                 height: 32,
             }
         );
+    }
+
+    #[test]
+    fn preserves_first_style_class_spacing_when_later_class_leaves_zero_and_supports_gap_max_size()
+    {
+        let mut state = NativeSceneState::new();
+        let root = nid(0);
+        let box_node = nid(1);
+        let a = nid(2);
+        let b = nid(3);
+
+        state.apply_command(
+            &RenderCommand::RegisterStyle {
+                style_id: StyleId(1),
+                rule: StyleRule {
+                    class_name: String::from("padded"),
+                    padding: 16,
+                    spacing: 10,
+                    ..StyleRule::default()
+                },
+            },
+            "AnchorComment",
+            |_| "NSView",
+        );
+        state.apply_command(
+            &RenderCommand::RegisterStyle {
+                style_id: StyleId(2),
+                rule: StyleRule {
+                    class_name: String::from("accent"),
+                    foreground: Some(String::from("#22c55e")),
+                    ..StyleRule::default()
+                },
+            },
+            "AnchorComment",
+            |_| "NSView",
+        );
+
+        create_widget(&mut state, root, "ng-window");
+        create_widget(&mut state, box_node, "ng-box");
+        set_attrs(&mut state, box_node, &[("gap", "14"), ("max-size", "400")]);
+        state.apply_command(
+            &RenderCommand::ApplyStyleClass {
+                node: box_node,
+                style_id: StyleId(1),
+            },
+            "AnchorComment",
+            |_| "NSView",
+        );
+        state.apply_command(
+            &RenderCommand::ApplyStyleClass {
+                node: box_node,
+                style_id: StyleId(2),
+            },
+            "AnchorComment",
+            |_| "NSView",
+        );
+        create_widget(&mut state, a, "ng-label");
+        set_attrs(&mut state, a, &[("height", "20")]);
+        create_widget(&mut state, b, "ng-label");
+        set_attrs(&mut state, b, &[("height", "20")]);
+        for (p, c) in [(root, box_node), (box_node, a), (box_node, b)] {
+            state.apply_command(
+                &RenderCommand::AppendChild {
+                    parent: p,
+                    child: c,
+                },
+                "AnchorComment",
+                |_| "NSView",
+            );
+        }
+
+        let rects = solve_scene_layout(&state, root, 900, 600);
+        // Box has padding=16 (preserved from class 1), gap=14 overriding spacing, and max-size=400 capping inner width:
+        // root inner x=12, w=876; box inner x = 12 + 16 + (844 - 400)/2 = 250, inner w = 400; child b y = 12 + 16 + 20 + 14 = 62.
+        assert_eq!(rects[&a].x, 250);
+        assert_eq!(rects[&a].width, 400);
+        assert_eq!(rects[&b].y, 62);
     }
 }
