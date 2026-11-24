@@ -3,7 +3,8 @@
 #[cfg(target_os = "windows")]
 use super::windows_winui::WinUiControlBinding;
 #[cfg(target_os = "windows")]
-use crate::engine::{EventMask, EventPayload, NativeEvent, NodeId, coalesce_frame_events};
+use crate::engine::{EventMask, coalesce_frame_events};
+use crate::engine::{EventPayload, NativeEvent, NodeId};
 #[cfg(target_os = "windows")]
 use crate::ffi_dl::DynLib;
 #[cfg(target_os = "windows")]
@@ -12,6 +13,55 @@ use std::collections::HashMap;
 use std::ffi::{c_int, c_void};
 #[cfg(target_os = "windows")]
 use std::sync::{Mutex, OnceLock};
+
+const BN_CLICKED: u16 = 0;
+const EN_CHANGE: u16 = 0x0300;
+const CBN_SELCHANGE: u16 = 1;
+
+/// Translates a Win32 `WM_COMMAND` notification into a typed engine `NativeEvent`.
+#[allow(clippy::too_many_arguments)]
+#[must_use]
+pub fn translate_win32_control_command(
+    node: NodeId,
+    win32_class: &str,
+    xaml_class: &str,
+    notify_code: u16,
+    text_value: &str,
+    is_checked: bool,
+    selected_index: i32,
+) -> Option<NativeEvent> {
+    match (win32_class, notify_code) {
+        ("BUTTON", BN_CLICKED) => {
+            if matches!(
+                xaml_class,
+                "Microsoft.UI.Xaml.Controls.CheckBox" | "Microsoft.UI.Xaml.Controls.ToggleSwitch"
+            ) {
+                Some(NativeEvent {
+                    node,
+                    event_name: String::from("toggled"),
+                    payload: EventPayload::Bool(is_checked),
+                })
+            } else {
+                Some(NativeEvent {
+                    node,
+                    event_name: String::from("clicked"),
+                    payload: EventPayload::None,
+                })
+            }
+        }
+        ("EDIT", EN_CHANGE) => Some(NativeEvent {
+            node,
+            event_name: String::from("input"),
+            payload: EventPayload::Text(text_value.to_string()),
+        }),
+        ("COMBOBOX", CBN_SELCHANGE) => Some(NativeEvent {
+            node,
+            event_name: String::from("changed"),
+            payload: EventPayload::Int(i64::from(selected_index)),
+        }),
+        _ => None,
+    }
+}
 
 /// Opaque Win32 `HWND` integer handle isolated behind the FFI boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,11 +156,11 @@ const PM_REMOVE: u32 = 0x0001;
 #[cfg(target_os = "windows")]
 const SIZE_MAXIMIZED: usize = 2;
 #[cfg(target_os = "windows")]
-const BN_CLICKED: u16 = 0;
+const BM_GETCHECK: u32 = 0x00F0;
 #[cfg(target_os = "windows")]
-const EN_CHANGE: u16 = 0x0300;
+const BST_CHECKED: isize = 1;
 #[cfg(target_os = "windows")]
-const CBN_SELCHANGE: u16 = 1;
+const CB_GETCURSEL: u32 = 0x0147;
 #[cfg(target_os = "windows")]
 const NG_WIN32_CLASS_NAME: &str = "NgDesktopWindowClass";
 
@@ -152,6 +202,12 @@ type TranslateMessageFn = unsafe extern "system" fn(*const Win32Msg) -> c_int;
 type DispatchMessageWFn = unsafe extern "system" fn(*const Win32Msg) -> isize;
 #[cfg(target_os = "windows")]
 type EnableWindowFn = unsafe extern "system" fn(*mut c_void, c_int) -> c_int;
+#[cfg(target_os = "windows")]
+type GetWindowTextLengthWFn = unsafe extern "system" fn(*mut c_void) -> c_int;
+#[cfg(target_os = "windows")]
+type GetWindowTextWFn = unsafe extern "system" fn(*mut c_void, *mut u16, c_int) -> c_int;
+#[cfg(target_os = "windows")]
+type SendMessageWFn = unsafe extern "system" fn(*mut c_void, u32, usize, isize) -> isize;
 #[cfg(target_os = "windows")]
 type GetModuleHandleWFn = unsafe extern "system" fn(*const u16) -> *mut c_void;
 #[cfg(target_os = "windows")]
@@ -200,6 +256,7 @@ struct Win32Msg {
 struct Win32WindowRecord {
     node: NodeId,
     win32_class: &'static str,
+    xaml_class: &'static str,
     event_mask: EventMask,
     prevent_close: bool,
     suppress_change: bool,
@@ -209,6 +266,12 @@ struct Win32WindowRecord {
 static WIN32_CLASS_REGISTERED: OnceLock<bool> = OnceLock::new();
 #[cfg(target_os = "windows")]
 static WIN32_DEF_WNDPROC: OnceLock<WndProcFn> = OnceLock::new();
+#[cfg(target_os = "windows")]
+static WIN32_GET_TEXT_LEN_W: OnceLock<GetWindowTextLengthWFn> = OnceLock::new();
+#[cfg(target_os = "windows")]
+static WIN32_GET_TEXT_W: OnceLock<GetWindowTextWFn> = OnceLock::new();
+#[cfg(target_os = "windows")]
+static WIN32_SEND_MSG_W: OnceLock<SendMessageWFn> = OnceLock::new();
 #[cfg(target_os = "windows")]
 static WIN32_HWND_MAP: OnceLock<Mutex<HashMap<usize, Win32WindowRecord>>> = OnceLock::new();
 #[cfg(target_os = "windows")]
@@ -241,6 +304,23 @@ fn record_snapshot(hwnd_key: usize) -> Option<Win32WindowRecord> {
 }
 
 #[cfg(target_os = "windows")]
+fn read_hwnd_text(hwnd: *mut c_void) -> String {
+    let (Some(get_len), Some(get_text)) = (WIN32_GET_TEXT_LEN_W.get(), WIN32_GET_TEXT_W.get())
+    else {
+        return String::new();
+    };
+    let len = unsafe { get_len(hwnd) };
+    if len <= 0 {
+        return String::new();
+    }
+    let cap = usize::try_from(len).unwrap_or(0) + 1;
+    let mut buf = vec![0u16; cap];
+    let copied = unsafe { get_text(hwnd, buf.as_mut_ptr(), c_int::try_from(cap).unwrap_or(0)) };
+    let used = usize::try_from(copied.max(0)).unwrap_or(0).min(buf.len());
+    String::from_utf16_lossy(&buf[..used])
+}
+
+#[cfg(target_os = "windows")]
 fn handle_wm_command(wparam: usize, lparam: isize) {
     let child_key = usize::from_ne_bytes(lparam.to_ne_bytes());
     let Some(child) = record_snapshot(child_key) else {
@@ -250,18 +330,37 @@ fn handle_wm_command(wparam: usize, lparam: isize) {
         return;
     }
     let notify = u16::try_from((wparam >> 16) & 0xFFFF).unwrap_or(0);
-    let event_name = match (child.win32_class, notify) {
-        ("BUTTON", BN_CLICKED) => Some("clicked"),
-        ("EDIT", EN_CHANGE) => Some("input"),
-        ("COMBOBOX", CBN_SELCHANGE) => Some("changed"),
-        _ => None,
+    let child_hwnd = child_key as *mut c_void;
+    let text_value = if child.win32_class == "EDIT" && notify == EN_CHANGE {
+        read_hwnd_text(child_hwnd)
+    } else {
+        String::new()
     };
-    if let Some(name) = event_name {
-        push_win32_event(NativeEvent {
-            node: child.node,
-            event_name: String::from(name),
-            payload: EventPayload::None,
-        });
+    let is_checked = if child.win32_class == "BUTTON" && notify == BN_CLICKED {
+        WIN32_SEND_MSG_W
+            .get()
+            .is_some_and(|send| unsafe { send(child_hwnd, BM_GETCHECK, 0, 0) } == BST_CHECKED)
+    } else {
+        false
+    };
+    let selected_index = if child.win32_class == "COMBOBOX" && notify == CBN_SELCHANGE {
+        WIN32_SEND_MSG_W.get().map_or(-1, |send| {
+            i32::try_from(unsafe { send(child_hwnd, CB_GETCURSEL, 0, 0) }).unwrap_or(-1)
+        })
+    } else {
+        -1
+    };
+
+    if let Some(ev) = translate_win32_control_command(
+        child.node,
+        child.win32_class,
+        child.xaml_class,
+        notify,
+        &text_value,
+        is_checked,
+        selected_index,
+    ) {
+        push_win32_event(ev);
     }
 }
 
@@ -390,6 +489,15 @@ impl Win32Sys {
         let dispatch_message_w: DispatchMessageWFn = unsafe { user32.sym(c"DispatchMessageW") }?;
         let def_window_proc_w: WndProcFn = unsafe { user32.sym(c"DefWindowProcW") }?;
         let enable_window: EnableWindowFn = unsafe { user32.sym(c"EnableWindow") }?;
+        if let Some(f) = unsafe { user32.sym::<GetWindowTextLengthWFn>(c"GetWindowTextLengthW") } {
+            let _ = WIN32_GET_TEXT_LEN_W.set(f);
+        }
+        if let Some(f) = unsafe { user32.sym::<GetWindowTextWFn>(c"GetWindowTextW") } {
+            let _ = WIN32_GET_TEXT_W.set(f);
+        }
+        if let Some(f) = unsafe { user32.sym::<SendMessageWFn>(c"SendMessageW") } {
+            let _ = WIN32_SEND_MSG_W.set(f);
+        }
         let get_module_handle_w: GetModuleHandleWFn = unsafe { kernel32.sym(c"GetModuleHandleW") }?;
         let get_last_error: Option<GetLastErrorFn> = unsafe { kernel32.sym(c"GetLastError") };
 
@@ -534,6 +642,11 @@ impl Win32Sys {
                 Win32WindowRecord {
                     node,
                     win32_class: if is_dialog { "Dialog" } else { "Window" },
+                    xaml_class: if is_dialog {
+                        "Microsoft.UI.Xaml.Controls.ContentDialog"
+                    } else {
+                        "Microsoft.UI.Xaml.Window"
+                    },
                     event_mask: mask,
                     prevent_close,
                     suppress_change: false,
@@ -549,7 +662,20 @@ impl Win32Sys {
         binding: &WinUiControlBinding,
         text: &str,
     ) -> Option<Win32Handle> {
+        let is_container = matches!(
+            binding.xaml_class,
+            "Microsoft.UI.Xaml.Controls.StackPanel"
+                | "Microsoft.UI.Xaml.Controls.Grid"
+                | "Microsoft.UI.Xaml.Controls.ScrollViewer"
+                | "Microsoft.UI.Xaml.Controls.SplitView"
+                | "Microsoft.UI.Xaml.Controls.NavigationView"
+                | "Microsoft.UI.Xaml.Controls.Expander"
+                | "Microsoft.UI.Xaml.Controls.ItemsRepeater"
+                | "Microsoft.UI.Xaml.Controls.ListView"
+                | "Microsoft.UI.Xaml.Controls.TitleBar"
+        );
         let native_class = match binding.win32_class {
+            _ if is_container => NG_WIN32_CLASS_NAME,
             "BUTTON" | "EDIT" | "COMBOBOX" | "STATIC" => binding.win32_class,
             _ => NG_WIN32_CLASS_NAME,
         };
@@ -594,6 +720,7 @@ impl Win32Sys {
                 Win32WindowRecord {
                     node,
                     win32_class: binding.win32_class,
+                    xaml_class: binding.xaml_class,
                     event_mask: binding.event_mask,
                     prevent_close: false,
                     suppress_change: false,
