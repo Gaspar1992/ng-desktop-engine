@@ -5,6 +5,14 @@ This project adheres to [Conventional Commits](https://www.conventionalcommits.o
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-24
+
+### Features & Multi-OS Runtime Parity (`v0.5.0`)
+
+- **multi-OS ES2024+ JavaScript execution (`PR #35`):** implement zero-dependency portable Apple/WebKit `JavaScriptCore` C API loader (`src/runtime/jsc_sys.rs`) targeting `JavaScriptCore.framework` on macOS and `libjavascriptcoregtk-6.0.so.1` on Linux, and embed `QuickJS-NG` (`rquickjs` `0.14.0`) in `QuickJsEngine` (`src/runtime/quickjs_engine.rs`) + `WorkerJsVm` (`src/runtime/server_worker.rs`) with `FinalizationRegistry`/`WeakRef` shims and multi-OS SQLite shared library loading (`winsqlite3.dll`, `libsqlite3.dylib`, `libsqlite3.so.0`) so compiled Angular 22.3 Ivy bundles and `@ng-desktop/server` workers run natively across Linux, Windows 11, and macOS.
+- **shared layout solver & Win32 / AppKit event callbacks (`PR #36`):** add shared Flexbox/Grid/Paned/Clamp layout solver (`src/platforms/layout_solver.rs`) with parent-relative and Cocoa bottom-up Y-flipped bounds (`compute_parent_relative_bounds`) and `NativeSceneNode::source_tag` clamp parity; wire `SetWindowPos`, container `NG_WIN32_CLASS_NAME` propagation, and `WM_COMMAND` translation in `WinUiBackend` (`win32_sys.rs`), alongside `setFrame:` positioning and `NgAppKitEventTarget` callbacks (`onControlAction:`, `controlTextDidChange:`, `textDidChange:`, `windowShouldClose:`, `windowDidResize:`) in `MacOsAppKitBackend` (`appkit_sys.rs`).
+- **multi-OS desktop portals, kernel watchers & cross-platform HMR IPC (`PR #37`):** add `OsDesktopPortalBackend`, OS portal probing, and Windows Registry `AppsUseLightTheme` detection (`src/desktop/os_portals.rs`), Windows (`GetUserDefaultLocaleName`, `InternetGetConnectedState`) & macOS `CoreFoundation` locale/timezone probes (`src/desktop/system_env.rs`), macOS `kqueue` (`EVFILT_VNODE`) & Windows `FindFirstChangeNotificationW` watchers (`src/desktop/fs_watcher.rs`), OS HTTP driver probes (`src/desktop/http_native.rs`), and cross-platform HMR IPC (`src/ipc/mod.rs` + `packages/builders-native/src/hmr-client.mjs`) supporting loopback `tcp://127.0.0.1:<port>` pointer files on Windows alongside Unix domain sockets across **211 automated tests** (`91` Vitest + `74` Rust unit + `46` Rust integration).
+
 ## [0.4.1] - 2026-11-24
 
 ### Features & Improvements (`v0.4.1`)
