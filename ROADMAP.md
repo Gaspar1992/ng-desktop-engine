@@ -4,9 +4,9 @@ This document defines the deep technical analysis and phased engineering roadmap
 
 ---
 
-## 📍 Current Status Snapshot (`v0.4.0`)
+## 📍 Current Status Snapshot (`v0.4.1`)
 
-**At a glance:** Release **`v0.4.0`** (`main` includes post-tag docs & Signal Forms updates) | **`29` native widget primitives + `<ng-anchor>`** | **`7` `@ng-desktop/*` npm packages + `5` prebuilt `@ng-desktop/engine-*` binaries** | **`198` automated tests** (`90` Vitest across `16` suites, `65` Rust unit, `43` Rust integration across `8` suites).
+**At a glance:** Release **`v0.4.1`** (`0.4.x` line — Signal Forms + docs + Angular `22.3` polish) | **`29` native widget primitives + `<ng-anchor>`** | **`7` `@ng-desktop/*` npm packages + `5` prebuilt `@ng-desktop/engine-*` binaries** | **`198` automated tests** (`90` Vitest across `16` suites, `65` Rust unit, `43` Rust integration across `8` suites).
 
 ### Platform Maturity Matrix (`v0.4.0`)
 
@@ -265,7 +265,7 @@ The audit of `v0.4.0` on `main` identified six concrete engineering gaps that dr
 3. **In-Memory `DesktopServices` Stubs & Linux-Only System Drivers:** Interactive dialogs (`openFileDialog`/`saveFileDialog`/`confirmDialog`), clipboard, desktop notifications, and OS theme reactivity still rely on in-memory `DesktopServices` state in `src/desktop/mod.rs` rather than OS-native portals (`GtkFileDialog`/XDG Desktop Portal, Win32 Common Item Dialog/WinRT notifications, macOS `NSOpenPanel`/`NSSavePanel`/`UNUserNotificationCenter`), while `libsoup_sys.rs`, `sqlite_sys.rs`, `fs_watcher.rs`, and `system_env.rs` only wire Linux shared libraries today.
 4. **Unix-Only HMR IPC:** `src/ipc/mod.rs` and `packages/builders-native/src/hmr-client.mjs` communicate exclusively over Unix Domain Sockets (`hmr.sock`), leaving Windows without hot-reload IPC during `ng-desktop run` / `pnpm run dev`.
 5. **1D Fixed-Height Virtualization & Partial CSS Coverage:** `<ng-virtual-list>` (`packages/platform-native/src/virtual-list.component.ts`) assumes fixed row heights in a single vertical dimension; responsive 2D grids and dynamic/variable item heights are not supported yet, and the CSS projector does not yet handle interactive pseudo-classes (`:hover`, `:focus`, `:active`, `:disabled`), media queries, or full `ViewEncapsulation.Emulated` host scoping.
-6. **Staging-Only Packager, Onboarding Documentation Gaps & npm Dry-Run Bug:** `src/packager/mod.rs` stages manifests and bundles (`.deb` metadata, `AppxManifest.xml`, `.app/Contents`, Flatpak YAML) without compiling signed final installers (`.msix`/`.exe`, notarized `.dmg`, `.deb`/`AppImage`); external-app tutorials and per-package `packages/*/README.md` files for npmjs.com do not exist yet; and the offline verification fallback in `.github/workflows/release.yml` fails with `ENEEDAUTH` under `npm 11+` when `vars.NPM_TRUSTED_PUBLISHING != 'true'`.
+6. **Staging-Only Packager & Unbootstrapped Registry Targets:** `src/packager/mod.rs` stages manifests and bundles (`.deb` metadata, `AppxManifest.xml`, `.app/Contents`, Flatpak YAML) without compiling signed final installers (`.msix`/`.exe`, notarized `.dmg`, `.deb`/`AppImage`); and on the registry side, `@ng-desktop/server`, the 5 `@ng-desktop/engine-*` packages (npm), and `ng-native-engine` (`crates.io`) still require initial one-time package creation and Trusted Publisher enrollment before tokenless OIDC releases can publish all 12 npm tarballs and the crate cleanly.
 
 ---
 
@@ -274,8 +274,9 @@ The audit of `v0.4.0` on `main` identified six concrete engineering gaps that dr
 ### Phase 14 (`v0.4.x`): Documentation Refresh, External-App Tutorial, Signal Forms & Release Polish (In Progress 🔜)
 
 - [x] **First-Class Angular Signal Forms (`@ng-desktop/forms` + `@ng-desktop/platform`):** Implemented `NativeTextFieldControl` (`FormValueControl<string>`), `NativeBooleanFieldControl` (`FormCheckboxControl`), and `NativeNumberFieldControl` (`FormValueControl<number>`) exported via `NATIVE_SIGNAL_FORM_DIRECTIVES` and `NATIVE_FORM_DIRECTIVES`, alongside `NativeNumericRangeDirective` ISP separation for strict `[formField]` type safety on boolean toggles.
-- [x] **Refresh Core Repository Documentation & External Tutorial (`README.md`, `docs/GETTING_STARTED.md`, `packages/*/README.md`):** Brought docs in sync with `v0.4.0`, added the external Angular 22+ / Nx guide, and added npm READMEs to all 7 packages.
-- [ ] **Finish OIDC Publishing Polish (`.github/workflows/release.yml`):** Replace `npm publish --dry-run` in the non-OIDC offline branch so `release.yml` validates tarballs without `ENEEDAUTH` when `NPM_TRUSTED_PUBLISHING` is unset, and complete Trusted Publisher enrollment on npmjs.org.
+- [x] **Refresh Core Repository Documentation & External Tutorial (`README.md`, `docs/GETTING_STARTED.md`, `packages/*/README.md`):** Brought docs in sync with `v0.4.x`, added the external Angular 22+ / Nx guide, and added npm READMEs to all 7 packages.
+- [x] **Release & Bootstrap Hardening (`.github/workflows/release.yml`, `scripts/bootstrap-npm-packages.mjs`):** Added `@ng-desktop/server` to `bootstrap-npm-packages.mjs` (plus offline `npm pack --dry-run`), ordered `publish-npm` library-first with per-package error collection, and made `publish-crates` idempotent against existing crate versions.
+- [ ] **Initial Package Registration for OIDC:** Publish the first `0.4.1` bootstrap of `@ng-desktop/server`, the 5 `@ng-desktop/engine-*` binaries, and `ng-native-engine` (`crates.io`) with their Trusted Publisher bindings so automated `release.yml` runs complete end-to-end.
 
 ### Phase 15 (`v0.5.0`): Cross-Platform Runtime Parity — Windows & macOS (Planned 🎯)
 

@@ -1,6 +1,6 @@
 {
   "name": "@ng-desktop/builders",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Angular 22+ CLI & Nx Architect builder, AST permission analyzer, CLI, and schematics",
   "type": "module",
   "main": "./src/index.ts",

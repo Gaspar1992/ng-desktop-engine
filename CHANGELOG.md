@@ -5,6 +5,15 @@ This project adheres to [Conventional Commits](https://www.conventionalcommits.o
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-24
+
+### Features & Improvements (`v0.4.1`)
+
+- **first-class Angular 22 Signal Forms (`@ng-desktop/forms` + `@ng-desktop/platform`):** add `NativeTextFieldControl` (`FormValueControl<string>`), `NativeBooleanFieldControl` (`FormCheckboxControl`), `NativeNumberFieldControl` (`FormValueControl<number>`), shared `bindNativeSignalUiEffects()`, and `NATIVE_SIGNAL_FORM_DIRECTIVES` supporting `<ng-*>` widgets and mapped HTML controls (`<input>`, `<textarea>`, `<select>`) alongside classic `ControlValueAccessor` directives in `NATIVE_FORM_DIRECTIVES`; move `min`/`max`/`step` out of `NativeInputWidgetDirective` into `NativeNumericRangeDirective` to avoid `strictTemplates` conflicts on boolean toggles.
+- **documentation & external onboarding:** add `docs/GETTING_STARTED.md` external Angular 22+ & Nx integration tutorial, per-package `README.md` pages bundled into all 7 `@ng-desktop/*` tarballs, and update `README.md`, `ROADMAP.md`, `CONTRIBUTING.md`, `SECURITY.md`, `SUPPORT.md`, and `docs/ECOSYSTEM_COMPATIBILITY.md`.
+- **dependencies & CI:** upgrade workspace atomically to `@angular/*` `22.3.0`, `angular-eslint` / `@angular-eslint/*` `22.8.0`, and `vitest` `5.1.1`, and group Angular packages in `.github/dependabot.yml`.
+- **release & OIDC publishing hardening:** include `@ng-desktop/server` in `scripts/bootstrap-npm-packages.mjs` (plus offline `npm pack --dry-run` checks), publish libraries before engine binaries in `.github/workflows/release.yml` with per-package failure tracking, add idempotent `crates.io` existence checks before `cargo publish`, and derive default version dynamically from `package.json` in `scripts/generate-release-notes.mjs`.
+
 ## [0.4.0] - 2026-11-22
 
 ### Features & Architecture (`v0.4.0`)
