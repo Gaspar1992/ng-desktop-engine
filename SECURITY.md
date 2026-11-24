@@ -10,8 +10,8 @@ Only the active release line receives security patches and dependency updates:
 
 | Version / Branch                 | Status         | Support Scope                               |
 | :------------------------------- | :------------- | :------------------------------------------ |
-| `0.4.x` (`main` & `v0.4.x` tags) | ✅ Supported   | Security fixes, FFI hardening, & OS patches |
-| `< 0.4.0`                        | ❌ Unsupported | Historical preview releases                 |
+| `0.5.x` (`main` & `v0.5.x` tags) | ✅ Supported   | Security fixes, FFI hardening, & OS patches |
+| `< 0.5.0`                        | ❌ Unsupported | Historical preview releases                 |
 
 ---
 

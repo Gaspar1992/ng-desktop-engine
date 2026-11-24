@@ -2,7 +2,7 @@
 
 A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22+**, written in **Rust**.
 
-`ng-desktop-engine` replaces `@angular/platform-browser` and the browser DOM/WebView completely. Instead of bundling Chromium (Electron) or relying on an embedded HTML WebView (Tauri), Angular components drive **100% native OS widgets** — full Ivy runtime on **Linux (GTK4 / Libadwaita)**, plus live OS FFI drivers and clean **Bridge**, **State**, and **Abstract Factory** adapters targeting **Windows (Win32 / WinUI)** and **macOS (AppKit / Cocoa)** (see the [Platform Maturity Matrix](./ROADMAP.md#platform-maturity-matrix-v040)).
+`ng-desktop-engine` replaces `@angular/platform-browser` and the browser DOM/WebView completely. Instead of bundling Chromium (Electron) or relying on an embedded HTML WebView (Tauri), Angular components drive **100% native OS widgets** across **Linux (GTK4 / Libadwaita)**, **Windows 11 (Win32 / WinUI)**, and **macOS (Cocoa / AppKit)** using ES2024+ embedded JS runtimes, a shared Rust layout solver, and native OS service drivers (see the [Platform Maturity Matrix](./ROADMAP.md#platform-maturity-matrix-v050)).
 
 > **Using `@ng-desktop/*` in your own app?** Jump straight to the step-by-step [**External Angular 22+ & Nx Tutorial (`docs/GETTING_STARTED.md`)**](./docs/GETTING_STARTED.md).
 
@@ -21,14 +21,14 @@ A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22
    - **Angular Template AST:** Powered by official [`@angular/compiler`](./packages/builders-native/src/template-compiler.mjs) `parseTemplate`, compiling control flow (`@if`/`@else`, `@for`/`@empty`, `@switch`, `@let`, `@defer`/`@error`), Angular pipes, dynamic inputs, reactive `bind_visible`/`bind_attr` bindings, `<router-outlet />`, and events.
    - **CSS Flexbox/Grid Projector:** Unified [`css-style-parser.ts`](./packages/platform-native/src/css-style-parser.ts) + [`postcss` style compiler](./packages/builders-native/src/style-compiler.mjs), projecting `display: flex`, `display: grid`, `flex-direction`, `flex-wrap`, `gap`, `min-width`, `min-height`, `padding`, `border-radius`, and typography onto native GTK4 / WinUI / AppKit layouts.
    - **Embedded Local Server (`@ng-desktop/server`):** Compiles file-based API routes under `src/server/routes/` into `server.bundle.js` executed by the Rust [`server_worker`](./src/runtime/server_worker.rs).
-5. **Real-Time Unix Socket HMR IPC:**
-   - Non-blocking IPC server ([`src/ipc/`](./src/ipc/mod.rs)) communicating over local Unix Domain Sockets (`dist/<project>/hmr.sock`) with a Node.js client ([`hmr-client.mjs`](./packages/builders-native/src/hmr-client.mjs)) for zero-latency, atomic hot module reloads while preserving active signal state.
+5. **Real-Time Cross-Platform HMR IPC:**
+   - Non-blocking IPC server ([`src/ipc/`](./src/ipc/mod.rs)) communicating over Unix Domain Sockets (Linux/macOS) or loopback TCP pointer files (Windows) with a Node.js client ([`hmr-client.mjs`](./packages/builders-native/src/hmr-client.mjs)) for zero-latency, atomic hot module reloads while preserving active signal state.
 6. **SOLID & Hexagonal Platform Architecture (`PlatformBackend`):**
    - The core [`RenderEngine<B: PlatformBackend>`](./src/engine/mod.rs) depends exclusively on an abstract trait, never on concrete OS toolkits.
    - Concrete platform adapters live in [`src/platforms/`](./src/platforms/):
      - **Linux GTK4 (`GtkLinuxBackend`):** Full Ivy runtime via [`gtk4_sys.rs`](./src/platforms/gtk4_sys.rs) (`libgtk-4.so.1`, `libadwaita-1.so.0`, `libjavascriptcoregtk-6.0.so.1`).
-     - **Windows Win32 / WinUI (`WinUiBackend`):** Live `user32.dll` / `kernel32.dll` FFI realization via [`win32_sys.rs`](./src/platforms/win32_sys.rs) + retained [`NativeSceneState`](./src/platforms/scene_state.rs) (full ES2024 JS engine parity planned in `v0.5.0`).
-     - **macOS AppKit (`MacOsAppKitBackend`):** Live Objective-C runtime FFI realization via [`appkit_sys.rs`](./src/platforms/appkit_sys.rs) + retained [`NativeSceneState`](./src/platforms/scene_state.rs) (full ES2024 JS engine parity planned in `v0.5.0`).
+     - **Windows Win32 / WinUI (`WinUiBackend`):** Live `user32.dll` / `kernel32.dll` FFI realization via [`win32_sys.rs`](./src/platforms/win32_sys.rs), shared Flexbox/Grid layout solver ([`layout_solver.rs`](./src/platforms/layout_solver.rs)), `WM_COMMAND` container event routing, and embedded `QuickJS-NG` ES2024+ execution.
+     - **macOS AppKit (`MacOsAppKitBackend`):** Live Objective-C runtime FFI realization via [`appkit_sys.rs`](./src/platforms/appkit_sys.rs), shared Y-flipped Cocoa layout positioning, `NgAppKitEventTarget` / delegate callbacks, and Apple `JavaScriptCore.framework` ES2024+ execution.
      - **Headless CI (`HeadlessBackend`):** Records every frame's `RenderCommand` batch in memory for deterministic integration testing in CI without a display server.
 
 ---
@@ -174,9 +174,9 @@ ng-native-engine/
 │   ├── test_forms_and_desktop.rs # Forms, SQLite, compute, FS, HTTP & desktop bridge tests
 │   ├── test_js_engines.rs        # Dual JSC & QuickJS engine parity tests
 │   ├── test_native_server_worker.rs # In-process @ng-desktop/server route worker tests
-│   ├── test_pipeline_and_hmr.rs  # Full bundle pipeline, HMR & Unix socket IPC tests
+│   ├── test_pipeline_and_hmr.rs  # Full bundle pipeline, HMR & cross-OS socket/TCP IPC tests
 │   └── test_scene_graph.rs       # Arena invariants, anchors & reverse event dispatch tests
-├── ROADMAP.md                    # Current v0.4.0 snapshot, audit gaps & upcoming milestones
+├── ROADMAP.md                    # Current v0.5.0 snapshot, parity matrix & upcoming milestones
 ├── CHANGELOG.md                  # Release notes and version changelog
 ├── SECURITY.md                   # Vulnerability disclosure policy, SLAs & FFI threat model
 ├── CONTRIBUTING.md               # Contribution guidelines, SOLID standards & release workflow
@@ -248,11 +248,11 @@ cargo run                # or: NG_NATIVE_BATCH=1 cargo run
 | `pnpm run format:all`                               | Format both TypeScript/Angular/Markdown (`oxfmt`) and Rust (`cargo fmt`) |
 | `pnpm run format:check`                             | Verify formatting with `oxfmt`                                           |
 | `pnpm run lint`                                     | Lint TypeScript & Angular templates via `oxlint` + `angular-eslint`      |
-| `pnpm run test --watch=false`                       | Run all 90 Vitest specs across 16 test files in a single pass            |
+| `pnpm run test --watch=false`                       | Run all 91 Vitest specs across 16 test files in a single pass            |
 | `pnpm run test:containers`                          | Run Xvfb + GTK4 + FFI test suite in Ubuntu 24.04 & Fedora 41 containers  |
 | `cargo fmt --all -- --check`                        | Verify Rust formatting                                                   |
 | `cargo clippy --all-targets -- -D warnings`         | Run strict Rust Clippy lints (pedantic + nursery, zero warnings)         |
-| `cargo test`                                        | Execute all 65 unit tests + 43 integration tests (8 suites) in Rust      |
+| `cargo test`                                        | Execute all 74 unit tests + 46 integration tests (8 suites) in Rust      |
 
 ---
 
@@ -260,7 +260,7 @@ cargo run                # or: NG_NATIVE_BATCH=1 cargo run
 
 - See [**GETTING_STARTED.md**](./docs/GETTING_STARTED.md) for a copy-paste tutorial integrating `@ng-desktop/*` into an external Angular 22+ or Nx app.
 - See [**ECOSYSTEM_COMPATIBILITY.md**](./docs/ECOSYSTEM_COMPATIBILITY.md) for integration with **NgRx**, **Angular Aria**, **Angular CDK**, **Angular Material** gap analysis, **@ng-desktop/server**, and **Nx**.
-- See [**ROADMAP.md**](./ROADMAP.md) for the `v0.4.0` platform maturity matrix, architectural gap audit, and `v0.5.0`/`v0.6.0` milestones.
+- See [**ROADMAP.md**](./ROADMAP.md) for the `v0.5.0` platform maturity matrix, remaining gaps, and `v0.6.0` milestones.
 - See [**CHANGELOG.md**](./CHANGELOG.md) for release notes and detailed version history.
 
 ---
