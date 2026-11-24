@@ -1,8 +1,33 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import net from 'node:net';
 
 /**
- * Sends an HMR IPC message to the running native Rust engine over a local Unix domain socket.
+ * Resolves the connection target for either a Unix domain socket path or a
+ * loopback `tcp://127.0.0.1:<port>` pointer file used on Windows.
+ * Returns `{ error }` if a `tcp://` pointer file has an invalid host or port.
+ */
+function resolveHmrTarget(socketPath) {
+  try {
+    if (statSync(socketPath).isFile()) {
+      const pointer = readFileSync(socketPath, 'utf8').trim();
+      if (pointer.startsWith('tcp://')) {
+        const parsed = new URL(pointer);
+        const port = Number(parsed.port);
+        if (!parsed.hostname || !Number.isInteger(port) || port < 1 || port > 65535) {
+          return { error: `Invalid TCP HMR pointer: ${pointer}` };
+        }
+        return { target: { host: parsed.hostname, port } };
+      }
+    }
+  } catch {
+    return { error: 'Invalid HMR endpoint pointer file' };
+  }
+  return { target: socketPath };
+}
+
+/**
+ * Sends an HMR IPC message to the running native Rust engine over a local Unix domain socket
+ * or a loopback TCP pointer file (Windows).
  * Gracefully resolves with `{ connected: false }` if the engine is not currently running.
  */
 export function sendHmrMessage(socketPath, message, { timeoutMs = 1500 } = {}) {
@@ -12,7 +37,19 @@ export function sendHmrMessage(socketPath, message, { timeoutMs = 1500 } = {}) {
       return;
     }
 
-    const client = net.createConnection(socketPath);
+    const resolvedEndpoint = resolveHmrTarget(socketPath);
+    if (resolvedEndpoint.error) {
+      resolve({ connected: false, error: resolvedEndpoint.error });
+      return;
+    }
+
+    let client;
+    try {
+      client = net.createConnection(resolvedEndpoint.target);
+    } catch (err) {
+      resolve({ connected: false, error: err instanceof Error ? err.message : String(err) });
+      return;
+    }
     let resolved = false;
     let responseData = '';
 

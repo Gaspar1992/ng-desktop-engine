@@ -1,5 +1,4 @@
 use crate::config::AppPermissions;
-use std::env;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -8,6 +7,7 @@ pub mod fs_watcher;
 pub mod http_codec;
 pub mod http_native;
 mod libsoup_sys;
+pub mod os_portals;
 pub mod sqlite_sys;
 pub mod system_env;
 
@@ -17,6 +17,7 @@ pub use http_native::{
     NativeHttpCallKind, NativeHttpConfig, NativeHttpEngine, NativeHttpRequest, NativeHttpResponse,
     OsHttpPlatform,
 };
+pub use os_portals::{OsDesktopPortalBackend, detect_os_theme, probe_os_portal_driver};
 pub use sqlite_sys::{NativeSqliteDatabase, OsSqliteBackend};
 pub use system_env::{NativeSystemEnv, OsSystemEnvBackend};
 
@@ -180,13 +181,7 @@ impl DesktopServices {
         permissions: AppPermissions,
         http_engine: Arc<Mutex<NativeHttpEngine>>,
     ) -> Self {
-        let detected_theme = env::var("GTK_THEME").map_or(DesktopTheme::Dark, |val| {
-            if val.to_ascii_lowercase().contains("light") {
-                DesktopTheme::Light
-            } else {
-                DesktopTheme::Dark
-            }
-        });
+        let detected_theme = detect_os_theme();
         Self {
             app_id: String::from(app_id),
             permissions,
@@ -211,6 +206,17 @@ impl DesktopServices {
     #[must_use]
     pub fn app_id(&self) -> &str {
         &self.app_id
+    }
+
+    #[must_use]
+    pub const fn portal_backend(&self) -> OsDesktopPortalBackend {
+        OsDesktopPortalBackend::current()
+    }
+
+    #[must_use]
+    pub fn is_os_portal_available(&self) -> bool {
+        let _ = self.app_id();
+        probe_os_portal_driver()
     }
 
     #[must_use]

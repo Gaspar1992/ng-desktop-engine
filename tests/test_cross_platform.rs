@@ -658,3 +658,56 @@ fn winui_and_appkit_translate_typed_control_and_delegate_events() {
         EventPayload::Text(String::from("multiline"))
     );
 }
+
+#[test]
+fn cross_platform_os_portals_watchers_http_drivers_and_hmr_ipc() {
+    use ng_native_engine::desktop::{
+        NativeFsManager, NativeHttpEngine, NativeSystemEnv, OsDesktopPortalBackend,
+    };
+    use ng_native_engine::ipc::{HmrIpcClient, HmrIpcServer, HmrMessage, HmrResponse};
+
+    const fn assert_send<T: Send>() {}
+    assert_send::<DesktopServices>();
+    assert_send::<NativeFsManager>();
+    assert_send::<HmrIpcServer>();
+    assert_send::<HmrIpcClient>();
+
+    let desktop = DesktopServices::new();
+    assert_eq!(desktop.portal_backend(), OsDesktopPortalBackend::current());
+    assert!(desktop.is_os_portal_available());
+
+    let http = NativeHttpEngine::new();
+    assert_eq!(http.platform(), OsHttpPlatform::current());
+    assert!(http.is_os_http_driver_available());
+
+    let sys_env = NativeSystemEnv::detect();
+    assert_eq!(sys_env.backend(), OsSystemEnvBackend::current());
+    assert_ne!(sys_env.locale(), "");
+    assert_ne!(sys_env.timezone(), "");
+
+    let fs_mgr = NativeFsManager::new("ng-cross-os-portal-test");
+    assert_eq!(fs_mgr.backend(), OsFileWatcherBackend::current());
+    assert!(fs_mgr.is_kernel_watcher_active());
+
+    let pointer_path =
+        std::env::temp_dir().join(format!("ng-cross-platform-hmr-{}.tcp", std::process::id()));
+    let mut server = HmrIpcServer::bind(&pointer_path).unwrap();
+    let mut client = HmrIpcClient::connect(&pointer_path).unwrap();
+    client.send_ping().unwrap();
+
+    let mut msgs = Vec::new();
+    for _ in 0..20 {
+        msgs = server.poll_messages();
+        if !msgs.is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert_eq!(msgs.len(), 1);
+    assert_eq!(msgs[0].1, HmrMessage::Ping);
+    server.send_response(msgs[0].0, &HmrResponse::Pong);
+    assert_eq!(
+        client.read_response().unwrap(),
+        r#"{"status":"ok","pong":true}"#
+    );
+}

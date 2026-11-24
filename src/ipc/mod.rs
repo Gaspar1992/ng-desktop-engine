@@ -1,11 +1,10 @@
 pub mod test_harness;
 
 use crate::engine::EngineError;
-#[cfg(unix)]
 use std::collections::HashMap;
 use std::fs;
-#[cfg(unix)]
 use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
 #[cfg(unix)]
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -47,22 +46,85 @@ impl HmrResponse {
 
 pub type ClientId = usize;
 
+enum HmrListener {
+    #[cfg(unix)]
+    Unix(UnixListener),
+    Tcp(TcpListener),
+}
+
+impl HmrListener {
+    fn accept_nonblocking(&self) -> Option<HmrStream> {
+        let stream = match self {
+            #[cfg(unix)]
+            Self::Unix(listener) => HmrStream::Unix(listener.accept().ok()?.0),
+            Self::Tcp(listener) => HmrStream::Tcp(listener.accept().ok()?.0),
+        };
+        stream.set_nonblocking(true).ok()?;
+        Some(stream)
+    }
+}
+
+enum HmrStream {
+    #[cfg(unix)]
+    Unix(UnixStream),
+    Tcp(TcpStream),
+}
+
+impl HmrStream {
+    fn set_nonblocking(&self, nonblocking: bool) -> std::io::Result<()> {
+        match self {
+            #[cfg(unix)]
+            Self::Unix(s) => s.set_nonblocking(nonblocking),
+            Self::Tcp(s) => s.set_nonblocking(nonblocking),
+        }
+    }
+
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            #[cfg(unix)]
+            Self::Unix(s) => s.read(buf),
+            Self::Tcp(s) => s.read(buf),
+        }
+    }
+
+    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        match self {
+            #[cfg(unix)]
+            Self::Unix(s) => s.write_all(buf),
+            Self::Tcp(s) => s.write_all(buf),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            #[cfg(unix)]
+            Self::Unix(s) => s.flush(),
+            Self::Tcp(s) => s.flush(),
+        }
+    }
+
+    fn read_exact(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
+        match self {
+            #[cfg(unix)]
+            Self::Unix(s) => s.read_exact(buf),
+            Self::Tcp(s) => s.read_exact(buf),
+        }
+    }
+}
+
 /// Cross-platform HMR IPC Server.
-/// Listens for live bundle updates and evaluation requests on a non-blocking local Unix domain socket.
+/// Listens for live bundle updates and evaluation requests over a Unix domain socket (Linux/macOS)
+/// or a loopback TCP listener advertised via an endpoint pointer file (Windows / `.tcp` targets).
 pub struct HmrIpcServer {
     socket_path: PathBuf,
-    #[cfg(unix)]
-    listener: UnixListener,
-    #[cfg(unix)]
-    clients: HashMap<ClientId, UnixStream>,
-    #[cfg(unix)]
+    listener: HmrListener,
+    clients: HashMap<ClientId, HmrStream>,
     in_buffers: HashMap<ClientId, String>,
-    #[cfg(unix)]
     next_client_id: ClientId,
 }
 
 impl HmrIpcServer {
-    /// Binds to a local Unix socket path. Removes stale socket files left over from unclean shutdowns.
+    /// Binds to a local Unix socket path or writes a loopback TCP pointer file on Windows (or `.tcp` paths).
     pub fn bind(path: impl AsRef<Path>) -> Result<Self, EngineError> {
         let socket_path = path.as_ref().to_path_buf();
 
@@ -70,33 +132,53 @@ impl HmrIpcServer {
             let _ = fs::create_dir_all(parent);
         }
 
-        #[cfg(unix)]
-        {
-            if socket_path.exists() && UnixStream::connect(&socket_path).is_err() {
-                let _ = fs::remove_file(&socket_path);
-            }
+        let use_tcp =
+            cfg!(not(unix)) || socket_path.extension().and_then(|e| e.to_str()) == Some("tcp");
 
-            let listener = UnixListener::bind(&socket_path)
-                .map_err(|e| EngineError::ConfigError(format!("Failed to bind HMR socket: {e}")))?;
-            listener.set_nonblocking(true).map_err(|e| {
+        let listener = if use_tcp {
+            let tcp = TcpListener::bind("127.0.0.1:0").map_err(|e| {
+                EngineError::ConfigError(format!("Failed to bind HMR TCP socket: {e}"))
+            })?;
+            tcp.set_nonblocking(true).map_err(|e| {
                 EngineError::ConfigError(format!("Failed to set HMR listener non-blocking: {e}"))
             })?;
+            let addr = tcp.local_addr().map_err(|e| {
+                EngineError::ConfigError(format!("Failed to query HMR TCP local addr: {e}"))
+            })?;
+            fs::write(&socket_path, format!("tcp://127.0.0.1:{}\n", addr.port())).map_err(|e| {
+                EngineError::ConfigError(format!("Failed to write HMR endpoint file: {e}"))
+            })?;
+            HmrListener::Tcp(tcp)
+        } else {
+            #[cfg(unix)]
+            {
+                if socket_path.exists() && UnixStream::connect(&socket_path).is_err() {
+                    let _ = fs::remove_file(&socket_path);
+                }
 
-            Ok(Self {
-                socket_path,
-                listener,
-                clients: HashMap::new(),
-                in_buffers: HashMap::new(),
-                next_client_id: 1,
-            })
-        }
+                let unix = UnixListener::bind(&socket_path).map_err(|e| {
+                    EngineError::ConfigError(format!("Failed to bind HMR socket: {e}"))
+                })?;
+                unix.set_nonblocking(true).map_err(|e| {
+                    EngineError::ConfigError(format!(
+                        "Failed to set HMR listener non-blocking: {e}"
+                    ))
+                })?;
+                HmrListener::Unix(unix)
+            }
+            #[cfg(not(unix))]
+            {
+                unreachable!("non-unix always uses TCP listener")
+            }
+        };
 
-        #[cfg(not(unix))]
-        {
-            Err(EngineError::ConfigError(String::from(
-                "Unix domain sockets are not supported on this platform",
-            )))
-        }
+        Ok(Self {
+            socket_path,
+            listener,
+            clients: HashMap::new(),
+            in_buffers: HashMap::new(),
+            next_client_id: 1,
+        })
     }
 
     pub fn socket_path(&self) -> &Path {
@@ -105,73 +187,60 @@ impl HmrIpcServer {
 
     /// Polls for incoming client connections and full newline-delimited HMR messages without blocking.
     pub fn poll_messages(&mut self) -> Vec<(ClientId, HmrMessage)> {
-        #[cfg(not(unix))]
-        {
-            Vec::new()
+        let mut messages = Vec::new();
+        while let Some(stream) = self.listener.accept_nonblocking() {
+            let cid = self.next_client_id;
+            self.next_client_id += 1;
+            self.clients.insert(cid, stream);
+            self.in_buffers.insert(cid, String::new());
         }
 
-        #[cfg(unix)]
-        {
-            let mut messages = Vec::new();
-            while let Ok((stream, _)) = self.listener.accept() {
-                if stream.set_nonblocking(true).is_ok() {
-                    let cid = self.next_client_id;
-                    self.next_client_id += 1;
-                    self.clients.insert(cid, stream);
-                    self.in_buffers.insert(cid, String::new());
-                }
-            }
+        let mut disconnected = Vec::new();
+        let mut read_buf = [0u8; 4096];
 
-            let mut disconnected = Vec::new();
-            let mut read_buf = [0u8; 4096];
-
-            for (&cid, stream) in &mut self.clients {
-                loop {
-                    match stream.read(&mut read_buf) {
-                        Ok(0) => {
-                            disconnected.push(cid);
-                            break;
-                        }
-                        Ok(n) => {
-                            if let Ok(chunk) = std::str::from_utf8(&read_buf[..n]) {
-                                let buf = self.in_buffers.entry(cid).or_default();
-                                buf.push_str(chunk);
-                            }
-                        }
-                        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
-                        Err(_) => {
-                            disconnected.push(cid);
-                            break;
+        for (&cid, stream) in &mut self.clients {
+            loop {
+                match stream.read(&mut read_buf) {
+                    Ok(0) => {
+                        disconnected.push(cid);
+                        break;
+                    }
+                    Ok(n) => {
+                        if let Ok(chunk) = std::str::from_utf8(&read_buf[..n]) {
+                            let buf = self.in_buffers.entry(cid).or_default();
+                            buf.push_str(chunk);
                         }
                     }
-                }
-
-                if let Some(buf) = self.in_buffers.get_mut(&cid) {
-                    while let Some(pos) = buf.find('\n') {
-                        let line = buf[..pos].trim().to_string();
-                        buf.drain(..=pos);
-                        if !line.is_empty()
-                            && let Some(msg) = parse_hmr_json(&line)
-                        {
-                            messages.push((cid, msg));
-                        }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                    Err(_) => {
+                        disconnected.push(cid);
+                        break;
                     }
                 }
             }
 
-            for cid in disconnected {
-                self.clients.remove(&cid);
-                self.in_buffers.remove(&cid);
+            if let Some(buf) = self.in_buffers.get_mut(&cid) {
+                while let Some(pos) = buf.find('\n') {
+                    let line = buf[..pos].trim().to_string();
+                    buf.drain(..=pos);
+                    if !line.is_empty()
+                        && let Some(msg) = parse_hmr_json(&line)
+                    {
+                        messages.push((cid, msg));
+                    }
+                }
             }
-            messages
         }
+
+        for cid in disconnected {
+            self.clients.remove(&cid);
+            self.in_buffers.remove(&cid);
+        }
+        messages
     }
 
     /// Sends a JSON-framed response back to the specified client.
     pub fn send_response(&mut self, client_id: ClientId, response: &HmrResponse) {
-        #[cfg(not(unix))]
-        let _ = (client_id, response);
-        #[cfg(unix)]
         if let Some(stream) = self.clients.get_mut(&client_id) {
             let mut payload = response.to_json();
             payload.push('\n');
@@ -183,30 +252,43 @@ impl HmrIpcServer {
 
 impl Drop for HmrIpcServer {
     fn drop(&mut self) {
-        #[cfg(unix)]
         let _ = fs::remove_file(&self.socket_path);
     }
 }
 
 /// Client for sending HMR updates from Rust tests or tooling.
 pub struct HmrIpcClient {
-    #[cfg(unix)]
-    stream: UnixStream,
+    stream: HmrStream,
 }
 
 impl HmrIpcClient {
     pub fn connect(path: impl AsRef<Path>) -> Result<Self, EngineError> {
+        let endpoint = path.as_ref();
+        if let Ok(raw) = fs::read_to_string(endpoint) {
+            let trimmed = raw.trim();
+            if let Some(addr) = trimmed.strip_prefix("tcp://") {
+                let tcp = TcpStream::connect(addr).map_err(|e| {
+                    EngineError::ConfigError(format!("Failed to connect to HMR TCP: {e}"))
+                })?;
+                return Ok(Self {
+                    stream: HmrStream::Tcp(tcp),
+                });
+            }
+        }
+
         #[cfg(unix)]
         {
-            let stream = UnixStream::connect(path.as_ref())
+            let unix = UnixStream::connect(endpoint)
                 .map_err(|e| EngineError::ConfigError(format!("Failed to connect to HMR: {e}")))?;
-            Ok(Self { stream })
+            Ok(Self {
+                stream: HmrStream::Unix(unix),
+            })
         }
         #[cfg(not(unix))]
         {
-            let _ = path.as_ref();
-            Err(EngineError::ConfigError(String::from(
-                "Unix domain sockets are not supported on this platform",
+            Err(EngineError::ConfigError(format!(
+                "HMR endpoint '{}' is missing or does not contain a valid tcp:// pointer",
+                endpoint.display()
             )))
         }
     }
@@ -233,63 +315,42 @@ impl HmrIpcClient {
         self.send_message(&HmrMessage::Ping)
     }
 
-    #[allow(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
     fn send_message(&mut self, msg: &HmrMessage) -> Result<(), EngineError> {
-        #[cfg(unix)]
-        {
-            let mut json = match msg {
-                HmrMessage::Reload { script } => {
-                    let esc = escape_json(script);
-                    format!(r#"{{"type":"reload","script":"{esc}"}}"#)
-                }
-                HmrMessage::ReloadServer { bundle_js } => {
-                    let esc = escape_json(bundle_js);
-                    format!(r#"{{"type":"reload_server","bundle":"{esc}"}}"#)
-                }
-                HmrMessage::Eval { code } => {
-                    let esc = escape_json(code);
-                    format!(r#"{{"type":"eval","code":"{esc}"}}"#)
-                }
-                HmrMessage::Ping => String::from(r#"{"type":"ping"}"#),
-            };
-            json.push('\n');
-            self.stream
-                .write_all(json.as_bytes())
-                .map_err(|e| EngineError::ConfigError(e.to_string()))?;
-            self.stream
-                .flush()
-                .map_err(|e| EngineError::ConfigError(e.to_string()))?;
-            Ok(())
-        }
-        #[cfg(not(unix))]
-        {
-            let _ = msg;
-            Err(EngineError::ConfigError(String::from(
-                "Unsupported platform",
-            )))
-        }
+        let mut json = match msg {
+            HmrMessage::Reload { script } => {
+                let esc = escape_json(script);
+                format!(r#"{{"type":"reload","script":"{esc}"}}"#)
+            }
+            HmrMessage::ReloadServer { bundle_js } => {
+                let esc = escape_json(bundle_js);
+                format!(r#"{{"type":"reload_server","bundle":"{esc}"}}"#)
+            }
+            HmrMessage::Eval { code } => {
+                let esc = escape_json(code);
+                format!(r#"{{"type":"eval","code":"{esc}"}}"#)
+            }
+            HmrMessage::Ping => String::from(r#"{"type":"ping"}"#),
+        };
+        json.push('\n');
+        self.stream
+            .write_all(json.as_bytes())
+            .map_err(|e| EngineError::ConfigError(e.to_string()))?;
+        self.stream
+            .flush()
+            .map_err(|e| EngineError::ConfigError(e.to_string()))?;
+        Ok(())
     }
 
-    #[allow(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
     pub fn read_response(&mut self) -> Result<String, EngineError> {
-        #[cfg(unix)]
-        {
-            let mut line = String::new();
-            let mut byte = [0u8; 1];
-            while self.stream.read_exact(&mut byte).is_ok() {
-                if byte[0] == b'\n' {
-                    break;
-                }
-                line.push(byte[0] as char);
+        let mut line = String::new();
+        let mut byte = [0u8; 1];
+        while self.stream.read_exact(&mut byte).is_ok() {
+            if byte[0] == b'\n' {
+                break;
             }
-            Ok(line)
+            line.push(byte[0] as char);
         }
-        #[cfg(not(unix))]
-        {
-            Err(EngineError::ConfigError(String::from(
-                "Unsupported platform",
-            )))
-        }
+        Ok(line)
     }
 }
 
@@ -407,21 +468,15 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn server_client_roundtrip_ping_and_reload() {
-        let socket_path = PathBuf::from(format!(
-            "/tmp/ng-native-test-hmr-{}.sock",
-            std::process::id()
-        ));
-        let mut server = HmrIpcServer::bind(&socket_path).unwrap();
+    fn run_hmr_roundtrip_for(socket_path: &Path) -> HmrIpcServer {
+        let mut server = HmrIpcServer::bind(socket_path).unwrap();
         assert!(socket_path.exists());
 
-        let mut client = HmrIpcClient::connect(&socket_path).unwrap();
+        let mut client = HmrIpcClient::connect(socket_path).unwrap();
         client.send_ping().unwrap();
 
         let mut messages = Vec::new();
-        for _ in 0..10 {
+        for _ in 0..20 {
             messages = server.poll_messages();
             if !messages.is_empty() {
                 break;
@@ -441,7 +496,7 @@ mod tests {
             .send_reload_server("globalThis.__SVR_V__ = 2;")
             .unwrap();
         let mut srv_msgs = Vec::new();
-        for _ in 0..10 {
+        for _ in 0..20 {
             srv_msgs = server.poll_messages();
             if !srv_msgs.is_empty() {
                 break;
@@ -454,8 +509,26 @@ mod tests {
                 bundle_js: String::from("globalThis.__SVR_V__ = 2;"),
             }]
         );
+        server
+    }
 
+    #[test]
+    fn server_client_roundtrip_ping_and_reload() {
+        let socket_path =
+            std::env::temp_dir().join(format!("ng-native-test-hmr-{}.sock", std::process::id()));
+        let server = run_hmr_roundtrip_for(&socket_path);
         drop(server);
         assert!(!socket_path.exists());
+    }
+
+    #[test]
+    fn tcp_pointer_file_roundtrip_ping_and_reload() {
+        let pointer_path =
+            std::env::temp_dir().join(format!("ng-native-test-hmr-{}.tcp", std::process::id()));
+        let server = run_hmr_roundtrip_for(&pointer_path);
+        let pointer = fs::read_to_string(&pointer_path).unwrap();
+        assert!(pointer.trim().starts_with("tcp://127.0.0.1:"), "{pointer}");
+        drop(server);
+        assert!(!pointer_path.exists());
     }
 }
