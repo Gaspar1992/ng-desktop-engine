@@ -193,6 +193,285 @@ mod inotify_ffi {
     }
 }
 
+#[cfg(target_os = "macos")]
+mod kqueue_ffi {
+    use crate::ffi_dl::DynLib;
+    use std::collections::HashMap;
+    use std::ffi::{CString, c_char, c_int, c_void};
+    use std::path::{Path, PathBuf};
+
+    const EVFILT_VNODE: i16 = -4;
+    const EV_ADD: u16 = 0x0001;
+    const EV_ENABLE: u16 = 0x0004;
+    const EV_CLEAR: u16 = 0x0020;
+    const NOTE_DELETE: u32 = 0x0001;
+    const NOTE_WRITE: u32 = 0x0002;
+    const NOTE_EXTEND: u32 = 0x0004;
+    const NOTE_ATTRIB: u32 = 0x0008;
+    const NOTE_RENAME: u32 = 0x0020;
+    const O_EVTONLY: c_int = 0x8000;
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct Kevent {
+        ident: usize,
+        filter: i16,
+        flags: u16,
+        fflags: u32,
+        data: isize,
+        udata: *mut c_void,
+    }
+
+    #[repr(C)]
+    struct Timespec {
+        tv_sec: isize,
+        tv_nsec: isize,
+    }
+
+    type KqueueFn = unsafe extern "C" fn() -> c_int;
+    type KeventFn = unsafe extern "C" fn(
+        c_int,
+        *const Kevent,
+        c_int,
+        *mut Kevent,
+        c_int,
+        *const Timespec,
+    ) -> c_int;
+    type OpenFn = unsafe extern "C" fn(*const c_char, c_int) -> c_int;
+    type CloseFn = unsafe extern "C" fn(c_int) -> c_int;
+
+    pub(super) struct KqueueHandle {
+        kq: c_int,
+        kevent_fn: KeventFn,
+        open_fn: OpenFn,
+        close_fn: CloseFn,
+        fd_to_path: HashMap<usize, PathBuf>,
+    }
+
+    impl KqueueHandle {
+        pub(super) fn try_new() -> Option<Self> {
+            unsafe {
+                let lib = DynLib::open(c"/usr/lib/libSystem.B.dylib")
+                    .or_else(|| DynLib::open(c"libSystem.B.dylib"))?;
+                let kqueue_fn: KqueueFn = lib.sym(c"kqueue")?;
+                let kevent_fn: KeventFn = lib.sym(c"kevent")?;
+                let open_fn: OpenFn = lib.sym(c"open")?;
+                let close_fn: CloseFn = lib.sym(c"close")?;
+                let kq = kqueue_fn();
+                if kq < 0 {
+                    return None;
+                }
+                Some(Self {
+                    kq,
+                    kevent_fn,
+                    open_fn,
+                    close_fn,
+                    fd_to_path: HashMap::new(),
+                })
+            }
+        }
+
+        pub(super) fn watch_path(&mut self, path: &Path) {
+            let old_fd = self
+                .fd_to_path
+                .iter()
+                .find_map(|(&fd, p)| (p == path).then_some(fd));
+            if let Some(fd_usize) = old_fd {
+                self.fd_to_path.remove(&fd_usize);
+                if let Ok(fd) = c_int::try_from(fd_usize) {
+                    unsafe {
+                        let _ = (self.close_fn)(fd);
+                    }
+                }
+            }
+            let Ok(c_path) = CString::new(path.to_string_lossy().as_bytes()) else {
+                return;
+            };
+            let fd = unsafe { (self.open_fn)(c_path.as_ptr(), O_EVTONLY) };
+            if fd < 0 {
+                return;
+            }
+            let Ok(ident) = usize::try_from(fd) else {
+                unsafe {
+                    let _ = (self.close_fn)(fd);
+                }
+                return;
+            };
+            let ev = Kevent {
+                ident,
+                filter: EVFILT_VNODE,
+                flags: EV_ADD | EV_ENABLE | EV_CLEAR,
+                fflags: NOTE_DELETE | NOTE_WRITE | NOTE_EXTEND | NOTE_ATTRIB | NOTE_RENAME,
+                data: 0,
+                udata: std::ptr::null_mut(),
+            };
+            let rc = unsafe {
+                (self.kevent_fn)(
+                    self.kq,
+                    &raw const ev,
+                    1,
+                    std::ptr::null_mut(),
+                    0,
+                    std::ptr::null(),
+                )
+            };
+            if rc >= 0 {
+                self.fd_to_path.insert(ident, path.to_path_buf());
+            } else {
+                unsafe {
+                    let _ = (self.close_fn)(fd);
+                }
+            }
+        }
+
+        pub(super) fn drain_events(&self) -> Vec<PathBuf> {
+            let mut out_events = [Kevent {
+                ident: 0,
+                filter: 0,
+                flags: 0,
+                fflags: 0,
+                data: 0,
+                udata: std::ptr::null_mut(),
+            }; 16];
+            let timeout = Timespec {
+                tv_sec: 0,
+                tv_nsec: 0,
+            };
+            let n = unsafe {
+                (self.kevent_fn)(
+                    self.kq,
+                    std::ptr::null(),
+                    0,
+                    out_events.as_mut_ptr(),
+                    c_int::try_from(out_events.len()).unwrap_or(16),
+                    &raw const timeout,
+                )
+            };
+            if n <= 0 {
+                return Vec::new();
+            }
+            let count = usize::try_from(n).unwrap_or(0).min(out_events.len());
+            let mut changed = Vec::new();
+            for ev in &out_events[..count] {
+                if let Some(p) = self.fd_to_path.get(&ev.ident)
+                    && !changed.contains(p)
+                {
+                    changed.push(p.clone());
+                }
+            }
+            changed
+        }
+    }
+
+    impl Drop for KqueueHandle {
+        fn drop(&mut self) {
+            for &fd_usize in self.fd_to_path.keys() {
+                if let Ok(fd) = c_int::try_from(fd_usize) {
+                    unsafe {
+                        let _ = (self.close_fn)(fd);
+                    }
+                }
+            }
+            if self.kq >= 0 {
+                unsafe {
+                    let _ = (self.close_fn)(self.kq);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+mod win32_watch_ffi {
+    use crate::ffi_dl::DynLib;
+    use std::collections::HashMap;
+    use std::ffi::c_void;
+    use std::path::{Path, PathBuf};
+
+    const FILE_NOTIFY_CHANGE_FILE_NAME: u32 = 0x0001;
+    const FILE_NOTIFY_CHANGE_SIZE: u32 = 0x0008;
+    const FILE_NOTIFY_CHANGE_LAST_WRITE: u32 = 0x0010;
+    const WAIT_OBJECT_0: u32 = 0;
+
+    type FindFirstChangeNotificationWFn =
+        unsafe extern "system" fn(*const u16, i32, u32) -> *mut c_void;
+    type FindNextChangeNotificationFn = unsafe extern "system" fn(*mut c_void) -> i32;
+    type FindCloseChangeNotificationFn = unsafe extern "system" fn(*mut c_void) -> i32;
+    type WaitForSingleObjectFn = unsafe extern "system" fn(*mut c_void, u32) -> u32;
+
+    pub(super) struct Win32WatchHandle {
+        find_first: FindFirstChangeNotificationWFn,
+        find_next: FindNextChangeNotificationFn,
+        find_close: FindCloseChangeNotificationFn,
+        wait_single: WaitForSingleObjectFn,
+        dir_handles: HashMap<PathBuf, usize>,
+    }
+
+    impl Win32WatchHandle {
+        pub(super) fn try_new() -> Option<Self> {
+            unsafe {
+                let kernel = DynLib::open(c"kernel32.dll")?;
+                Some(Self {
+                    find_first: kernel.sym(c"FindFirstChangeNotificationW")?,
+                    find_next: kernel.sym(c"FindNextChangeNotification")?,
+                    find_close: kernel.sym(c"FindCloseChangeNotification")?,
+                    wait_single: kernel.sym(c"WaitForSingleObject")?,
+                    dir_handles: HashMap::new(),
+                })
+            }
+        }
+
+        pub(super) fn watch_dir(&mut self, dir: &Path) {
+            if self.dir_handles.contains_key(dir) {
+                return;
+            }
+            let wide: Vec<u16> = dir
+                .to_string_lossy()
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect();
+            let handle = unsafe {
+                (self.find_first)(
+                    wide.as_ptr(),
+                    0,
+                    FILE_NOTIFY_CHANGE_FILE_NAME
+                        | FILE_NOTIFY_CHANGE_SIZE
+                        | FILE_NOTIFY_CHANGE_LAST_WRITE,
+                )
+            };
+            let handle_key = handle as usize;
+            if handle_key != 0 && handle_key != usize::MAX {
+                self.dir_handles.insert(dir.to_path_buf(), handle_key);
+            }
+        }
+
+        pub(super) fn poll_dirs(&self) -> Vec<PathBuf> {
+            let mut changed_dirs = Vec::new();
+            for (dir, &handle_key) in &self.dir_handles {
+                let handle = handle_key as *mut c_void;
+                let status = unsafe { (self.wait_single)(handle, 0) };
+                if status == WAIT_OBJECT_0 {
+                    changed_dirs.push(dir.clone());
+                    unsafe {
+                        let _ = (self.find_next)(handle);
+                    }
+                }
+            }
+            changed_dirs
+        }
+    }
+
+    impl Drop for Win32WatchHandle {
+        fn drop(&mut self) {
+            for &handle_key in self.dir_handles.values() {
+                unsafe {
+                    let _ = (self.find_close)(handle_key as *mut c_void);
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct WatchedFileState {
     last_mtime: Option<SystemTime>,
@@ -211,6 +490,10 @@ pub struct NativeFsManager {
     wd_to_path: HashMap<std::ffi::c_int, PathBuf>,
     #[cfg(target_os = "linux")]
     dir_wd_to_path: HashMap<std::ffi::c_int, PathBuf>,
+    #[cfg(target_os = "macos")]
+    kqueue: Option<kqueue_ffi::KqueueHandle>,
+    #[cfg(target_os = "windows")]
+    win32_watch: Option<win32_watch_ffi::Win32WatchHandle>,
 }
 
 impl Default for NativeFsManager {
@@ -231,6 +514,10 @@ impl NativeFsManager {
             wd_to_path: HashMap::new(),
             #[cfg(target_os = "linux")]
             dir_wd_to_path: HashMap::new(),
+            #[cfg(target_os = "macos")]
+            kqueue: kqueue_ffi::KqueueHandle::try_new(),
+            #[cfg(target_os = "windows")]
+            win32_watch: win32_watch_ffi::Win32WatchHandle::try_new(),
         }
     }
 
@@ -243,7 +530,15 @@ impl NativeFsManager {
         {
             self.inotify.is_some()
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "macos")]
+        {
+            self.kqueue.is_some()
+        }
+        #[cfg(target_os = "windows")]
+        {
+            self.win32_watch.is_some()
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
         {
             false
         }
@@ -314,6 +609,17 @@ impl NativeFsManager {
             state.pending_atomic_change = true;
             #[cfg(target_os = "linux")]
             self.register_linux_watches(path);
+            #[cfg(target_os = "macos")]
+            if let Some(kq) = &mut self.kqueue {
+                kq.watch_path(path);
+            }
+            #[cfg(target_os = "windows")]
+            if let Some(w) = &mut self.win32_watch
+                && let Some(parent) = path.parent()
+                && !parent.as_os_str().is_empty()
+            {
+                w.watch_dir(parent);
+            }
         }
         Ok(())
     }
@@ -399,11 +705,21 @@ impl NativeFsManager {
         );
         #[cfg(target_os = "linux")]
         self.register_linux_watches(path);
+        #[cfg(target_os = "macos")]
+        if let Some(kq) = &mut self.kqueue {
+            kq.watch_path(path);
+        }
+        #[cfg(target_os = "windows")]
+        if let Some(w) = &mut self.win32_watch
+            && let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            w.watch_dir(parent);
+        }
         Ok(())
     }
 
-    /// Non-blockingly drains kernel `inotify` events when active, or polls file metadata deltas
-    /// on platforms without an active kernel watcher.
+    /// Non-blockingly drains kernel watcher events when active and reconciles file metadata deltas.
     pub fn poll_changed_paths(&mut self) -> Vec<PathBuf> {
         let mut changed = Vec::new();
         for (path, state) in &mut self.watched_files {
@@ -426,14 +742,30 @@ impl NativeFsManager {
             return changed;
         }
 
+        #[cfg(target_os = "macos")]
+        if let Some(kq) = &mut self.kqueue {
+            for p in kq.drain_events() {
+                if !changed.contains(&p) {
+                    changed.push(p.clone());
+                }
+                kq.watch_path(&p);
+            }
+        }
+
+        #[cfg(target_os = "windows")]
+        if let Some(w) = &self.win32_watch {
+            let _ = w.poll_dirs();
+        }
+
         for (path, state) in &mut self.watched_files {
             let (mtime, len) = Self::snapshot_metadata(path);
+            let already_changed = changed.contains(path);
             let metadata_changed =
                 (mtime.is_some() && mtime != state.last_mtime) || len != state.last_len;
-            if metadata_changed {
+            if already_changed || metadata_changed {
                 state.last_mtime = mtime;
                 state.last_len = len;
-                if !changed.contains(path) {
+                if !already_changed {
                     changed.push(path.clone());
                 }
             }

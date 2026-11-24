@@ -1,10 +1,11 @@
 #![allow(unsafe_code)]
 
-#[cfg(target_os = "linux")]
 use crate::ffi_dl::DynLib;
 use std::env;
 #[cfg(target_os = "linux")]
-use std::ffi::{CStr, c_char, c_int, c_void};
+use std::ffi::c_int;
+#[cfg(unix)]
+use std::ffi::{CStr, c_char, c_void};
 use std::path::{Path, PathBuf};
 
 /// Normalizes a POSIX/GLib locale string (e.g. `es_ES.UTF-8`) into a BCP-47 tag (`es-ES`).
@@ -27,7 +28,7 @@ unsafe fn load_sym<F: Copy>(handle: *mut c_void, sym: &CStr) -> Option<F> {
 }
 
 #[cfg(target_os = "linux")]
-fn probe_glib_locale_and_timezone() -> (Option<String>, Option<String>) {
+fn probe_os_locale_and_timezone() -> (Option<String>, Option<String>) {
     type LangNamesFn = unsafe extern "C" fn() -> *const *const c_char;
     type TzNewLocalFn = unsafe extern "C" fn() -> *mut c_void;
     type TzGetIdFn = unsafe extern "C" fn(*mut c_void) -> *const c_char;
@@ -74,13 +75,116 @@ fn probe_glib_locale_and_timezone() -> (Option<String>, Option<String>) {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
-fn probe_glib_locale_and_timezone() -> (Option<String>, Option<String>) {
+#[cfg(target_os = "macos")]
+fn probe_os_locale_and_timezone() -> (Option<String>, Option<String>) {
+    type CfCopyFn = unsafe extern "C" fn() -> *mut c_void;
+    type CfGetStrFn = unsafe extern "C" fn(*mut c_void) -> *mut c_void;
+    type CfStringGetCStringFn = unsafe extern "C" fn(*mut c_void, *mut c_char, isize, u32) -> u8;
+    type CfReleaseFn = unsafe extern "C" fn(*mut c_void);
+
+    const K_CF_STRING_ENCODING_UTF8: u32 = 0x0800_0100;
+
+    unsafe fn cf_string_to_rust(
+        cf_str: *mut c_void,
+        get_cstr: CfStringGetCStringFn,
+    ) -> Option<String> {
+        if cf_str.is_null() {
+            return None;
+        }
+        let mut buf = [0_i8; 256];
+        let ok = unsafe {
+            get_cstr(
+                cf_str,
+                buf.as_mut_ptr(),
+                isize::try_from(buf.len()).ok()?,
+                K_CF_STRING_ENCODING_UTF8,
+            )
+        };
+        if ok == 0 {
+            return None;
+        }
+        let text = unsafe { CStr::from_ptr(buf.as_ptr()) }
+            .to_string_lossy()
+            .into_owned();
+        if text.trim().is_empty() {
+            None
+        } else {
+            Some(text)
+        }
+    }
+
+    unsafe {
+        let Some(cf) =
+            DynLib::open(c"/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+        else {
+            return (None, None);
+        };
+        let Some(get_cstr) = cf.sym::<CfStringGetCStringFn>(c"CFStringGetCString") else {
+            return (None, None);
+        };
+        let Some(cf_release) = cf.sym::<CfReleaseFn>(c"CFRelease") else {
+            return (None, None);
+        };
+
+        let mut locale = None;
+        if let (Some(copy_locale), Some(get_ident)) = (
+            cf.sym::<CfCopyFn>(c"CFLocaleCopyCurrent"),
+            cf.sym::<CfGetStrFn>(c"CFLocaleGetIdentifier"),
+        ) {
+            let loc = copy_locale();
+            if !loc.is_null() {
+                if let Some(raw) = cf_string_to_rust(get_ident(loc), get_cstr) {
+                    locale = normalize_bcp47_locale(&raw);
+                }
+                cf_release(loc);
+            }
+        }
+
+        let mut timezone = None;
+        if let (Some(copy_tz), Some(get_tz_name)) = (
+            cf.sym::<CfCopyFn>(c"CFTimeZoneCopySystem"),
+            cf.sym::<CfGetStrFn>(c"CFTimeZoneGetName"),
+        ) {
+            let tz = copy_tz();
+            if !tz.is_null() {
+                timezone = cf_string_to_rust(get_tz_name(tz), get_cstr);
+                cf_release(tz);
+            }
+        }
+
+        (locale, timezone)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn probe_os_locale_and_timezone() -> (Option<String>, Option<String>) {
+    type GetUserDefaultLocaleNameFn =
+        unsafe extern "system" fn(*mut u16, std::ffi::c_int) -> std::ffi::c_int;
+
+    let locale = unsafe {
+        DynLib::open(c"kernel32.dll").and_then(|kernel| {
+            let get_locale: GetUserDefaultLocaleNameFn = kernel.sym(c"GetUserDefaultLocaleName")?;
+            let mut buf = [0_u16; 85];
+            let len = get_locale(buf.as_mut_ptr(), std::ffi::c_int::try_from(buf.len()).ok()?);
+            if len > 1 {
+                let slice_len = usize::try_from(len - 1).ok()?;
+                let raw = String::from_utf16_lossy(&buf[..slice_len]);
+                normalize_bcp47_locale(&raw)
+            } else {
+                None
+            }
+        })
+    };
+    (locale, None)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+fn probe_os_locale_and_timezone() -> (Option<String>, Option<String>) {
     (None, None)
 }
 
 #[cfg(target_os = "linux")]
-fn probe_gio_network_monitor() -> Option<(bool, bool)> {
+fn probe_os_network_monitor() -> Option<(bool, bool)> {
     type MonDefaultFn = unsafe extern "C" fn() -> *mut c_void;
     type MonBoolFn = unsafe extern "C" fn(*mut c_void) -> c_int;
 
@@ -100,8 +204,21 @@ fn probe_gio_network_monitor() -> Option<(bool, bool)> {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
-fn probe_gio_network_monitor() -> Option<(bool, bool)> {
+#[cfg(target_os = "windows")]
+fn probe_os_network_monitor() -> Option<(bool, bool)> {
+    type InternetGetConnectedStateFn = unsafe extern "system" fn(*mut u32, u32) -> i32;
+
+    unsafe {
+        let wininet = DynLib::open(c"wininet.dll")?;
+        let get_state: InternetGetConnectedStateFn = wininet.sym(c"InternetGetConnectedState")?;
+        let mut flags: u32 = 0;
+        let online = get_state(&raw mut flags, 0) != 0;
+        Some((online, false))
+    }
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+fn probe_os_network_monitor() -> Option<(bool, bool)> {
     None
 }
 
@@ -194,8 +311,8 @@ impl NativeSystemEnv {
             trimmed
         };
 
-        let (glib_locale, glib_tz) = probe_glib_locale_and_timezone();
-        let locale = glib_locale
+        let (os_locale, os_tz) = probe_os_locale_and_timezone();
+        let locale = os_locale
             .or_else(|| {
                 env::var("LC_ALL")
                     .ok()
@@ -208,11 +325,11 @@ impl NativeSystemEnv {
             })
             .unwrap_or_else(|| String::from("en-US"));
 
-        let timezone = glib_tz
+        let timezone = os_tz
             .or_else(|| env::var("TZ").ok().filter(|v| !v.trim().is_empty()))
             .unwrap_or_else(|| String::from("UTC"));
 
-        let (online, metered) = probe_gio_network_monitor().unwrap_or((true, false));
+        let (online, metered) = probe_os_network_monitor().unwrap_or((true, false));
 
         let cache_dir = env::var("XDG_CACHE_HOME")
             .ok()
@@ -238,7 +355,7 @@ impl NativeSystemEnv {
     }
 
     pub fn refresh_network(&mut self) {
-        if let Some((online, metered)) = probe_gio_network_monitor() {
+        if let Some((online, metered)) = probe_os_network_monitor() {
             self.online = online;
             self.metered = metered;
         }

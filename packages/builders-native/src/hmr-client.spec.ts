@@ -1,5 +1,7 @@
-import { unlinkSync } from 'node:fs';
+import { unlinkSync, writeFileSync } from 'node:fs';
 import net from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { pingHmr, pushHmrEval, pushHmrReload, sendHmrMessage } from './hmr-client.mjs';
 
 describe('HMR IPC Client (Node.js)', () => {
@@ -69,5 +71,50 @@ describe('HMR IPC Client (Node.js)', () => {
     const res = await sendHmrMessage('/tmp/nonexistent-engine.sock', { type: 'ping' });
     expect(res.connected).toBe(false);
     expect(res.error).toBe('Socket file not found');
+  });
+
+  it('connects over loopback tcp:// pointer file for Windows HMR IPC', async () => {
+    const pointerPath = join(tmpdir(), `ng-native-hmr-win-${process.pid}.tcp`);
+    const tcpServer = net.createServer((conn: net.Socket) => {
+      conn.on('data', (data: Buffer) => {
+        const msg = JSON.parse(data.toString().trim());
+        if (msg.type === 'ping') {
+          conn.write(JSON.stringify({ status: 'ok', pong: true }) + '\n');
+        } else if (msg.type === 'reload') {
+          conn.write(
+            JSON.stringify({ status: 'ok', reloaded: true, length: msg.script.length }) + '\n',
+          );
+        }
+      });
+    });
+
+    await new Promise<void>((resolve) => {
+      tcpServer.listen(0, '127.0.0.1', () => resolve());
+    });
+
+    try {
+      const addr = tcpServer.address() as net.AddressInfo;
+      writeFileSync(pointerPath, `tcp://127.0.0.1:${addr.port}\n`, 'utf8');
+
+      const pong = await pingHmr(pointerPath);
+      expect(pong.connected).toBe(true);
+      expect(pong.response).toEqual({ status: 'ok', pong: true });
+
+      const reload = await pushHmrReload(pointerPath, 'signal x 1');
+      expect(reload.connected).toBe(true);
+      expect(reload.response).toEqual({ status: 'ok', reloaded: true, length: 10 });
+
+      writeFileSync(pointerPath, 'tcp://127.0.0.1\n', 'utf8');
+      const invalidPort = await pingHmr(pointerPath);
+      expect(invalidPort.connected).toBe(false);
+      expect(invalidPort.error).toContain('Invalid TCP HMR pointer');
+    } finally {
+      await new Promise<void>((resolve) => tcpServer.close(() => resolve()));
+      try {
+        unlinkSync(pointerPath);
+      } catch {
+        // Ignore cleanup failures
+      }
+    }
   });
 });

@@ -3,11 +3,8 @@ mod common;
 use common::load_fixture_bundle;
 use ng_native_engine::config::AngularNativeConfig;
 use ng_native_engine::engine::{EngineError, RenderCommand, RenderEngine};
-#[cfg(unix)]
 use ng_native_engine::ipc::{HmrIpcClient, HmrIpcServer, HmrMessage, HmrResponse};
 use ng_native_engine::platforms::HeadlessBackend;
-#[cfg(unix)]
-use ng_native_engine::runtime::JsEngineBackend;
 use ng_native_engine::runtime::JsRuntime;
 
 #[test]
@@ -169,10 +166,12 @@ fn hot_reload_preserves_signal_state_and_updates_template_and_styles() {
     assert!(next_preview.contains("HMR Count: 3"));
 }
 
-#[cfg(unix)]
 #[test]
 fn hmr_ipc_server_applies_live_bundle_reloads_and_eval_to_scene_graph() {
-    let socket_path = format!("/tmp/ng-native-pipeline-hmr-{}.sock", std::process::id());
+    let socket_path = std::env::temp_dir().join(format!(
+        "ng-native-pipeline-hmr-{}.sock",
+        std::process::id()
+    ));
     let mut hmr_server = HmrIpcServer::bind(&socket_path).unwrap();
 
     let initial_script = r"
@@ -186,7 +185,7 @@ fn hmr_ipc_server_applies_live_bundle_reloads_and_eval_to_scene_graph() {
     ";
 
     let mut engine = RenderEngine::new(HeadlessBackend::new());
-    let mut runtime = JsRuntime::from_engine_config("jsc").unwrap();
+    let mut runtime = JsRuntime::new();
     runtime.eval_tick(&mut engine, initial_script).unwrap();
 
     let win = runtime.resolve_var("win").unwrap();
@@ -252,13 +251,12 @@ fn hmr_ipc_server_applies_live_bundle_reloads_and_eval_to_scene_graph() {
     assert!(after_eval_preview.contains("EvalOverIPC"));
 }
 
-#[cfg(unix)]
 #[test]
 fn hmr_ipc_server_handles_client_disconnect_and_malformed_payloads() {
-    let socket_path = format!(
-        "/tmp/ng-native-pipeline-malformed-{}.sock",
+    let socket_path = std::env::temp_dir().join(format!(
+        "ng-native-pipeline-malformed-{}.sock",
         std::process::id()
-    );
+    ));
     let mut hmr_server = HmrIpcServer::bind(&socket_path).unwrap();
 
     let mut client = HmrIpcClient::connect(&socket_path).unwrap();
@@ -280,19 +278,15 @@ fn hmr_ipc_server_handles_client_disconnect_and_malformed_payloads() {
     assert_eq!(after_disconnect, []);
 }
 
-#[cfg(unix)]
 #[test]
 fn hmr_ipc_server_reloads_server_bundle_message() {
-    let socket_path = format!(
-        "/tmp/ng-native-pipeline-server-hmr-{}.sock",
+    let socket_path = std::env::temp_dir().join(format!(
+        "ng-native-pipeline-server-hmr-{}.sock",
         std::process::id()
-    );
+    ));
     let mut hmr_server = HmrIpcServer::bind(&socket_path).unwrap();
 
-    let runtime = JsRuntime::from_engine_config("jsc").unwrap();
-    if !runtime.js_engine().is_jit_enabled() {
-        return;
-    }
+    let runtime = JsRuntime::new();
 
     let initial_server_bundle = r"
         globalThis.__NG_NATIVE_SERVER_ROUTER__ = {

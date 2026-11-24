@@ -1,8 +1,11 @@
+#![allow(unsafe_code)]
+
 use super::http_codec::{
     encode_config_json, encode_response_json, extract_json_bool, extract_json_string,
     extract_json_u64, parse_bridge_batch, parse_bridge_request,
 };
 use super::libsoup_sys::{LibsoupSys, default_reason_phrase};
+use crate::ffi_dl::DynLib;
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Write as _;
@@ -244,6 +247,32 @@ impl NativeHttpEngine {
 
     pub const fn platform(&self) -> OsHttpPlatform {
         self.platform
+    }
+
+    /// Probes whether the native OS HTTP transport driver can be loaded dynamically.
+    #[must_use]
+    pub fn is_os_http_driver_available(&self) -> bool {
+        match self.platform {
+            OsHttpPlatform::LinuxLibsoup => unsafe { DynLib::open(c"libsoup-3.0.so.0").is_some() },
+            OsHttpPlatform::MacOsUrlSession => unsafe {
+                DynLib::open(c"/System/Library/Frameworks/CFNetwork.framework/CFNetwork").is_some()
+                    || DynLib::open(c"/System/Library/Frameworks/Foundation.framework/Foundation")
+                        .is_some()
+            },
+            OsHttpPlatform::WindowsWinHttp => unsafe {
+                type WinHttpOpenFn = unsafe extern "system" fn(
+                    *const u16,
+                    u32,
+                    *const u16,
+                    *const u16,
+                    u32,
+                )
+                    -> *mut std::ffi::c_void;
+                DynLib::open(c"winhttp.dll")
+                    .and_then(|d| d.sym::<WinHttpOpenFn>(c"WinHttpOpen"))
+                    .is_some()
+            },
+        }
     }
 
     pub const fn config(&self) -> &NativeHttpConfig {
