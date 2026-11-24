@@ -28,6 +28,7 @@ name = "ng-native-engine"
 path = "src/main.rs"
 
 [dependencies]
+rquickjs = { version = "0.14.0", default-features = false, features = ["std"] }
 
 [lints.rust]
 unsafe_code = "deny"

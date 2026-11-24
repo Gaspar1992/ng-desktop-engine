@@ -91,7 +91,7 @@ impl JscEngine {
     }
 }
 
-fn format_event_payload_js(payload: &EventPayload) -> String {
+pub(super) fn format_event_payload_js(payload: &EventPayload) -> String {
     match payload {
         EventPayload::None => String::from("{}"),
         EventPayload::Text(t) => format!("{{ value: {t:?} }}"),
@@ -100,7 +100,7 @@ fn format_event_payload_js(payload: &EventPayload) -> String {
     }
 }
 
-fn format_completions_js(completions: &[HostAsyncCompletion]) -> String {
+pub(super) fn format_completions_js(completions: &[HostAsyncCompletion]) -> String {
     let mut items = Vec::with_capacity(completions.len());
     for c in completions {
         let payload = if c.payload_json.trim().is_empty() {
@@ -116,9 +116,13 @@ fn format_completions_js(completions: &[HostAsyncCompletion]) -> String {
 impl JsEngineBackend for JscEngine {
     fn engine_name(&self) -> &str {
         if self.jsc.is_some() {
-            "JavaScriptCore JIT (libjavascriptcoregtk-6.0.so.1)"
+            if cfg!(target_os = "macos") {
+                "JavaScriptCore JIT (JavaScriptCore.framework)"
+            } else {
+                "JavaScriptCore JIT (libjavascriptcoregtk-6.0.so.1)"
+            }
         } else {
-            "JavaScriptCore (Portable Fallback)"
+            "JavaScriptCore (Portable ES2024 Fallback: QuickJS-NG)"
         }
     }
 
@@ -129,12 +133,16 @@ impl JsEngineBackend for JscEngine {
     fn attach_http_engine(&mut self, engine: Arc<Mutex<NativeHttpEngine>>) {
         if let Some(jsc) = &self.jsc {
             jsc.set_http_engine(engine);
+        } else {
+            self.fallback.attach_http_engine(engine);
         }
     }
 
     fn attach_host_bridge(&mut self, bridge: Arc<HostBridge>) {
         if let Some(jsc) = &self.jsc {
             jsc.set_host_bridge(bridge);
+        } else {
+            self.fallback.attach_host_bridge(bridge);
         }
     }
 

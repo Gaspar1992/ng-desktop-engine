@@ -270,17 +270,15 @@ mod tests {
         assert!(rt.desktop().check_sqlite_allowed());
         assert!(!rt.desktop().check_network_allowed());
         assert!(!rt.desktop().check_filesystem_xdg_allowed());
-        if rt.js_engine().is_jit_enabled() {
-            let denied = rt.eval_js(
-                &mut engine,
-                "__NG_NATIVE__.fsResolvePath('config', 'prefs.json')",
-            );
-            let err_msg = format!("{:?}", denied.unwrap_err());
-            assert!(
-                err_msg.contains("Permission denied: filesystem_xdg"),
-                "unexpected error: {err_msg}"
-            );
-        }
+        let denied = rt.eval_js(
+            &mut engine,
+            "__NG_NATIVE__.fsResolvePath('config', 'prefs.json')",
+        );
+        let err_msg = format!("{:?}", denied.unwrap_err());
+        assert!(
+            err_msg.contains("Permission denied: filesystem_xdg"),
+            "unexpected error: {err_msg}"
+        );
 
         cfg.permissions.filesystem_xdg = true;
         let mut allowed_rt = JsRuntime::from_config(&cfg).unwrap();
@@ -305,7 +303,7 @@ mod tests {
                 "__NG_NATIVE__.fsResolvePath('config', 'prefs.json')",
             )
             .unwrap();
-        assert_eq!(quickjs_path, "/home/user/.config/invoice-studio/prefs.json");
+        assert_eq!(quickjs_path, resolved_path);
     }
 
     #[test]

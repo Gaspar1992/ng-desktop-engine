@@ -1,7 +1,7 @@
 use ng_native_engine::config::{AngularNativeConfig, AppPermissions};
 use ng_native_engine::engine::{EventPayload, RenderCommand, RenderEngine};
 use ng_native_engine::platforms::HeadlessBackend;
-use ng_native_engine::runtime::{JsEngineBackend, JsRuntime};
+use ng_native_engine::runtime::JsRuntime;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{self, Command};
@@ -12,11 +12,14 @@ fn jsc_runtime(app_id: &str, permissions: AppPermissions) -> Option<JsRuntime> {
     let mut cfg = AngularNativeConfig::default_standalone(app_id);
     cfg.js_engine = String::from("jsc");
     cfg.permissions = permissions;
-    let rt = JsRuntime::from_config(&cfg).ok()?;
-    if !rt.js_engine().is_jit_enabled() {
-        return None;
-    }
-    Some(rt)
+    JsRuntime::from_config(&cfg).ok()
+}
+
+fn quickjs_runtime(app_id: &str, permissions: AppPermissions) -> Option<JsRuntime> {
+    let mut cfg = AngularNativeConfig::default_standalone(app_id);
+    cfg.js_engine = String::from("quickjs");
+    cfg.permissions = permissions;
+    JsRuntime::from_config(&cfg).ok()
 }
 
 #[test]
@@ -345,69 +348,83 @@ process.stdout.write(out.outputFiles[0].text);
 
 #[test]
 fn boots_real_angular_22_ivy_application_via_native_renderer_and_signals() {
-    let app_id = format!("ng-ivy-e2e-{}", process::id());
-    let Some(mut rt) = jsc_runtime(&app_id, AppPermissions::allow_all_sandboxed()) else {
-        return;
-    };
     let Some(bundle_js) = bundle_ephemeral_angular_22_ivy_app() else {
         return;
     };
 
-    let mut engine = RenderEngine::new(HeadlessBackend::new());
-    rt.eval_js(&mut engine, &bundle_js).unwrap();
-    for _ in 0..30 {
-        if rt.resolve_primary_window().is_ok() {
-            let preview = engine
-                .render_window_preview(rt.resolve_primary_window().unwrap())
-                .unwrap();
-            if preview.contains("Count: 1") {
+    for (engine_label, rt_opt) in [
+        (
+            "jsc",
+            jsc_runtime(
+                &format!("ng-ivy-e2e-jsc-{}", process::id()),
+                AppPermissions::allow_all_sandboxed(),
+            ),
+        ),
+        (
+            "quickjs",
+            quickjs_runtime(
+                &format!("ng-ivy-e2e-qjs-{}", process::id()),
+                AppPermissions::allow_all_sandboxed(),
+            ),
+        ),
+    ] {
+        let mut rt = rt_opt.unwrap_or_else(|| panic!("runtime '{engine_label}' should initialize"));
+        let mut engine = RenderEngine::new(HeadlessBackend::new());
+        rt.eval_js(&mut engine, &bundle_js).unwrap();
+        for _ in 0..30 {
+            if rt.resolve_primary_window().is_ok() {
+                let preview = engine
+                    .render_window_preview(rt.resolve_primary_window().unwrap())
+                    .unwrap();
+                if preview.contains("Count: 1") {
+                    break;
+                }
+            }
+            let _ = rt.tick(&mut engine).unwrap();
+            thread::sleep(Duration::from_millis(5));
+        }
+
+        let errors_json = rt
+            .eval_js(
+                &mut engine,
+                "JSON.stringify(__NG_NATIVE__.getSystemErrors())",
+            )
+            .unwrap();
+        assert_eq!(
+            errors_json, "[]",
+            "[{engine_label}] Angular 22 runtime errors: {errors_json}"
+        );
+
+        let win = rt.resolve_primary_window().unwrap();
+        let initial_preview = engine.render_window_preview(win).unwrap();
+        assert!(
+            initial_preview.contains("Ivy Counter"),
+            "[{engine_label}] initial_preview:\n{initial_preview}"
+        );
+        assert!(
+            initial_preview.contains("Count: 1"),
+            "[{engine_label}] initial_preview:\n{initial_preview}"
+        );
+        assert!(
+            initial_preview.contains("+1"),
+            "[{engine_label}] initial_preview:\n{initial_preview}"
+        );
+
+        let btn_id = rt.resolve_var("inc_btn").unwrap();
+        rt.trigger_node_event_with_payload(&mut engine, btn_id, "clicked", &EventPayload::None)
+            .unwrap();
+        for _ in 0..10 {
+            let _ = rt.tick(&mut engine).unwrap();
+            let updated = engine.render_window_preview(win).unwrap();
+            if updated.contains("Count: 2") {
                 break;
             }
+            thread::sleep(Duration::from_millis(5));
         }
-        let _ = rt.tick(&mut engine).unwrap();
-        thread::sleep(Duration::from_millis(5));
+        let updated_preview = engine.render_window_preview(win).unwrap();
+        assert!(
+            updated_preview.contains("Count: 2"),
+            "[{engine_label}] updated_preview:\n{updated_preview}"
+        );
     }
-
-    let errors_json = rt
-        .eval_js(
-            &mut engine,
-            "JSON.stringify(__NG_NATIVE__.getSystemErrors())",
-        )
-        .unwrap();
-    assert_eq!(
-        errors_json, "[]",
-        "Angular 22 runtime errors: {errors_json}"
-    );
-
-    let win = rt.resolve_primary_window().unwrap();
-    let initial_preview = engine.render_window_preview(win).unwrap();
-    assert!(
-        initial_preview.contains("Ivy Counter"),
-        "initial_preview:\n{initial_preview}"
-    );
-    assert!(
-        initial_preview.contains("Count: 1"),
-        "initial_preview:\n{initial_preview}"
-    );
-    assert!(
-        initial_preview.contains("+1"),
-        "initial_preview:\n{initial_preview}"
-    );
-
-    let btn_id = rt.resolve_var("inc_btn").unwrap();
-    rt.trigger_node_event_with_payload(&mut engine, btn_id, "clicked", &EventPayload::None)
-        .unwrap();
-    for _ in 0..10 {
-        let _ = rt.tick(&mut engine).unwrap();
-        let updated = engine.render_window_preview(win).unwrap();
-        if updated.contains("Count: 2") {
-            break;
-        }
-        thread::sleep(Duration::from_millis(5));
-    }
-    let updated_preview = engine.render_window_preview(win).unwrap();
-    assert!(
-        updated_preview.contains("Count: 2"),
-        "updated_preview:\n{updated_preview}"
-    );
 }
