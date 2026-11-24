@@ -490,31 +490,31 @@ impl AppKitSys {
                 let _ = add_method(
                     target_cls,
                     sel_register_name(c"onControlAction:".as_ptr()),
-                    ng_appkit_on_control_action as *const () as *const c_void,
+                    (ng_appkit_on_control_action as *const ()).cast::<c_void>(),
                     c"v@:@".as_ptr(),
                 );
                 let _ = add_method(
                     target_cls,
                     sel_register_name(c"controlTextDidChange:".as_ptr()),
-                    ng_appkit_control_text_did_change as *const () as *const c_void,
+                    (ng_appkit_control_text_did_change as *const ()).cast::<c_void>(),
                     c"v@:@".as_ptr(),
                 );
                 let _ = add_method(
                     target_cls,
                     sel_register_name(c"textDidChange:".as_ptr()),
-                    ng_appkit_text_did_change as *const () as *const c_void,
+                    (ng_appkit_text_did_change as *const ()).cast::<c_void>(),
                     c"v@:@".as_ptr(),
                 );
                 let _ = add_method(
                     target_cls,
                     sel_register_name(c"windowShouldClose:".as_ptr()),
-                    ng_appkit_window_should_close as *const () as *const c_void,
+                    (ng_appkit_window_should_close as *const ()).cast::<c_void>(),
                     c"c@:@".as_ptr(),
                 );
                 let _ = add_method(
                     target_cls,
                     sel_register_name(c"windowDidResize:".as_ptr()),
-                    ng_appkit_window_did_resize as *const () as *const c_void,
+                    (ng_appkit_window_did_resize as *const ()).cast::<c_void>(),
                     c"v@:@".as_ptr(),
                 );
                 register_pair(target_cls);
