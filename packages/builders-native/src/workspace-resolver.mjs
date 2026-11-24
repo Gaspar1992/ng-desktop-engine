@@ -26,7 +26,7 @@ function readPackageVersion(workspaceRoot, projectRoot) {
       }
     }
   }
-  return '0.4.0';
+  return '0.4.1';
 }
 
 function findNxProjectJsonFiles(workspaceRoot) {

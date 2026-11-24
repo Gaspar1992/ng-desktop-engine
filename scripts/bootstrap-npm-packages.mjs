@@ -14,17 +14,19 @@ const PACKAGE_DIRS_ORDER = [
   'router-native',
   'http-native',
   'desktop-native',
+  'server-native',
   'builders-native',
 ];
 
 const PUBLISH_PRIORITY = [
-  'engine-',
   'platform-',
   'forms-',
   'router-',
   'http-',
   'desktop-',
+  'server-',
   'builders-',
+  'engine-',
 ];
 
 function getFlagValue(args, flag) {
@@ -148,7 +150,13 @@ function printTrustedPublisherInstructions(targets) {
       '2. Enable automatic tokenless OIDC publishing in GitHub Actions:',
       '     gh variable set NPM_TRUSTED_PUBLISHING --body true',
       '',
-      '3. Optional (recommended after first OIDC publish succeeds):',
+      '3. For crates.io (one-time initial publish & Trusted Publisher setup):',
+      '     cargo publish --locked',
+      '     # Then configure Trusted Publishing at https://crates.io/crates/ng-native-engine/settings',
+      '     # (repository: Gaspar1992/ng-desktop-engine, workflow: release.yml, environment: crates-publish)',
+      '     gh variable set CRATES_TRUSTED_PUBLISHING --body true',
+      '',
+      '4. Optional (recommended after first OIDC publish succeeds):',
       '     In each package settings page, choose "Require two-factor authentication and disallow tokens".',
       '',
     ].join('\n'),
@@ -189,16 +197,19 @@ function main() {
       continue;
     }
 
+    if (!execute) {
+      process.stdout.write(
+        `[Bootstrap] Dry-run packing ${target.name}@${target.version} (offline tarball check)...\n`,
+      );
+      runNpm(['pack', target.spec, '--dry-run']);
+      continue;
+    }
+
     const publishArgs = ['publish', target.spec, '--access', 'public', '--provenance=false'];
     if (otp) {
       publishArgs.push(`--otp=${otp}`);
     }
-    if (!execute) {
-      publishArgs.push('--dry-run');
-    }
-    process.stdout.write(
-      `[Bootstrap] ${execute ? 'Publishing' : 'Dry-run'} ${target.name}@${target.version}...\n`,
-    );
+    process.stdout.write(`[Bootstrap] Publishing ${target.name}@${target.version}...\n`);
     runNpm(publishArgs);
   }
 

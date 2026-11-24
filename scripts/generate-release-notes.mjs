@@ -1,17 +1,20 @@
 #!/usr/bin/env node
 import { execSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Generates structured release notes for `ng-desktop-engine` (`v*` tags):
  * Core Rust Engine (`ng-desktop-engine`) + Individual Angular 22+ Packages (`@ng-desktop/*`).
  */
 
+const rootPkgPath = resolve(fileURLToPath(new URL('..', import.meta.url)), 'package.json');
+const defaultVersion = JSON.parse(readFileSync(rootPkgPath, 'utf8')).version ?? '0.4.1';
 const args = process.argv.slice(2);
-const versionArg = (args.find((a) => a.startsWith('--version='))?.split('=')[1] ?? '0.4.0').replace(
-  /^v/,
-  '',
-);
+const versionArg = (
+  args.find((a) => a.startsWith('--version='))?.split('=')[1] ?? defaultVersion
+).replace(/^v/, '');
 const outArg = args.find((a) => a.startsWith('--out='))?.split('=')[1];
 
 function getRecentCommits(limit = 35) {

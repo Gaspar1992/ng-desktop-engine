@@ -295,7 +295,8 @@ jobs:
           test "${#ENGINE_TARBALLS[@]}" -eq 5
           test "${#LIB_TARBALLS[@]}" -eq 7
           if [ "${NPM_TRUSTED_PUBLISHING:-false}" = "true" ]; then
-            for tgz in "${ENGINE_TARBALLS[@]}" "${LIB_TARBALLS[@]}"; do
+            FAILED_PKGS=()
+            for tgz in "${LIB_TARBALLS[@]}" "${ENGINE_TARBALLS[@]}"; do
               PKG_INFO="$(tar -xOf "./${tgz}" package/package.json | node -e "
                 const fs = require('fs');
                 const p = JSON.parse(fs.readFileSync(0, 'utf8'));
@@ -305,10 +306,15 @@ jobs:
               PKG_VER="${PKG_INFO#*$'\t'}"
               if npm view "${PKG_NAME}@${PKG_VER}" version >/dev/null 2>&1; then
                 echo "[Publish Skip] ${PKG_NAME}@${PKG_VER} already published on npm."
-              else
-                npm publish "./${tgz}" --provenance --access public
+              elif ! npm publish "./${tgz}" --provenance --access public; then
+                FAILED_PKGS+=("${PKG_NAME}@${PKG_VER}")
+                echo "::error::Failed to publish ${PKG_NAME}@${PKG_VER}. Ensure the package exists on npmjs.com (run scripts/bootstrap-npm-packages.mjs) and Trusted Publisher is configured at https://www.npmjs.com/package/${PKG_NAME}/access (Gaspar1992/ng-desktop-engine, release.yml, environment npm-publish)."
               fi
             done
+            if [ "${#FAILED_PKGS[@]}" -gt 0 ]; then
+              echo "::error::OIDC npm publish failed for ${#FAILED_PKGS[@]} package(s): ${FAILED_PKGS[*]}"
+              exit 1
+            fi
           else
             echo "vars.NPM_TRUSTED_PUBLISHING != 'true'; verifying tarball manifests offline (enable OIDC in npmjs.com + 'gh variable set NPM_TRUSTED_PUBLISHING --body true')."
             for tgz in "${ENGINE_TARBALLS[@]}" "${LIB_TARBALLS[@]}"; do
@@ -348,8 +354,17 @@ jobs:
           CRATES_TRUSTED_PUBLISHING: ${{ vars.CRATES_TRUSTED_PUBLISHING }}
         run: |
           if [ "${CRATES_TRUSTED_PUBLISHING:-false}" = "true" ]; then
-            test -n "${CARGO_REGISTRY_TOKEN:-}"
-            cargo publish --locked
+            CRATE_VER="$(node -e '
+              const m = require("fs").readFileSync("Cargo.toml", "utf8").match(/^version\s*=\s*"([^"]+)"/m);
+              if (!m) throw new Error("Version not found in Cargo.toml");
+              process.stdout.write(m[1]);
+            ')"
+            if curl -sfSL -A "ng-native-engine-ci" "https://crates.io/api/v1/crates/ng-native-engine/${CRATE_VER}" >/dev/null 2>&1; then
+              echo "[Publish Skip] ng-native-engine@${CRATE_VER} already published on crates.io."
+            else
+              test -n "${CARGO_REGISTRY_TOKEN:-}"
+              cargo publish --locked
+            fi
           else
             echo "vars.CRATES_TRUSTED_PUBLISHING != 'true'; verifying crate package cleanly."
             cargo publish --dry-run --allow-dirty

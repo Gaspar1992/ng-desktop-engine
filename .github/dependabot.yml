@@ -14,6 +14,12 @@ updates:
     schedule:
       interval: 'weekly'
       day: 'monday'
+    groups:
+      angular:
+        patterns:
+          - '@angular/*'
+          - 'angular-eslint'
+          - '@angular-eslint/*'
     labels:
       - 'dependencies'
       - 'angular'
