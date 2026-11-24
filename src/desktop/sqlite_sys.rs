@@ -1,7 +1,6 @@
 #![allow(unsafe_code)]
 
 use super::http_codec::escape_json;
-#[cfg(target_os = "linux")]
 use crate::ffi_dl::DynLib;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString, c_char, c_double, c_int, c_void};
@@ -125,7 +124,6 @@ fn parse_json_param_string(input: &str) -> Result<(String, usize), String> {
     Err(String::from("Unterminated string in SQL params array"))
 }
 
-#[cfg(target_os = "linux")]
 type SqliteOpenFn = unsafe extern "C" fn(*const c_char, *mut *mut c_void) -> c_int;
 type SqliteCloseFn = unsafe extern "C" fn(*mut c_void) -> c_int;
 type SqlitePrepareFn = unsafe extern "C" fn(
@@ -172,10 +170,29 @@ struct SqliteFfi {
 unsafe impl Send for SqliteFfi {}
 
 impl SqliteFfi {
-    #[cfg(target_os = "linux")]
+    fn open_sqlite_lib() -> Option<*mut c_void> {
+        let candidates: &[&CStr] = if cfg!(target_os = "macos") {
+            &[
+                c"libsqlite3.dylib",
+                c"/usr/lib/libsqlite3.dylib",
+                c"libsqlite3.0.dylib",
+            ]
+        } else if cfg!(target_os = "windows") {
+            &[c"winsqlite3.dll", c"sqlite3.dll"]
+        } else {
+            &[c"libsqlite3.so.0", c"libsqlite3.so"]
+        };
+        for candidate in candidates {
+            if let Some(lib) = unsafe { DynLib::open(candidate) } {
+                return Some(lib.as_ptr());
+            }
+        }
+        None
+    }
+
     fn try_open(path: &str) -> Option<Self> {
         unsafe {
-            let lib = DynLib::open(c"libsqlite3.so.0")?.as_ptr();
+            let lib = Self::open_sqlite_lib()?;
             let sqlite3_open: SqliteOpenFn = load_sym(lib, c"sqlite3_open")?;
             let sqlite3_close: SqliteCloseFn = load_sym(lib, c"sqlite3_close")?;
             let sqlite3_prepare_v2: SqlitePrepareFn = load_sym(lib, c"sqlite3_prepare_v2")?;
@@ -221,11 +238,6 @@ impl SqliteFfi {
                 sqlite3_errmsg,
             })
         }
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    fn try_open(_path: &str) -> Option<Self> {
-        None
     }
 
     fn last_error(&self) -> String {
@@ -518,7 +530,6 @@ impl Drop for SqliteFfi {
     }
 }
 
-#[cfg(target_os = "linux")]
 unsafe fn load_sym<F: Copy>(handle: *mut c_void, sym: &CStr) -> Option<F> {
     unsafe { DynLib::from_ptr(handle).sym(sym) }
 }
@@ -606,18 +617,76 @@ impl NativeSqliteDatabase {
         if let Some(ref ffi) = self.ffi {
             return ffi.execute_params(sql, params);
         }
-        // Minimal fallback for non-Linux targets lacking `libsqlite3.so.0`
-        let upper = sql.trim().to_ascii_uppercase();
-        if upper.starts_with("CREATE TABLE")
-            && let Some(tbl) = sql.split_whitespace().find(|tok| {
-                !matches!(
-                    tok.to_ascii_uppercase().as_str(),
-                    "CREATE" | "TABLE" | "IF" | "NOT" | "EXISTS"
-                )
-            })
-        {
-            let name = tbl.split('(').next().unwrap_or(tbl).trim().to_string();
-            self.fallback_tables.entry(name).or_default();
+        // Minimal fallback for environments lacking a system SQLite shared library
+        for raw_stmt in sql.split(';') {
+            let stmt = raw_stmt.trim();
+            if stmt.is_empty() {
+                continue;
+            }
+            let upper = stmt.to_ascii_uppercase();
+            if upper.starts_with("CREATE TABLE")
+                && let Some(tbl) = stmt.split_whitespace().find(|tok| {
+                    !matches!(
+                        tok.to_ascii_uppercase().as_str(),
+                        "CREATE" | "TABLE" | "IF" | "NOT" | "EXISTS"
+                    )
+                })
+            {
+                let name = tbl.split('(').next().unwrap_or(tbl).trim().to_string();
+                self.fallback_tables.entry(name).or_default();
+            } else if (upper.starts_with("INSERT INTO")
+                || upper.starts_with("INSERT OR REPLACE INTO"))
+                && let Some((head, vals_part)) = stmt.split_once('(')
+            {
+                let replace = upper.starts_with("INSERT OR REPLACE");
+                let table_name = head.split_whitespace().last().unwrap_or("default").trim();
+                let (cols_raw, rest_after_cols) =
+                    vals_part.split_once(')').unwrap_or((vals_part, ""));
+                let vals_inner = rest_after_cols
+                    .split_once('(')
+                    .and_then(|(_, v)| v.rsplit_once(')').map(|(inner, _)| inner))
+                    .unwrap_or("");
+                let mut row = HashMap::new();
+                let mut param_idx = 0usize;
+                for (idx, (col, val)) in cols_raw.split(',').zip(vals_inner.split(',')).enumerate()
+                {
+                    let key = col.trim();
+                    let raw_val = val.trim();
+                    let resolved_val = if raw_val == "?" {
+                        let out = match params.get(param_idx) {
+                            Some(SqlParam::Integer(n)) => n.to_string(),
+                            Some(SqlParam::Real(f)) => f.to_string(),
+                            Some(SqlParam::Text(s)) => s.clone(),
+                            Some(SqlParam::Null) | None => String::new(),
+                        };
+                        param_idx += 1;
+                        out
+                    } else {
+                        raw_val.trim_matches('\'').trim_matches('"').to_string()
+                    };
+                    let col_name = if key.is_empty() {
+                        format!("col_{idx}")
+                    } else {
+                        key.to_string()
+                    };
+                    row.insert(col_name, resolved_val);
+                }
+                if !row.is_empty() {
+                    let rows = self
+                        .fallback_tables
+                        .entry(table_name.to_string())
+                        .or_default();
+                    if replace
+                        && let Some(id_val) = row.get("id")
+                        && let Some(existing) =
+                            rows.iter_mut().find(|r| r.get("id") == Some(id_val))
+                    {
+                        *existing = row;
+                    } else {
+                        rows.push(row);
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -643,7 +712,21 @@ impl NativeSqliteDatabase {
         if let Some(ref ffi) = self.ffi {
             return ffi.query_json_params(sql, params);
         }
-        let rows = self.query(sql)?;
+        let mut rows = self.query(sql)?;
+        if let Some(where_pos) = sql.to_ascii_uppercase().find("WHERE ")
+            && let Some(cond) = sql[where_pos + 6..].split_whitespace().next()
+        {
+            let col_name = cond.trim().trim_end_matches('=');
+            if let Some(param) = params.first() {
+                let target = match param {
+                    SqlParam::Integer(n) => n.to_string(),
+                    SqlParam::Real(f) => f.to_string(),
+                    SqlParam::Text(s) => s.clone(),
+                    SqlParam::Null => String::new(),
+                };
+                rows.retain(|r| r.get(col_name) == Some(&target));
+            }
+        }
         let encoded_rows: Vec<String> = rows
             .into_iter()
             .map(|row| {
@@ -651,7 +734,12 @@ impl NativeSqliteDatabase {
                 entries.sort_by(|a, b| a.0.cmp(&b.0));
                 let fields: Vec<String> = entries
                     .into_iter()
-                    .map(|(k, v)| format!("\"{}\":\"{}\"", escape_json(&k), escape_json(&v)))
+                    .map(|(k, v)| {
+                        v.parse::<i64>().map_or_else(
+                            |_| format!("\"{}\":\"{}\"", escape_json(&k), escape_json(&v)),
+                            |num| format!("\"{}\":{num}", escape_json(&k)),
+                        )
+                    })
                     .collect();
                 format!("{{{}}}", fields.join(","))
             })

@@ -1,7 +1,7 @@
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use crate::config::AppPermissions;
 use crate::desktop::http_codec::escape_json;
@@ -451,12 +451,6 @@ impl NativeServerWorker {
         }
     }
 
-    fn current_epoch_ms() -> u64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0_u64, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
-    }
-
     fn take_resolved_payload(slot: &ServerResolveSlot, request_id: u64) -> Option<String> {
         let mut guard = slot.0.lock().ok()?;
         if guard.as_ref().is_some_and(|(rid, _)| *rid == request_id) {
@@ -484,6 +478,7 @@ impl NativeServerWorker {
         }
 
         let deadline = Instant::now() + Duration::from_secs(30);
+        let mut idle_pumps: u32 = 0;
         loop {
             if let Some(payload) = Self::take_resolved_payload(resolve_slot, request_id) {
                 return payload;
@@ -492,9 +487,8 @@ impl NativeServerWorker {
             if remaining.is_zero() {
                 break;
             }
-            let now_ms = Self::current_epoch_ms();
             let delay_ms = jsc
-                .eval(&format!("globalThis.__nextServerTimerDelayMs({now_ms})"))
+                .eval("globalThis.__nextServerTimerDelayMs()")
                 .ok()
                 .and_then(|s| s.trim().parse::<i64>().ok())
                 .unwrap_or(-1);
@@ -502,13 +496,34 @@ impl NativeServerWorker {
                 if let Some(payload) = Self::take_resolved_payload(resolve_slot, request_id) {
                     return payload;
                 }
-                break;
+                if idle_pumps >= 64 {
+                    break;
+                }
+                idle_pumps += 1;
+                let _ = jsc.eval("Promise.resolve(); globalThis.__tickServerTimers();");
+                if let Some(payload) = Self::take_resolved_payload(resolve_slot, request_id) {
+                    return payload;
+                }
+                if let Ok(guard) = resolve_slot.0.lock() {
+                    let wait_dur = Duration::from_millis(1).min(remaining);
+                    let (mut after_wait, _) = resolve_slot
+                        .1
+                        .wait_timeout(guard, wait_dur)
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    if after_wait
+                        .as_ref()
+                        .is_some_and(|(rid, _)| *rid == request_id)
+                        && let Some((_, payload)) = after_wait.take()
+                    {
+                        return payload;
+                    }
+                }
+                continue;
             }
-            if delay_ms > 0
-                && let Ok(guard) = resolve_slot.0.lock()
-            {
-                let wait_dur =
-                    Duration::from_millis(u64::try_from(delay_ms).unwrap_or(0)).min(remaining);
+            idle_pumps = 0;
+            if let Ok(guard) = resolve_slot.0.lock() {
+                let wait_dur = Duration::from_millis(u64::try_from(delay_ms.max(1)).unwrap_or(1))
+                    .min(remaining);
                 let (mut after_wait, _) = resolve_slot
                     .1
                     .wait_timeout(guard, wait_dur)
@@ -516,14 +531,15 @@ impl NativeServerWorker {
                 if after_wait
                     .as_ref()
                     .is_some_and(|(rid, _)| *rid == request_id)
+                    && let Some((_, payload)) = after_wait.take()
                 {
-                    if let Some((_, payload)) = after_wait.take() {
-                        return payload;
-                    }
+                    return payload;
                 }
             }
-            let tick_now = Self::current_epoch_ms();
-            let _ = jsc.eval(&format!("globalThis.__tickServerTimers({tick_now})"));
+            let _ = jsc.eval("globalThis.__tickServerTimers()");
+            if let Some(payload) = Self::take_resolved_payload(resolve_slot, request_id) {
+                return payload;
+            }
         }
 
         String::from(

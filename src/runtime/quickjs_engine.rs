@@ -1,11 +1,20 @@
-use super::js_engine::JsEngineBackend;
+use super::bootstrap_js::NG_NATIVE_BOOTSTRAP_JS;
+use super::host_bridge::{HostAsyncCompletion, HostBridge};
+use super::js_engine::{JsEngineBackend, format_completions_js, format_event_payload_js};
+use super::jsc_sys::{HostBridgeSlot, HttpEngineSlot, JscCallbackKind, dispatch_host_bridge_call};
+use crate::desktop::NativeHttpEngine;
 use crate::engine::{EngineError, EventPayload};
+use rquickjs::{CatchResultExt, Coerced, Context, FromJs, Function, Runtime, Value};
+use std::sync::{Arc, Mutex};
 
-/// Lightweight, zero-JIT embedded `QuickJS` adapter for portable/static builds.
-/// Translates `__NG_NATIVE__.*` calls into frame-batched scene commands with zero external C dependencies.
+/// Embedded `QuickJS-NG` ES2024+ JavaScript VM for Windows, portable builds,
+/// and `jsEngine: "quickjs"` / `JscEngine` fallback when `JavaScriptCore` is absent.
+/// Executes `NG_NATIVE_BOOTSTRAP_JS` and compiled Angular 22+ Ivy bundles natively.
 pub struct QuickJsEngine {
-    pending_commands: Vec<String>,
-    app_id: String,
+    runtime: Runtime,
+    context: Context,
+    http_slot: HttpEngineSlot,
+    host_slot: HostBridgeSlot,
 }
 
 impl Default for QuickJsEngine {
@@ -16,171 +25,79 @@ impl Default for QuickJsEngine {
 
 impl QuickJsEngine {
     pub fn new() -> Self {
+        let runtime = Runtime::new().expect("Failed to initialize QuickJS-NG runtime");
+        runtime.set_max_stack_size(8 * 1024 * 1024);
+        let context = Context::full(&runtime).expect("Failed to initialize QuickJS-NG context");
+        let http_slot: HttpEngineSlot =
+            Arc::new(Mutex::new(Arc::new(Mutex::new(NativeHttpEngine::new()))));
+        let host_slot: HostBridgeSlot = Arc::new(Mutex::new(None));
+
+        Self::register_host_callbacks(&context, &http_slot, &host_slot);
+        let _ = Self::eval_with_context(&runtime, &context, NG_NATIVE_BOOTSTRAP_JS);
+
         Self {
-            pending_commands: Vec::new(),
-            app_id: String::from("ng-desktop-app"),
+            runtime,
+            context,
+            http_slot,
+            host_slot,
         }
     }
 
-    fn parse_call_args(raw_args: &str) -> Vec<String> {
-        let mut args = Vec::new();
-        let mut current = String::new();
-        let mut in_quote: Option<char> = None;
-
-        for ch in raw_args.chars() {
-            match in_quote {
-                Some(q) if ch == q => in_quote = None,
-                None if ch == '\'' || ch == '"' => in_quote = Some(ch),
-                None if ch == ',' => {
-                    args.push(current.trim().to_string());
-                    current.clear();
-                }
-                Some(_) | None => current.push(ch),
-            }
-        }
-        let tail = current.trim();
-        if !tail.is_empty() {
-            args.push(tail.to_string());
-        }
-        args
-    }
-
-    fn translate_bridge_call(
-        &mut self,
-        method: &str,
-        args: &[String],
-    ) -> Result<Option<String>, EngineError> {
-        if method == "fsResolvePath"
-            && let [kind, rel_path] = args
-        {
-            let base = match kind.as_str() {
-                "data" => format!("/home/user/.local/share/{}", self.app_id),
-                "cache" => format!("/home/user/.cache/{}", self.app_id),
-                _ => format!("/home/user/.config/{}", self.app_id),
-            };
-            let clean_rel = rel_path.trim().trim_start_matches(['/', '\\']);
-            return Ok(Some(format!("{base}/{clean_rel}")));
-        }
-
-        let cmd = match (method, args) {
-            ("registerStyle", [cls, bg, fg, pad, space, extras]) if !extras.trim().is_empty() => {
-                format!("style {cls} {bg} {fg} {pad} {space} {extras}")
-            }
-            ("registerStyle", [cls, bg, fg, pad, space] | [cls, bg, fg, pad, space, _]) => {
-                format!("style {cls} {bg} {fg} {pad} {space}")
-            }
-            ("declareSignal", [name, initial]) => format!("signal {name} {initial}"),
-            ("createElement", [id, tag]) => format!("create {id} {tag}"),
-            ("createComment", [id, text]) => format!("comment {id} {text}"),
-            ("setText", [id, text]) => format!("text {id} {text}"),
-            ("setAttribute", [id, key, val]) => format!("attr {id} {key} {val}"),
-            ("setWindowIcon", [id, app_id, path]) => format!("icon {id} {app_id} {path}"),
-            ("appendChild", [parent, child]) => format!("append {parent} {child}"),
-            ("insertBefore", [parent, child]) => format!("insert_before {parent} {child}"),
-            ("insertBefore", [parent, child, ref_c]) => {
-                format!("insert_before {parent} {child} {ref_c}")
-            }
-            ("removeChild", [parent, child]) => format!("remove_child {parent} {child}"),
-            ("addClass", [id, cls]) => format!("add_class {id} {cls}"),
-            ("removeClass", [id, cls]) => format!("remove_class {id} {cls}"),
-            ("bindText", [id, sig, tpl]) => format!("bind_text {id} {sig} {tpl}"),
-            ("bindAttr", [id, key, sig]) => format!("bind_attr {id} {key} {sig} {{}}"),
-            ("bindAttr", [id, key, sig, tpl]) => format!("bind_attr {id} {key} {sig} {tpl}"),
-            ("bindVisible", [id, sig]) => format!("bind_visible {id} {sig} != 0"),
-            ("bindVisible", [id, sig, op, rhs]) => format!("bind_visible {id} {sig} {op} {rhs}"),
-            ("onAdd", [id, evt, sig, delta]) => format!("on_add {id} {evt} {sig} {delta}"),
-            ("onSet", [id, evt, sig, val]) => format!("on_set {id} {evt} {sig} {val}"),
-            ("destroyNode", [id]) => format!("destroy {id}"),
-            ("setSystemTheme", [mode]) => format!("theme {mode}"),
-            ("setClipboard", [text]) => format!("clipboard {text}"),
+    fn register_host_callbacks(
+        context: &Context,
+        http_slot: &HttpEngineSlot,
+        host_slot: &HostBridgeSlot,
+    ) {
+        let callbacks: [(&str, JscCallbackKind); 3] = [
+            ("__NG_NATIVE_HOST_HTTP__", JscCallbackKind::Http),
             (
-                "listen"
-                | "beginBatch"
-                | "endBatch"
-                | "__dispatchAndDrain"
-                | "__tickAndDrain"
-                | "configureHttp"
-                | "getHttpConfig"
-                | "registerHttpEndpoint"
-                | "httpRequest"
-                | "httpRequestAsync"
-                | "httpBatchRequest"
-                | "httpBatchRequestAsync"
-                | "downloadImageAsync"
-                | "__tickTimers"
-                | "__resolveHostCallback"
-                | "getSystemTheme"
-                | "getClipboard"
-                | "openFileDialog"
-                | "saveFileDialog"
-                | "confirmDialog"
-                | "setNextConfirmDialogResponse"
-                | "sendNotification"
-                | "sqliteExecute"
-                | "sqliteQuery"
-                | "getNetworkStatus"
-                | "setNetworkStatus"
-                | "getSystemLocale"
-                | "getSystemTimezone"
-                | "resolveImageAsset"
-                | "logSystemError"
-                | "getSystemErrors"
-                | "computeFuzzyFilter"
-                | "computeHash"
-                | "fsReadText"
-                | "fsWriteText"
-                | "fsWatchFile"
-                | "fsPollChangedFiles",
-                _,
-            ) => return Ok(None),
-            _ => {
-                return Err(EngineError::ScriptSyntaxError(format!(
-                    "Unsupported QuickJS bridge call: {method}"
-                )));
-            }
-        };
-        self.pending_commands.push(cmd);
-        Ok(None)
-    }
+                "__NG_NATIVE_HOST_HTTP_CONFIG__",
+                JscCallbackKind::HttpConfig,
+            ),
+            ("__NG_NATIVE_HOST_SERVICE__", JscCallbackKind::HostService),
+        ];
 
-    fn apply_app_id_assignment(&mut self, line: &str) -> Option<String> {
-        let stripped = line.strip_prefix("globalThis.").unwrap_or(line);
-        let rhs = stripped
-            .strip_prefix("__NG_NATIVE_APP_ID__")?
-            .trim()
-            .strip_prefix('=')?
-            .trim();
-        let unquoted = rhs
-            .strip_prefix('\'')
-            .and_then(|s| s.strip_suffix('\''))
-            .or_else(|| rhs.strip_prefix('"').and_then(|s| s.strip_suffix('"')))
-            .unwrap_or(rhs)
-            .replace("\\'", "'")
-            .replace("\\\\", "\\");
-        self.app_id.clone_from(&unquoted);
-        Some(unquoted)
-    }
-
-    fn brace_delta(line: &str) -> i32 {
-        let mut delta = 0i32;
-        let mut in_quote: Option<char> = None;
-        let mut prev = ' ';
-        for ch in line.chars() {
-            if let Some(q) = in_quote {
-                if ch == q && prev != '\\' {
-                    in_quote = None;
+        context.with(|ctx| {
+            let globals = ctx.globals();
+            for (name, kind) in callbacks {
+                let http = Arc::clone(http_slot);
+                let host = Arc::clone(host_slot);
+                if let Ok(func) = Function::new(ctx.clone(), move |payload: String| -> String {
+                    dispatch_host_bridge_call(kind, &payload, &http, &host)
+                }) {
+                    let _ = globals.set(name, func);
                 }
+            }
+        });
+    }
+
+    fn eval_with_context(
+        runtime: &Runtime,
+        context: &Context,
+        js_code: &str,
+    ) -> Result<String, EngineError> {
+        let output = context.with(|ctx| {
+            let val: Value<'_> = ctx
+                .eval(js_code)
+                .catch(&ctx)
+                .map_err(|caught| EngineError::ScriptSyntaxError(format!("{caught:?}")))?;
+            if val.is_undefined() {
+                Ok(String::from("undefined"))
             } else {
-                match ch {
-                    '\'' | '"' | '`' => in_quote = Some(ch),
-                    '{' => delta += 1,
-                    '}' => delta -= 1,
-                    _ => {}
-                }
+                Coerced::<String>::from_js(&ctx, val)
+                    .map(|c| c.0)
+                    .map_err(|err| EngineError::ScriptSyntaxError(err.to_string()))
             }
-            prev = ch;
+        })?;
+
+        while runtime.is_job_pending() {
+            let _ = runtime.execute_pending_job();
         }
-        delta
+        Ok(output)
+    }
+
+    fn eval_raw(&self, js_code: &str) -> Result<String, EngineError> {
+        Self::eval_with_context(&self.runtime, &self.context, js_code)
     }
 }
 
@@ -193,111 +110,65 @@ impl JsEngineBackend for QuickJsEngine {
         false
     }
 
+    fn attach_http_engine(&mut self, engine: Arc<Mutex<NativeHttpEngine>>) {
+        if let Ok(mut guard) = self.http_slot.lock() {
+            *guard = engine;
+        }
+    }
+
+    fn attach_host_bridge(&mut self, bridge: Arc<HostBridge>) {
+        if let Ok(mut guard) = self.host_slot.lock() {
+            *guard = Some(bridge);
+        }
+    }
+
     fn eval_script(&mut self, js_code: &str) -> Result<String, EngineError> {
-        let mut paren_depth = 0i32;
-        let mut brace_depth = 0i32;
-        let mut bracket_depth = 0i32;
-        let mut in_quote: Option<char> = None;
-        let mut prev_char = ' ';
-
-        for ch in js_code.chars() {
-            if let Some(q) = in_quote {
-                if ch == q && prev_char != '\\' {
-                    in_quote = None;
-                }
-            } else {
-                match ch {
-                    '\'' | '"' | '`' => in_quote = Some(ch),
-                    '(' => paren_depth += 1,
-                    ')' => {
-                        paren_depth -= 1;
-                        if paren_depth < 0 {
-                            return Err(EngineError::ScriptSyntaxError(
-                                "SyntaxError: Unexpected token ')'".to_string(),
-                            ));
-                        }
-                    }
-                    '{' => brace_depth += 1,
-                    '}' => {
-                        brace_depth -= 1;
-                        if brace_depth < 0 {
-                            return Err(EngineError::ScriptSyntaxError(
-                                "SyntaxError: Unexpected token '}'".to_string(),
-                            ));
-                        }
-                    }
-                    '[' => bracket_depth += 1,
-                    ']' => {
-                        bracket_depth -= 1;
-                        if bracket_depth < 0 {
-                            return Err(EngineError::ScriptSyntaxError(
-                                "SyntaxError: Unexpected token ']'".to_string(),
-                            ));
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            prev_char = ch;
-        }
-
-        if in_quote.is_some() {
-            return Err(EngineError::ScriptSyntaxError(
-                "SyntaxError: Unterminated string constant".to_string(),
-            ));
-        }
-        if paren_depth != 0 || brace_depth != 0 || bracket_depth != 0 {
-            return Err(EngineError::ScriptSyntaxError(
-                "SyntaxError: Unexpected end of input (unclosed delimiters)".to_string(),
-            ));
-        }
-
-        let mut block_depth = 0i32;
-        let mut last_result = String::from("undefined");
-        for raw_line in js_code.lines() {
-            let line = raw_line.trim().trim_end_matches(';').trim();
-            let depth_before = block_depth;
-            block_depth += Self::brace_delta(line);
-            if line.is_empty() || line.starts_with("//") || depth_before > 0 {
-                continue;
-            }
-            let normalized = line.strip_prefix("globalThis.").unwrap_or(line);
-            if let Some(assigned) = self.apply_app_id_assignment(normalized) {
-                last_result = assigned;
-            } else if normalized == "__NG_NATIVE_APP_ID__" {
-                last_result.clone_from(&self.app_id);
-            } else if let Some(rest) = normalized.strip_prefix("__NG_NATIVE__.") {
-                if let (Some(open), Some(close)) = (rest.find('('), rest.rfind(')')) {
-                    let method = rest[..open].trim();
-                    let args = Self::parse_call_args(&rest[open + 1..close]);
-                    if let Some(custom_res) = self.translate_bridge_call(method, &args)? {
-                        last_result = custom_res;
-                    } else if let Some(first) = args.first() {
-                        last_result.clone_from(first);
-                    }
-                } else {
-                    return Err(EngineError::ScriptSyntaxError(format!(
-                        "Malformed bridge call: {line}"
-                    )));
-                }
-            }
-        }
-        Ok(last_result)
+        self.eval_raw(js_code)
     }
 
     fn dispatch_js_event_with_payload(
         &mut self,
-        _node_var: &str,
-        _event_name: &str,
-        _payload: &EventPayload,
+        node_var: &str,
+        event_name: &str,
+        payload: &EventPayload,
     ) -> Result<(), EngineError> {
+        let payload_js = format_event_payload_js(payload);
+        let call = format!(
+            "globalThis.__NG_NATIVE__.__dispatchEvent({node_var:?}, {event_name:?}, {payload_js}); globalThis.__NG_NATIVE__.__flushTimers();"
+        );
+        let _ = self.eval_raw(&call)?;
         Ok(())
     }
 
+    fn dispatch_and_drain(
+        &mut self,
+        node_var: &str,
+        event_name: &str,
+        payload: &EventPayload,
+    ) -> Result<String, EngineError> {
+        let payload_js = format_event_payload_js(payload);
+        let call = format!(
+            "globalThis.__NG_NATIVE__.__dispatchAndDrain({node_var:?}, {event_name:?}, {payload_js})"
+        );
+        self.eval_raw(&call)
+    }
+
+    fn tick_and_drain(
+        &mut self,
+        now_ms: u64,
+        completions: &[HostAsyncCompletion],
+    ) -> Result<String, EngineError> {
+        let call = if completions.is_empty() {
+            format!("globalThis.__NG_NATIVE__.__tickAndDrain({now_ms})")
+        } else {
+            let completions_js = format_completions_js(completions);
+            format!("globalThis.__NG_NATIVE__.__tickAndDrain({now_ms}, {completions_js})")
+        };
+        self.eval_raw(&call)
+    }
+
     fn drain_native_commands(&mut self) -> Result<String, EngineError> {
-        let drained = self.pending_commands.join("\n");
-        self.pending_commands.clear();
-        Ok(drained)
+        self.eval_raw("globalThis.__NG_NATIVE__.__drainQueue()")
     }
 }
 
@@ -323,5 +194,26 @@ mod tests {
         assert!(drained.contains("bind_attr box value pokeId {}"));
         assert!(drained.contains("bind_visible box pokeId != 0"));
         assert!(!drained.contains("evt.value"));
+    }
+
+    #[test]
+    fn quickjs_executes_es2024_closures_and_event_dispatch() {
+        let mut qjs = QuickJsEngine::new();
+        let script = r#"
+            let count = 10;
+            __NG_NATIVE__.createElement("lbl", "ng-label");
+            __NG_NATIVE__.createElement("btn", "ng-button");
+            __NG_NATIVE__.listen("btn", "clicked", () => {
+                count += 5;
+                __NG_NATIVE__.setText("lbl", `Count: ${count}`);
+            });
+        "#;
+        qjs.eval_script(script).unwrap();
+        let _ = qjs.drain_native_commands().unwrap();
+
+        let after_click = qjs
+            .dispatch_and_drain("btn", "clicked", &EventPayload::None)
+            .unwrap();
+        assert_eq!(after_click.trim(), "text lbl Count: 15");
     }
 }
