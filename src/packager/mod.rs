@@ -1,9 +1,12 @@
 pub mod builders;
+mod png;
 
 pub use builders::{
-    BuiltInstaller, InstallerBuildResult, InstallerBuildStatus, InstallerFormat,
-    build_all_installers, build_installer, build_installers_for_host, debian_arch_for_host,
-    macos_arch_for_host, msix_arch_for_host,
+    BuiltInstaller, InstallerBuildOptions, InstallerBuildResult, InstallerBuildStatus,
+    InstallerFormat, build_all_installers, build_all_installers_with_options, build_installer,
+    build_installer_with_options, build_installers_for_host,
+    build_installers_for_host_with_options, debian_arch_for_host, macos_arch_for_host,
+    msix_arch_for_host,
 };
 
 use crate::config::{AngularNativeConfig, AppPermissions};

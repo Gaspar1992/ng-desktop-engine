@@ -1,12 +1,13 @@
-use ng_native_engine::config::AngularNativeConfig;
+use ng_native_engine::config::{AngularNativeConfig, extract_cli_flag};
 use ng_native_engine::engine::{NodeId, RenderEngine};
 use ng_native_engine::ipc::test_harness::{
     TestHarnessState, emit_status_error, emit_status_line, run_stdio_harness,
 };
 use ng_native_engine::ipc::{HmrIpcServer, HmrMessage, HmrResponse};
 use ng_native_engine::packager::{
-    InstallerBuildStatus, InstallerFormat, build_all_installers, build_installer,
-    build_installers_for_host, stage_all_distributions, stage_linux_distribution,
+    InstallerBuildOptions, InstallerBuildStatus, InstallerFormat,
+    build_all_installers_with_options, build_installer_with_options,
+    build_installers_for_host_with_options, stage_all_distributions, stage_linux_distribution,
 };
 use ng_native_engine::platforms::{AnyPlatformBackend, PlatformBackend};
 use ng_native_engine::runtime::{JsEngineBackend, JsRuntime, NativeServerWorker};
@@ -226,34 +227,24 @@ fn run_interactive_loop(
     engine.print_tree(ctx.win_id, 0).unwrap();
 }
 
-fn extract_arg_value(args: &[String], flag: &str) -> Option<String> {
-    let prefix = format!("{flag}=");
-    let mut iter = args.iter();
-    while let Some(arg) = iter.next() {
-        if let Some(val) = arg.strip_prefix(&prefix) {
-            return Some(String::from(val.trim()));
-        }
-        if arg == flag
-            && let Some(next) = iter.next()
-            && !next.starts_with("--")
-        {
-            return Some(String::from(next.trim()));
-        }
-    }
-    None
-}
-
 fn run_installer_cli(args: &[String], cfg: &AngularNativeConfig, target: &str) {
-    let binary_arg = extract_arg_value(args, "--binary");
-    let binary_path = binary_arg.as_deref().map(Path::new);
+    let binary_arg = extract_cli_flag(args, "--binary");
     let strict = args.iter().any(|a| a == "--strict-installer");
+    let opts = InstallerBuildOptions {
+        binary_override: binary_arg.as_deref().map(Path::new),
+        require_bundle: strict,
+    };
 
     let build_res = match target.trim().to_ascii_lowercase().as_str() {
-        "all" => build_all_installers(cfg, &cfg.version, binary_path),
-        "auto" | "" => build_installers_for_host(cfg, &cfg.version, binary_path),
+        "all" => build_all_installers_with_options(cfg, &cfg.version, opts),
+        "auto" | "" => build_installers_for_host_with_options(cfg, &cfg.version, opts),
         other => InstallerFormat::from_str_lossy(other).map_or_else(
-            || Err(format!("Unknown installer format '{other}'. Expected deb|appimage|flatpak|msix|dmg|auto|all.")),
-            |fmt| build_installer(cfg, &cfg.version, fmt, binary_path).map(|res| vec![res]),
+            || {
+                Err(format!(
+                    "Unknown installer format '{other}'. Expected deb|appimage|flatpak|msix|dmg|auto|all."
+                ))
+            },
+            |fmt| build_installer_with_options(cfg, &cfg.version, fmt, opts).map(|res| vec![res]),
         ),
     };
     let results = match build_res {
@@ -310,7 +301,7 @@ fn handle_cli_actions(args: &[String], cfg: &AngularNativeConfig) -> bool {
         return true;
     }
 
-    if let Some(target) = extract_arg_value(args, "--installer") {
+    if let Some(target) = extract_cli_flag(args, "--installer") {
         run_installer_cli(args, cfg, &target);
         return true;
     }

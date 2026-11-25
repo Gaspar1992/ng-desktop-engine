@@ -1,3 +1,4 @@
+use super::png::encode_solid_png;
 use super::{
     generate_apparmor_profile, generate_appimage_apprun, generate_debian_control_with_permissions,
     generate_desktop_entry, generate_flatpak_manifest_with_permissions,
@@ -5,7 +6,9 @@ use super::{
     generate_windows_appx_manifest_with_permissions, generate_windows_launcher_batch,
 };
 use crate::config::AngularNativeConfig;
+use std::cmp::Reverse;
 use std::env;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -69,6 +72,13 @@ impl InstallerFormat {
             Self::Dmg,
         ]
     }
+}
+
+/// Optional flags controlling installer packaging.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct InstallerBuildOptions<'a> {
+    pub binary_override: Option<&'a Path>,
+    pub require_bundle: bool,
 }
 
 /// Outcome of compiling or staging one OS installer artifact.
@@ -145,21 +155,58 @@ fn appimage_arch_for_host() -> &'static str {
     }
 }
 
+fn validate_project_name(name: &str) -> Result<(), String> {
+    if name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains("..")
+        || !name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'))
+    {
+        return Err(format!(
+            "Invalid project name '{name}': expected non-empty ASCII alphanumeric, '-', '_', or '.' without '..'"
+        ));
+    }
+    Ok(())
+}
+
+fn sanitize_debian_package_name(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for ch in name.chars() {
+        let lower = ch.to_ascii_lowercase();
+        if lower == '_' {
+            out.push('-');
+        } else if lower.is_ascii_alphanumeric() || matches!(lower, '+' | '.' | '-') {
+            out.push(lower);
+        }
+    }
+    if out.is_empty() || !out.as_bytes()[0].is_ascii_alphanumeric() {
+        format!("ng-{out}")
+    } else {
+        out
+    }
+}
+
 #[cfg(unix)]
-fn mark_executable(path: &Path) -> Result<(), String> {
+fn set_unix_mode(path: &Path, mode: u32) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
     let mut perms = fs::metadata(path)
         .map_err(|e| format!("Failed reading permissions for {}: {e}", path.display()))?
         .permissions();
-    perms.set_mode(0o755);
+    perms.set_mode(mode);
     fs::set_permissions(path, perms)
-        .map_err(|e| format!("Failed setting 0755 on {}: {e}", path.display()))
+        .map_err(|e| format!("Failed setting mode {mode:o} on {}: {e}", path.display()))
 }
 
 #[cfg(not(unix))]
 #[allow(clippy::unnecessary_wraps)]
-fn mark_executable(_path: &Path) -> Result<(), String> {
+fn set_unix_mode(_path: &Path, _mode: u32) -> Result<(), String> {
     Ok(())
+}
+
+fn mark_executable(path: &Path) -> Result<(), String> {
+    set_unix_mode(path, 0o755)
 }
 
 fn resolve_engine_binary(binary_override: Option<&Path>) -> Result<PathBuf, String> {
@@ -175,8 +222,20 @@ fn resolve_engine_binary(binary_override: Option<&Path>) -> Result<PathBuf, Stri
     env::current_exe().map_err(|e| format!("Failed resolving current engine executable: {e}"))
 }
 
-fn copy_optional_bundle_files(src_dir: &Path, dst_share_dir: &Path) -> Result<(), String> {
+fn copy_bundle_files(
+    src_dir: &Path,
+    dst_share_dir: &Path,
+    require_bundle: bool,
+) -> Result<(), String> {
     let main_ngb = src_dir.join("main.ngb");
+    let app_bundle = src_dir.join("app.bundle.js");
+    if require_bundle && !main_ngb.is_file() && !app_bundle.is_file() {
+        return Err(format!(
+            "Compiled application bundle missing in '{}'. Run 'ng-desktop build' or 'pnpm run build' first.",
+            src_dir.display()
+        ));
+    }
+
     if main_ngb.is_file() {
         fs::copy(&main_ngb, dst_share_dir.join("main.ngb")).map_err(|e| e.to_string())?;
     } else {
@@ -209,81 +268,23 @@ fn write_runtime_metadata(
     .map_err(|e| e.to_string())
 }
 
-fn crc32(bytes: &[u8]) -> u32 {
-    let mut crc = 0xffff_ffff_u32;
-    for &b in bytes {
-        crc ^= u32::from(b);
-        for _ in 0..8 {
-            crc = if (crc & 1) != 0 {
-                (crc >> 1) ^ 0xedb8_8320
-            } else {
-                crc >> 1
-            };
-        }
+fn dir_size_bytes(path: &Path) -> u64 {
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return 0;
+    };
+    if meta.is_file() {
+        return meta.len();
     }
-    crc ^ 0xffff_ffff
-}
-
-fn adler32(bytes: &[u8]) -> u32 {
-    const MOD_ADLER: u32 = 65521;
-    let mut a = 1_u32;
-    let mut b = 0_u32;
-    for &byte in bytes {
-        a = (a + u32::from(byte)) % MOD_ADLER;
-        b = (b + a) % MOD_ADLER;
+    if !meta.is_dir() {
+        return 0;
     }
-    (b << 16) | a
-}
-
-fn push_png_chunk(out: &mut Vec<u8>, tag: [u8; 4], data: &[u8]) {
-    let len = u32::try_from(data.len()).unwrap_or(0);
-    out.extend_from_slice(&len.to_be_bytes());
-    let mut crc_input = Vec::with_capacity(4 + data.len());
-    crc_input.extend_from_slice(&tag);
-    crc_input.extend_from_slice(data);
-    out.extend_from_slice(&crc_input);
-    out.extend_from_slice(&crc32(&crc_input).to_be_bytes());
-}
-
-/// Encodes a solid RGBA PNG image using uncompressed DEFLATE stored blocks (zero dependencies).
-fn encode_solid_png(width: u32, height: u32, rgba: [u8; 4]) -> Vec<u8> {
-    let w_usize = usize::try_from(width).unwrap_or(1);
-    let h_usize = usize::try_from(height).unwrap_or(1);
-    let mut row = Vec::with_capacity(w_usize * 4 + 1);
-    row.push(0);
-    for _ in 0..w_usize {
-        row.extend_from_slice(&rgba);
-    }
-    let mut raw = Vec::with_capacity(row.len() * h_usize);
-    for _ in 0..h_usize {
-        raw.extend_from_slice(&row);
-    }
-
-    let mut zlib = Vec::with_capacity(raw.len() + 32);
-    zlib.extend_from_slice(&[0x78, 0x01]);
-    let chunks = raw.chunks(65535);
-    let chunk_count = chunks.len().max(1);
-    for (idx, chunk) in raw.chunks(65535).enumerate() {
-        let is_last = idx + 1 == chunk_count;
-        zlib.push(u8::from(is_last));
-        let len = u16::try_from(chunk.len()).unwrap_or(u16::MAX);
-        zlib.extend_from_slice(&len.to_le_bytes());
-        zlib.extend_from_slice(&(!len).to_le_bytes());
-        zlib.extend_from_slice(chunk);
-    }
-    zlib.extend_from_slice(&adler32(&raw).to_be_bytes());
-
-    let mut ihdr = Vec::with_capacity(13);
-    ihdr.extend_from_slice(&width.to_be_bytes());
-    ihdr.extend_from_slice(&height.to_be_bytes());
-    ihdr.extend_from_slice(&[8, 6, 0, 0, 0]);
-
-    let mut png = Vec::with_capacity(zlib.len() + 64);
-    png.extend_from_slice(&[137, 80, 78, 71, 13, 10, 26, 10]);
-    push_png_chunk(&mut png, *b"IHDR", &ihdr);
-    push_png_chunk(&mut png, *b"IDAT", &zlib);
-    push_png_chunk(&mut png, *b"IEND", &[]);
-    png
+    let Ok(entries) = fs::read_dir(path) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|entry| dir_size_bytes(&entry.path()))
+        .sum()
 }
 
 fn find_icon_png(cfg: &AngularNativeConfig, preferred_size: &str) -> Option<PathBuf> {
@@ -325,10 +326,41 @@ fn command_exists(program: &str) -> bool {
         .is_ok_and(|out| out.status.success() || !out.stdout.is_empty() || !out.stderr.is_empty())
 }
 
+fn run_tool(cmd: &mut Command, tool_name: &str) -> Result<(), String> {
+    let out = cmd
+        .output()
+        .map_err(|e| format!("Failed invoking {tool_name}: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "{tool_name} failed: {}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    }
+    Ok(())
+}
+
+fn finish_built_artifact(
+    format: InstallerFormat,
+    artifact_path: &Path,
+) -> Result<InstallerBuildResult, String> {
+    let size_bytes = fs::metadata(artifact_path)
+        .map_err(|e| format!("Missing output {}: {e}", artifact_path.display()))?
+        .len();
+    Ok(InstallerBuildResult {
+        format,
+        status: InstallerBuildStatus::Built {
+            artifact_path: artifact_path.to_string_lossy().into_owned(),
+            size_bytes,
+        },
+    })
+}
+
 fn build_deb_installer(
     cfg: &AngularNativeConfig,
     version: &str,
     engine_bin: &Path,
+    opts: InstallerBuildOptions<'_>,
 ) -> Result<InstallerBuildResult, String> {
     let base_dir = Path::new(&cfg.output_path).join("packages");
     let deb_dir = base_dir.join("deb");
@@ -351,11 +383,12 @@ fn build_deb_installer(
     }
 
     let arch = debian_arch_for_host();
+    let deb_pkg_name = sanitize_debian_package_name(&cfg.project_name);
     let dst_bin = bin_dir.join(&cfg.project_name);
     fs::copy(engine_bin, &dst_bin).map_err(|e| e.to_string())?;
     mark_executable(&dst_bin)?;
 
-    copy_optional_bundle_files(Path::new(&cfg.output_path), &share_dir)?;
+    copy_bundle_files(Path::new(&cfg.output_path), &share_dir, opts.require_bundle)?;
     write_runtime_metadata(cfg, version, &share_dir)?;
     write_png_or_fallback(
         cfg,
@@ -363,17 +396,6 @@ fn build_deb_installer(
         "256x256",
         64,
     )?;
-
-    fs::write(
-        control_dir.join("control"),
-        generate_debian_control_with_permissions(
-            &cfg.project_name,
-            version,
-            arch,
-            &cfg.permissions,
-        ),
-    )
-    .map_err(|e| e.to_string())?;
     fs::write(
         apps_dir.join(format!("{}.desktop", cfg.project_name)),
         generate_desktop_entry(&cfg.project_name, &cfg.project_name),
@@ -385,9 +407,19 @@ fn build_deb_installer(
     )
     .map_err(|e| e.to_string())?;
 
-    let deb_filename = format!("{}_{version}_{arch}.deb", cfg.project_name);
-    let artifact_path = base_dir.join(&deb_filename);
+    let installed_bytes =
+        dir_size_bytes(&deb_dir.join("usr")) + dir_size_bytes(&deb_dir.join("etc"));
+    let installed_kib = installed_bytes.div_ceil(1024).max(1);
+    let mut control =
+        generate_debian_control_with_permissions(&deb_pkg_name, version, arch, &cfg.permissions);
+    let _ = writeln!(control, "Installed-Size: {installed_kib}");
 
+    set_unix_mode(&control_dir, 0o755)?;
+    let control_path = control_dir.join("control");
+    fs::write(&control_path, control).map_err(|e| e.to_string())?;
+    set_unix_mode(&control_path, 0o644)?;
+
+    let artifact_path = base_dir.join(format!("{deb_pkg_name}_{version}_{arch}.deb"));
     if !command_exists("dpkg-deb") {
         return Ok(InstallerBuildResult {
             format: InstallerFormat::Deb,
@@ -403,34 +435,19 @@ fn build_deb_installer(
         });
     }
 
-    let out = Command::new("dpkg-deb")
-        .args(["--build", "--root-owner-group"])
+    let mut cmd = Command::new("dpkg-deb");
+    cmd.args(["--build", "--root-owner-group"])
         .arg(&deb_dir)
-        .arg(&artifact_path)
-        .output()
-        .map_err(|e| format!("Failed invoking dpkg-deb: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "dpkg-deb failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        ));
-    }
-    let size_bytes = fs::metadata(&artifact_path)
-        .map_err(|e| e.to_string())?
-        .len();
-    Ok(InstallerBuildResult {
-        format: InstallerFormat::Deb,
-        status: InstallerBuildStatus::Built {
-            artifact_path: artifact_path.to_string_lossy().into_owned(),
-            size_bytes,
-        },
-    })
+        .arg(&artifact_path);
+    run_tool(&mut cmd, "dpkg-deb")?;
+    finish_built_artifact(InstallerFormat::Deb, &artifact_path)
 }
 
 fn build_appimage_installer(
     cfg: &AngularNativeConfig,
     version: &str,
     engine_bin: &Path,
+    opts: InstallerBuildOptions<'_>,
 ) -> Result<InstallerBuildResult, String> {
     let base_dir = Path::new(&cfg.output_path).join("packages");
     let app_dir = base_dir
@@ -446,7 +463,7 @@ fn build_appimage_installer(
     fs::copy(engine_bin, &dst_bin).map_err(|e| e.to_string())?;
     mark_executable(&dst_bin)?;
 
-    copy_optional_bundle_files(Path::new(&cfg.output_path), &share_dir)?;
+    copy_bundle_files(Path::new(&cfg.output_path), &share_dir, opts.require_bundle)?;
     write_runtime_metadata(cfg, version, &share_dir)?;
 
     let apprun_path = app_dir.join("AppRun");
@@ -485,35 +502,20 @@ fn build_appimage_installer(
         });
     };
 
-    let out = Command::new(&appimagetool)
-        .env("ARCH", arch)
+    let mut cmd = Command::new(&appimagetool);
+    cmd.env("ARCH", arch)
         .arg("--no-appstream")
         .arg(&app_dir)
-        .arg(&artifact_path)
-        .output()
-        .map_err(|e| format!("Failed invoking appimagetool: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "appimagetool failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        ));
-    }
-    let size_bytes = fs::metadata(&artifact_path)
-        .map_err(|e| e.to_string())?
-        .len();
-    Ok(InstallerBuildResult {
-        format: InstallerFormat::AppImage,
-        status: InstallerBuildStatus::Built {
-            artifact_path: artifact_path.to_string_lossy().into_owned(),
-            size_bytes,
-        },
-    })
+        .arg(&artifact_path);
+    run_tool(&mut cmd, "appimagetool")?;
+    finish_built_artifact(InstallerFormat::AppImage, &artifact_path)
 }
 
 fn build_flatpak_installer(
     cfg: &AngularNativeConfig,
     version: &str,
     engine_bin: &Path,
+    opts: InstallerBuildOptions<'_>,
 ) -> Result<InstallerBuildResult, String> {
     let base_dir = Path::new(&cfg.output_path).join("packages");
     let flatpak_dir = base_dir.join("flatpak");
@@ -522,7 +524,11 @@ fn build_flatpak_installer(
     let dst_bin = flatpak_dir.join(&cfg.project_name);
     fs::copy(engine_bin, &dst_bin).map_err(|e| e.to_string())?;
     mark_executable(&dst_bin)?;
-    copy_optional_bundle_files(Path::new(&cfg.output_path), &flatpak_dir)?;
+    copy_bundle_files(
+        Path::new(&cfg.output_path),
+        &flatpak_dir,
+        opts.require_bundle,
+    )?;
     write_runtime_metadata(cfg, version, &flatpak_dir)?;
 
     let manifest_path = flatpak_dir.join(format!("{}.yml", cfg.project_name));
@@ -564,41 +570,44 @@ fn build_flatpak_installer(
 
     let build_dir = flatpak_dir.join("build");
     let repo_dir = flatpak_dir.join("repo");
-    let builder_out = Command::new("flatpak-builder")
+    let mut builder_cmd = Command::new("flatpak-builder");
+    builder_cmd
         .args(["--force-clean"])
         .arg(format!("--repo={}", repo_dir.display()))
         .arg(&build_dir)
-        .arg(&manifest_path)
-        .output()
-        .map_err(|e| format!("Failed invoking flatpak-builder: {e}"))?;
-    if !builder_out.status.success() {
-        return Err(format!(
-            "flatpak-builder failed: {}",
-            String::from_utf8_lossy(&builder_out.stderr)
-        ));
-    }
+        .arg(&manifest_path);
+    run_tool(&mut builder_cmd, "flatpak-builder")?;
 
-    let bundle_out = Command::new("flatpak")
+    let mut bundle_cmd = Command::new("flatpak");
+    bundle_cmd
         .arg("build-bundle")
         .arg(&repo_dir)
         .arg(&bundle_path)
-        .arg(&flatpak_id)
-        .output()
-        .map_err(|e| format!("Failed invoking flatpak build-bundle: {e}"))?;
-    if !bundle_out.status.success() {
-        return Err(format!(
-            "flatpak build-bundle failed: {}",
-            String::from_utf8_lossy(&bundle_out.stderr)
-        ));
-    }
-    let size_bytes = fs::metadata(&bundle_path).map_err(|e| e.to_string())?.len();
-    Ok(InstallerBuildResult {
-        format: InstallerFormat::Flatpak,
-        status: InstallerBuildStatus::Built {
-            artifact_path: bundle_path.to_string_lossy().into_owned(),
-            size_bytes,
-        },
-    })
+        .arg(&flatpak_id);
+    run_tool(&mut bundle_cmd, "flatpak build-bundle")?;
+    finish_built_artifact(InstallerFormat::Flatpak, &bundle_path)
+}
+
+fn parse_kit_semver_key(name: &str) -> (u32, u32, u32, u32) {
+    let mut nums = name.split('.').map(|part| part.parse::<u32>().unwrap_or(0));
+    (
+        nums.next().unwrap_or(0),
+        nums.next().unwrap_or(0),
+        nums.next().unwrap_or(0),
+        nums.next().unwrap_or(0),
+    )
+}
+
+fn sorted_kit_version_dirs(kits_bin: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(kits_bin) else {
+        return Vec::new();
+    };
+    let mut versions: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
+    versions.sort_by_key(|p| {
+        let name = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        Reverse(parse_kit_semver_key(name))
+    });
+    versions
 }
 
 fn find_makeappx_binary() -> Option<PathBuf> {
@@ -611,15 +620,9 @@ fn find_makeappx_binary() -> Option<PathBuf> {
     if command_exists("makeappx") {
         return Some(PathBuf::from("makeappx"));
     }
-    let kits_bin = Path::new(r"C:\Program Files (x86)\Windows Kits\10\bin");
-    let Ok(entries) = fs::read_dir(kits_bin) else {
-        return None;
-    };
-    let mut versions: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
-    versions.sort();
-    versions.reverse();
     let arch = msix_arch_for_host();
-    for ver_dir in versions {
+    for ver_dir in sorted_kit_version_dirs(Path::new(r"C:\Program Files (x86)\Windows Kits\10\bin"))
+    {
         for sub in [arch, "x64", "arm64"] {
             let candidate = ver_dir.join(sub).join("makeappx.exe");
             if candidate.is_file() {
@@ -634,6 +637,7 @@ fn build_msix_installer(
     cfg: &AngularNativeConfig,
     version: &str,
     engine_bin: &Path,
+    opts: InstallerBuildOptions<'_>,
 ) -> Result<InstallerBuildResult, String> {
     let base_dir = Path::new(&cfg.output_path).join("packages");
     let win_dir = base_dir.join("windows");
@@ -646,7 +650,7 @@ fn build_msix_installer(
         win_dir.join(format!("{}.exe", cfg.project_name)),
     )
     .map_err(|e| e.to_string())?;
-    copy_optional_bundle_files(Path::new(&cfg.output_path), &win_dir)?;
+    copy_bundle_files(Path::new(&cfg.output_path), &win_dir, opts.require_bundle)?;
     write_runtime_metadata(cfg, version, &win_dir)?;
 
     let mut manifest = generate_windows_appx_manifest_with_permissions(
@@ -668,17 +672,9 @@ fn build_msix_installer(
     )
     .map_err(|e| e.to_string())?;
 
-    // Windows MSIX XSD requires valid PNG files at Square150x150Logo and Square44x44Logo.
-    fs::write(
-        assets_dir.join("Logo.png"),
-        encode_solid_png(150, 150, [225, 29, 72, 255]),
-    )
-    .map_err(|e| e.to_string())?;
-    fs::write(
-        assets_dir.join("SmallLogo.png"),
-        encode_solid_png(44, 44, [225, 29, 72, 255]),
-    )
-    .map_err(|e| e.to_string())?;
+    // Windows MSIX requires valid PNGs at Square150x150Logo and Square44x44Logo.
+    write_png_or_fallback(cfg, &assets_dir.join("Logo.png"), "256x256", 150)?;
+    write_png_or_fallback(cfg, &assets_dir.join("SmallLogo.png"), "48x48", 44)?;
 
     let artifact_path = base_dir.join(format!("{}_{version}_{arch}.msix", cfg.project_name));
     let Some(makeappx) = find_makeappx_binary() else {
@@ -696,30 +692,13 @@ fn build_msix_installer(
         });
     };
 
-    let out = Command::new(&makeappx)
-        .args(["pack", "/o", "/d"])
+    let mut cmd = Command::new(&makeappx);
+    cmd.args(["pack", "/o", "/d"])
         .arg(&win_dir)
         .arg("/p")
-        .arg(&artifact_path)
-        .output()
-        .map_err(|e| format!("Failed invoking makeappx: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "makeappx failed: {}{}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
-        ));
-    }
-    let size_bytes = fs::metadata(&artifact_path)
-        .map_err(|e| e.to_string())?
-        .len();
-    Ok(InstallerBuildResult {
-        format: InstallerFormat::Msix,
-        status: InstallerBuildStatus::Built {
-            artifact_path: artifact_path.to_string_lossy().into_owned(),
-            size_bytes,
-        },
-    })
+        .arg(&artifact_path);
+    run_tool(&mut cmd, "makeappx")?;
+    finish_built_artifact(InstallerFormat::Msix, &artifact_path)
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
@@ -761,12 +740,15 @@ fn stage_dmg_root_and_sign(
 
     if cfg!(target_os = "macos") {
         let identity = env::var("NG_DESKTOP_MACOS_IDENTITY").unwrap_or_else(|_| String::from("-"));
-        let sign_out = Command::new("codesign")
-            .args(["--force", "--deep", "--sign", &identity, "--entitlements"])
+        let mut cmd = Command::new("codesign");
+        cmd.args(["--force", "--deep", "--sign", &identity]);
+        if identity != "-" {
+            cmd.args(["--options", "runtime"]);
+        }
+        cmd.arg("--entitlements")
             .arg(entitlements_path)
-            .arg(&staged_app)
-            .output();
-        if let Ok(out) = sign_out
+            .arg(&staged_app);
+        if let Ok(out) = cmd.output()
             && !out.status.success()
         {
             return Err(format!(
@@ -782,6 +764,7 @@ fn build_dmg_installer(
     cfg: &AngularNativeConfig,
     version: &str,
     engine_bin: &Path,
+    opts: InstallerBuildOptions<'_>,
 ) -> Result<InstallerBuildResult, String> {
     let base_dir = Path::new(&cfg.output_path).join("packages");
     let app_bundle = base_dir
@@ -809,7 +792,11 @@ fn build_dmg_installer(
     .map_err(|e| e.to_string())?;
     mark_executable(&launcher_path)?;
 
-    copy_optional_bundle_files(Path::new(&cfg.output_path), &resources_dir)?;
+    copy_bundle_files(
+        Path::new(&cfg.output_path),
+        &resources_dir,
+        opts.require_bundle,
+    )?;
     write_runtime_metadata(cfg, version, &resources_dir)?;
     write_png_or_fallback(
         cfg,
@@ -854,31 +841,35 @@ fn build_dmg_installer(
         &app_bundle,
         &entitlements_path,
     )?;
-    let out = Command::new("hdiutil")
-        .args(["create", "-volname"])
+    let mut cmd = Command::new("hdiutil");
+    cmd.args(["create", "-volname"])
         .arg(format!("{} {version}", cfg.project_name))
         .arg("-srcfolder")
         .arg(&dmg_root)
         .args(["-ov", "-format", "UDZO"])
-        .arg(&artifact_path)
-        .output()
-        .map_err(|e| format!("Failed invoking hdiutil: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "hdiutil create failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        ));
+        .arg(&artifact_path);
+    let hdiutil_res = run_tool(&mut cmd, "hdiutil create");
+    let _ = fs::remove_dir_all(&dmg_root);
+    hdiutil_res?;
+    finish_built_artifact(InstallerFormat::Dmg, &artifact_path)
+}
+
+/// Builds a native desktop installer with explicit packaging options (`require_bundle`, `binary_override`).
+pub fn build_installer_with_options(
+    cfg: &AngularNativeConfig,
+    version: &str,
+    format: InstallerFormat,
+    opts: InstallerBuildOptions<'_>,
+) -> Result<InstallerBuildResult, String> {
+    validate_project_name(&cfg.project_name)?;
+    let engine_bin = resolve_engine_binary(opts.binary_override)?;
+    match format {
+        InstallerFormat::Deb => build_deb_installer(cfg, version, &engine_bin, opts),
+        InstallerFormat::AppImage => build_appimage_installer(cfg, version, &engine_bin, opts),
+        InstallerFormat::Flatpak => build_flatpak_installer(cfg, version, &engine_bin, opts),
+        InstallerFormat::Msix => build_msix_installer(cfg, version, &engine_bin, opts),
+        InstallerFormat::Dmg => build_dmg_installer(cfg, version, &engine_bin, opts),
     }
-    let size_bytes = fs::metadata(&artifact_path)
-        .map_err(|e| e.to_string())?
-        .len();
-    Ok(InstallerBuildResult {
-        format: InstallerFormat::Dmg,
-        status: InstallerBuildStatus::Built {
-            artifact_path: artifact_path.to_string_lossy().into_owned(),
-            size_bytes,
-        },
-    })
 }
 
 /// Builds a native desktop installer in `<output_path>/packages/`, compiling the final `.deb`,
@@ -890,14 +881,27 @@ pub fn build_installer(
     format: InstallerFormat,
     binary_override: Option<&Path>,
 ) -> Result<InstallerBuildResult, String> {
-    let engine_bin = resolve_engine_binary(binary_override)?;
-    match format {
-        InstallerFormat::Deb => build_deb_installer(cfg, version, &engine_bin),
-        InstallerFormat::AppImage => build_appimage_installer(cfg, version, &engine_bin),
-        InstallerFormat::Flatpak => build_flatpak_installer(cfg, version, &engine_bin),
-        InstallerFormat::Msix => build_msix_installer(cfg, version, &engine_bin),
-        InstallerFormat::Dmg => build_dmg_installer(cfg, version, &engine_bin),
-    }
+    build_installer_with_options(
+        cfg,
+        version,
+        format,
+        InstallerBuildOptions {
+            binary_override,
+            require_bundle: false,
+        },
+    )
+}
+
+/// Builds every installer format natively targeting the current host operating system with options.
+pub fn build_installers_for_host_with_options(
+    cfg: &AngularNativeConfig,
+    version: &str,
+    opts: InstallerBuildOptions<'_>,
+) -> Result<Vec<InstallerBuildResult>, String> {
+    InstallerFormat::host_defaults()
+        .iter()
+        .map(|&fmt| build_installer_with_options(cfg, version, fmt, opts))
+        .collect()
 }
 
 /// Builds every installer format natively targeting the current host operating system.
@@ -906,9 +910,25 @@ pub fn build_installers_for_host(
     version: &str,
     binary_override: Option<&Path>,
 ) -> Result<Vec<InstallerBuildResult>, String> {
-    InstallerFormat::host_defaults()
+    build_installers_for_host_with_options(
+        cfg,
+        version,
+        InstallerBuildOptions {
+            binary_override,
+            require_bundle: false,
+        },
+    )
+}
+
+/// Stages and (where host tools exist) builds all 5 installer targets with options.
+pub fn build_all_installers_with_options(
+    cfg: &AngularNativeConfig,
+    version: &str,
+    opts: InstallerBuildOptions<'_>,
+) -> Result<Vec<InstallerBuildResult>, String> {
+    InstallerFormat::all()
         .iter()
-        .map(|&fmt| build_installer(cfg, version, fmt, binary_override))
+        .map(|&fmt| build_installer_with_options(cfg, version, fmt, opts))
         .collect()
 }
 
@@ -918,40 +938,70 @@ pub fn build_all_installers(
     version: &str,
     binary_override: Option<&Path>,
 ) -> Result<Vec<InstallerBuildResult>, String> {
-    InstallerFormat::all()
-        .iter()
-        .map(|&fmt| build_installer(cfg, version, fmt, binary_override))
-        .collect()
+    build_all_installers_with_options(
+        cfg,
+        version,
+        InstallerBuildOptions {
+            binary_override,
+            require_bundle: false,
+        },
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn test_config(name: &str) -> AngularNativeConfig {
+    fn test_config(name: &str, with_bundle: bool) -> AngularNativeConfig {
         let mut cfg = AngularNativeConfig::default_standalone(name);
         let root = env::temp_dir().join(format!("ng-desktop-installer-test-{name}"));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
-        fs::write(root.join("main.ngb"), "win Win\n").unwrap();
-        fs::write(root.join("app.bundle.js"), "console.log('ng-desktop');\n").unwrap();
+        if with_bundle {
+            fs::write(root.join("main.ngb"), "win Win\n").unwrap();
+            fs::write(root.join("app.bundle.js"), "console.log('ng-desktop');\n").unwrap();
+        }
         cfg.output_path = root.to_string_lossy().into_owned();
         cfg.icon_search_dir = root.join("icons").to_string_lossy().into_owned();
         cfg
     }
 
     #[test]
-    fn encodes_valid_solid_png_chunks_without_external_crates() {
-        let png = encode_solid_png(44, 44, [225, 29, 72, 255]);
-        assert!(png.starts_with(&[137, 80, 78, 71, 13, 10, 26, 10]));
-        assert!(png.windows(4).any(|w| w == b"IHDR"));
-        assert!(png.windows(4).any(|w| w == b"IDAT"));
-        assert!(png.ends_with(b"IEND\xae\x42\x60\x82"));
+    fn validates_project_names_and_sanitizes_debian_packages() {
+        assert!(validate_project_name("ng-linux-counter").is_ok());
+        assert!(validate_project_name("").is_err());
+        assert!(validate_project_name("../escape").is_err());
+        assert!(validate_project_name("foo/bar").is_err());
+        assert_eq!(sanitize_debian_package_name("My_App_01"), "my-app-01");
     }
 
     #[test]
-    fn builds_real_deb_or_stages_cleanly_and_populates_all_installer_payloads() {
-        let cfg = test_config("slice4-demo");
+    fn require_bundle_rejects_missing_compiled_bundle() {
+        let cfg = test_config("missing-bundle-demo", false);
+        let err = build_installer_with_options(
+            &cfg,
+            "0.6.0",
+            InstallerFormat::Deb,
+            InstallerBuildOptions {
+                binary_override: None,
+                require_bundle: true,
+            },
+        )
+        .unwrap_err();
+        assert!(err.contains("Compiled application bundle missing"));
+        let _ = fs::remove_dir_all(&cfg.output_path);
+    }
+
+    #[test]
+    fn sorts_windows_kit_versions_numerically_beyond_lex_order() {
+        let ver_low = parse_kit_semver_key("10.0.9999.0");
+        let ver_high = parse_kit_semver_key("10.0.26100.0");
+        assert!(ver_high > ver_low);
+    }
+
+    #[test]
+    fn builds_real_deb_with_installed_size_and_populates_all_installer_payloads() {
+        let cfg = test_config("slice4-demo", true);
         let results = build_all_installers(&cfg, "0.6.0", None).unwrap();
         assert_eq!(results.len(), 5);
 
@@ -968,6 +1018,14 @@ mod tests {
                 panic!("Expected real .deb when dpkg-deb is installed");
             };
             assert!(*size_bytes > 0);
+            let info = Command::new("dpkg-deb")
+                .args(["--info", artifact_path])
+                .output()
+                .unwrap();
+            assert!(info.status.success());
+            let control_out = String::from_utf8_lossy(&info.stdout);
+            assert!(control_out.contains("Installed-Size:"));
+
             let contents = Command::new("dpkg-deb")
                 .args(["--contents", artifact_path])
                 .output()
