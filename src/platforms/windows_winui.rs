@@ -384,6 +384,7 @@ pub struct WinUiBackend {
     pub flushed_frames: u64,
     state: NativeSceneState,
     layout_rects: HashMap<NodeId, LayoutRect>,
+    layout_dirty: std::cell::Cell<bool>,
     ffi_driver: WinUiFfiDriver,
 }
 
@@ -416,6 +417,7 @@ impl WinUiBackend {
             flushed_frames: 0,
             state: NativeSceneState::default(),
             layout_rects: HashMap::new(),
+            layout_dirty: std::cell::Cell::new(false),
             ffi_driver: WinUiFfiDriver::new(false),
         }
     }
@@ -425,6 +427,7 @@ impl WinUiBackend {
             flushed_frames: 0,
             state: NativeSceneState::default(),
             layout_rects: HashMap::new(),
+            layout_dirty: std::cell::Cell::new(false),
             ffi_driver: WinUiFfiDriver::new(true),
         }
     }
@@ -522,9 +525,17 @@ impl WinUiBackend {
             merged.extend(self.state.drain_events());
             let coalesced = coalesce_frame_events(merged);
             self.state.record_window_resize_events(&coalesced);
+            if coalesced.iter().any(|ev| ev.event_name == "resize") {
+                self.layout_dirty.set(true);
+            }
             return coalesced;
         }
-        self.state.drain_events()
+        let events = self.state.drain_events();
+        self.state.record_window_resize_events(&events);
+        if events.iter().any(|ev| ev.event_name == "resize") {
+            self.layout_dirty.set(true);
+        }
+        events
     }
 
     fn map_winui_tag(tag: &str) -> &'static str {
@@ -569,6 +580,7 @@ impl WinUiBackend {
                 "Microsoft.UI.Xaml.Controls.ListView"
             }
             "ng-popover" | "gtk-popover" | "ng-menu" => "Microsoft.UI.Xaml.Controls.Flyout",
+            "ng-anchor" | "#comment" => "Microsoft.UI.Xaml.AnchorComment",
             _ => "Microsoft.UI.Xaml.UIElement",
         }
     }
@@ -584,40 +596,46 @@ impl PlatformBackend for WinUiBackend {
     }
 
     fn flush_commands(&mut self, commands: &[RenderCommand]) {
-        if commands.is_empty() {
+        let layout_dirty = self.layout_dirty.replace(false);
+        if commands.is_empty() && !layout_dirty {
             return;
         }
-        self.flushed_frames += 1;
-        super::trace_flush_commands(
-            self.backend_name(),
-            self.flushed_frames,
-            commands,
-            Self::map_winui_tag,
-        );
-        for cmd in commands {
-            self.state
-                .apply_command(cmd, "Microsoft.UI.Xaml.AnchorComment", Self::map_winui_tag);
-            match cmd {
-                RenderCommand::CreateWidget { id, tag } => {
-                    self.ffi_driver.register_node(*id, Self::map_winui_tag(tag));
+        if !commands.is_empty() {
+            self.flushed_frames += 1;
+            super::trace_flush_commands(
+                self.backend_name(),
+                self.flushed_frames,
+                commands,
+                Self::map_winui_tag,
+            );
+            for cmd in commands {
+                self.state.apply_command(
+                    cmd,
+                    "Microsoft.UI.Xaml.AnchorComment",
+                    Self::map_winui_tag,
+                );
+                match cmd {
+                    RenderCommand::CreateWidget { id, tag } => {
+                        self.ffi_driver.register_node(*id, Self::map_winui_tag(tag));
+                    }
+                    RenderCommand::SetAttribute { node, key, value } if key == "event-mask" => {
+                        self.ffi_driver
+                            .update_event_mask(*node, EventMask::parse_attr(value));
+                    }
+                    RenderCommand::SetAttribute { node, key, value }
+                        if key == "prevent-close" && NativeSceneState::parse_truthy_attr(value) =>
+                    {
+                        self.ffi_driver
+                            .update_event_mask(*node, EventMask::CLOSE_REQUEST);
+                    }
+                    RenderCommand::DestroyWidget { id } => {
+                        self.ffi_driver.unregister_node(*id);
+                    }
+                    _ => {}
                 }
-                RenderCommand::SetAttribute { node, key, value } if key == "event-mask" => {
-                    self.ffi_driver
-                        .update_event_mask(*node, EventMask::parse_attr(value));
-                }
-                RenderCommand::SetAttribute { node, key, value }
-                    if key == "prevent-close" && NativeSceneState::parse_truthy_attr(value) =>
-                {
-                    self.ffi_driver
-                        .update_event_mask(*node, EventMask::CLOSE_REQUEST);
-                }
-                RenderCommand::DestroyWidget { id } => {
-                    self.ffi_driver.unregister_node(*id);
-                }
-                _ => {}
+                #[cfg(target_os = "windows")]
+                self.ffi_driver.apply_live_command(cmd, &self.state);
             }
-            #[cfg(target_os = "windows")]
-            self.ffi_driver.apply_live_command(cmd, &self.state);
         }
         self.recompute_layout();
         #[cfg(target_os = "windows")]

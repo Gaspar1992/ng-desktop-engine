@@ -1,6 +1,7 @@
 import { Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { ensureNgNativeBridge, type NativeXdgDirKind } from '@ng-desktop/platform';
 
+/** Reactive file-watch handle backed by OS kernel notifications and an Angular `Signal`. */
 export interface NativeWatchedFileRef<T> {
   readonly path: string;
   readonly value: Signal<T>;

@@ -12,7 +12,6 @@ export interface NativeFileDropPayload {
  */
 @Directive({
   selector: '[ngNativeDropTarget]',
-  standalone: true,
 })
 export class NativeDropTargetDirective implements OnDestroy {
   readonly fileDrop = output<string[]>();

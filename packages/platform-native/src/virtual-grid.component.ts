@@ -4,16 +4,21 @@ import {
   computed,
   contentChild,
   effect,
+  ElementRef,
+  inject,
   input,
   output,
+  Renderer2,
   signal,
   TemplateRef,
+  viewChild,
 } from '@angular/core';
 import {
   NativeContainerDirective,
   NativeElementDirective,
   NativeTextWidgetDirective,
 } from './native-directives';
+import { NativeElementNode } from './native-element';
 import {
   computeVirtualGridSliceRange,
   FenwickOffsetTree,
@@ -43,7 +48,6 @@ export interface NativeVirtualGridEntry<T> {
  */
 @Component({
   selector: 'ng-virtual-grid',
-  standalone: true,
   imports: [
     NgTemplateOutlet,
     NativeElementDirective,
@@ -52,6 +56,7 @@ export interface NativeVirtualGridEntry<T> {
   ],
   template: `
     <ng-scroll
+      #scrollHost
       [hexpand]="true"
       [vexpand]="true"
       [min-height]="viewportHeight()"
@@ -121,6 +126,9 @@ export class NativeVirtualGridComponent<T = unknown> {
   readonly rangeChange = output<VirtualGridSliceRange>();
   readonly scrollBottom = output<void>();
 
+  private readonly renderer = inject(Renderer2);
+  private readonly scrollHost = viewChild<ElementRef<NativeElementNode>>('scrollHost');
+
   readonly scrollTop = signal(0);
   readonly measuredWidth = signal<number | null>(null);
   readonly measuredHeight = signal<number | null>(null);
@@ -137,7 +145,8 @@ export class NativeVirtualGridComponent<T = unknown> {
   readonly effectiveWidth = computed(() => this.measuredWidth() ?? this.viewportWidth());
   readonly effectiveHeight = computed(() => this.measuredHeight() ?? this.viewportHeight());
 
-  readonly range = computed<VirtualGridSliceRange>(() => {
+  /** Builds/updates the Fenwick row-offset tree only when layout geometry or items change, not on scroll. */
+  private readonly rowHeightTreeState = computed(() => {
     const source = this.items();
     const resolver = this.rowHeightResolver();
     this.measureRevision();
@@ -145,9 +154,9 @@ export class NativeVirtualGridComponent<T = unknown> {
     const effWidth = this.effectiveWidth();
     const effHeight = this.effectiveHeight();
 
-    const baseSlice = computeVirtualGridSliceRange({
+    const geometrySlice = computeVirtualGridSliceRange({
       totalItems: source.length,
-      scrollTop: this.scrollTop(),
+      scrollTop: 0,
       viewportHeight: effHeight,
       viewportWidth: effWidth,
       rowHeight: baseRowHeight,
@@ -159,10 +168,14 @@ export class NativeVirtualGridComponent<T = unknown> {
     });
 
     if (resolver === null && this.rowOverrides.size === 0) {
-      return baseSlice;
+      return {
+        tree: null as FenwickOffsetTree | null,
+        baseRowHeight,
+        columns: geometrySlice.columns,
+      };
     }
 
-    const totalRows = baseSlice.totalRows;
+    const totalRows = geometrySlice.totalRows;
     const overrides = new Map<number, number>();
     if (resolver !== null) {
       for (let r = 0; r < totalRows; r += 1) {
@@ -175,19 +188,25 @@ export class NativeVirtualGridComponent<T = unknown> {
       }
     }
     this.rowTree.reset(totalRows, baseRowHeight, overrides);
+    return { tree: this.rowTree, baseRowHeight, columns: geometrySlice.columns };
+  });
+
+  readonly range = computed<VirtualGridSliceRange>(() => {
+    const source = this.items();
+    const { tree, baseRowHeight, columns } = this.rowHeightTreeState();
 
     return computeVirtualGridSliceRange({
       totalItems: source.length,
       scrollTop: this.scrollTop(),
-      viewportHeight: effHeight,
-      viewportWidth: effWidth,
+      viewportHeight: this.effectiveHeight(),
+      viewportWidth: this.effectiveWidth(),
       rowHeight: baseRowHeight,
       minColumnWidth: this.minColumnWidth(),
-      columns: baseSlice.columns,
+      columns,
       rowGap: this.rowGap(),
       columnGap: this.columnGap(),
       overscanRows: this.overscanRows(),
-      rowHeights: this.rowTree,
+      rowHeights: tree ?? undefined,
     });
   });
 
@@ -255,8 +274,16 @@ export class NativeVirtualGridComponent<T = unknown> {
       this.rowHeightResolver() !== null || this.rowOverrides.size > 0
         ? Math.round(this.rowTree.offsetOf(targetRow) + targetRow * rowGap)
         : Math.round(targetRow * (Math.max(1, this.rowHeight()) + rowGap));
+    const coords = `0,${y}`;
+    const sameCoords = this.scrollToAttr() === coords;
     this.scrollTop.set(y);
-    this.scrollToAttr.set(`0,${y}`);
+    this.scrollToAttr.set(coords);
+    if (sameCoords) {
+      const hostEl = this.scrollHost()?.nativeElement;
+      if (hostEl) {
+        this.renderer.setAttribute(hostEl, 'scroll-to', coords);
+      }
+    }
   }
 
   onNativeScroll(event: unknown): void {

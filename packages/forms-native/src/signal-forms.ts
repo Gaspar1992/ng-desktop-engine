@@ -164,7 +164,6 @@ function syncDefinedNumericAttr(
 @Directive({
   selector:
     'ng-entry[formField],gtk-entry[formField],ng-search-entry[formField],gtk-search-entry[formField],ng-password-entry[formField],gtk-password-entry[formField],ng-text-view[formField],gtk-text-view[formField],adw-entry-row[formField],adw-password-entry-row[formField],input[formField]:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=number]),textarea[formField]',
-  standalone: true,
 })
 export class NativeTextFieldControl implements FormValueControl<string>, OnDestroy {
   private readonly renderer = inject(Renderer2);
@@ -199,6 +198,7 @@ export class NativeTextFieldControl implements FormValueControl<string>, OnDestr
     });
 
     effect(() => {
+      syncDefinedNumericAttr(this.renderer, el, 'min-length', this.minLength());
       syncDefinedNumericAttr(this.renderer, el, 'max-length', this.maxLength());
     });
 
@@ -234,8 +234,7 @@ export class NativeTextFieldControl implements FormValueControl<string>, OnDestr
  */
 @Directive({
   selector:
-    'ng-switch[formField],gtk-switch[formField],ng-checkbox[formField],ng-check[formField],ng-check-button[formField],gtk-check-button[formField],adw-switch-row[formField]',
-  standalone: true,
+    'ng-switch[formField],gtk-switch[formField],ng-checkbox[formField],ng-check[formField],ng-check-button[formField],gtk-check-button[formField],adw-switch-row[formField],input[type=checkbox][formField],input[type=radio][formField]',
 })
 export class NativeBooleanFieldControl implements FormCheckboxControl, OnDestroy {
   private readonly renderer = inject(Renderer2);
@@ -273,6 +272,7 @@ export class NativeBooleanFieldControl implements FormCheckboxControl, OnDestroy
         const payload = event as NativeWidgetEvent | undefined;
         const active =
           typeof payload?.checked === 'boolean' ? payload.checked : Boolean(payload?.value);
+        el.attributes.set('active', active ? 'true' : 'false');
         el.checked = active;
         this.checked.set(active);
         this.touch.emit();
@@ -301,7 +301,6 @@ export class NativeBooleanFieldControl implements FormCheckboxControl, OnDestroy
 @Directive({
   selector:
     'ng-slider[formField],ng-scale[formField],gtk-scale[formField],ng-select[formField],ng-dropdown[formField],gtk-dropdown[formField],gtk-drop-down[formField],ng-spin-button[formField],gtk-spin-button[formField],adw-combo-row[formField],adw-spin-row[formField],select[formField],input[type=number][formField],input[type=range][formField]',
-  standalone: true,
 })
 export class NativeNumberFieldControl implements FormValueControl<number>, OnDestroy {
   private readonly renderer = inject(Renderer2);

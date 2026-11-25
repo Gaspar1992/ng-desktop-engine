@@ -4,7 +4,7 @@ import {
   NativeRendererFactory2,
   provideNativePlatform,
 } from '@ng-desktop/platform';
-import { TypeBadge } from './type-badge';
+import { TypeBadge } from './shared/ui/type-badge/type-badge';
 
 describe('TypeBadge', () => {
   let fixture: ComponentFixture<TypeBadge>;

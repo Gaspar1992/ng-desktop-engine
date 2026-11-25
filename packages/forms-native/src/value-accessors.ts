@@ -25,7 +25,6 @@ export const SELECT_NUMBER_TAGS = new Set([
 @Directive({
   selector:
     'ng-entry[formControlName],ng-entry[formControl],ng-entry[ngModel],gtk-entry[formControlName],gtk-entry[formControl],gtk-entry[ngModel],ng-search-entry[formControlName],ng-search-entry[formControl],ng-search-entry[ngModel],gtk-search-entry[formControlName],gtk-search-entry[formControl],gtk-search-entry[ngModel],ng-password-entry[formControlName],ng-password-entry[formControl],ng-password-entry[ngModel],gtk-password-entry[formControlName],gtk-password-entry[formControl],gtk-password-entry[ngModel],ng-text-view[formControlName],ng-text-view[formControl],ng-text-view[ngModel],gtk-text-view[formControlName],gtk-text-view[formControl],gtk-text-view[ngModel],adw-entry-row[formControlName],adw-entry-row[formControl],adw-entry-row[ngModel],adw-password-entry-row[formControlName],adw-password-entry-row[formControl],adw-password-entry-row[ngModel]',
-  standalone: true,
   providers: [
     {
       provide: NG_VALUE_ACCESSOR,
@@ -95,7 +94,6 @@ export class NativeTextValueAccessor implements ControlValueAccessor, OnDestroy 
 @Directive({
   selector:
     'ng-switch[formControlName],ng-switch[formControl],ng-switch[ngModel],ng-checkbox[formControlName],ng-checkbox[formControl],ng-checkbox[ngModel],ng-check[formControlName],ng-check[formControl],ng-check[ngModel],ng-check-button[formControlName],ng-check-button[formControl],ng-check-button[ngModel],gtk-switch[formControlName],gtk-switch[formControl],gtk-switch[ngModel],gtk-check-button[formControlName],gtk-check-button[formControl],gtk-check-button[ngModel],adw-switch-row[formControlName],adw-switch-row[formControl],adw-switch-row[ngModel]',
-  standalone: true,
   providers: [
     {
       provide: NG_VALUE_ACCESSOR,
@@ -161,7 +159,6 @@ export class NativeBooleanValueAccessor implements ControlValueAccessor, OnDestr
 @Directive({
   selector:
     'ng-slider[formControlName],ng-slider[formControl],ng-slider[ngModel],ng-scale[formControlName],ng-scale[formControl],ng-scale[ngModel],gtk-scale[formControlName],gtk-scale[formControl],gtk-scale[ngModel],ng-select[formControlName],ng-select[formControl],ng-select[ngModel],ng-dropdown[formControlName],ng-dropdown[formControl],ng-dropdown[ngModel],gtk-dropdown[formControlName],gtk-dropdown[formControl],gtk-dropdown[ngModel],gtk-drop-down[formControlName],gtk-drop-down[formControl],gtk-drop-down[ngModel],ng-spin-button[formControlName],ng-spin-button[formControl],ng-spin-button[ngModel],gtk-spin-button[formControlName],gtk-spin-button[formControl],gtk-spin-button[ngModel],adw-combo-row[formControlName],adw-combo-row[formControl],adw-combo-row[ngModel],adw-spin-row[formControlName],adw-spin-row[formControl],adw-spin-row[ngModel]',
-  standalone: true,
   providers: [
     {
       provide: NG_VALUE_ACCESSOR,

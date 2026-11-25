@@ -89,7 +89,11 @@ export class NativeStackRouteReuseStrategy implements RouteReuseStrategy {
     if (!key) {
       return null;
     }
-    return this.handles.get(key) ?? null;
+    const handle = this.handles.get(key) ?? null;
+    if (handle) {
+      this.handles.delete(key);
+    }
+    return handle;
   }
 
   shouldReuseRoute(future: ActivatedRouteSnapshot, curr: ActivatedRouteSnapshot): boolean {
@@ -130,6 +134,12 @@ export class NativeStackRouteReuseStrategy implements RouteReuseStrategy {
   }
 }
 
+/**
+ * Registers [`NativeTitleStrategy`] as Angular's [`TitleStrategy`] so route titles synchronize
+ * with native OS window titles via [`NativeTitleService`].
+ *
+ * Returns `EnvironmentProviders` — pass directly inside `ApplicationConfig.providers` (not `provideNativeRouter(...)`).
+ */
 export function withNativeTitleStrategy(appPrefix = ''): EnvironmentProviders {
   return makeEnvironmentProviders([
     { provide: NATIVE_TITLE_PREFIX, useValue: appPrefix },
@@ -138,6 +148,12 @@ export function withNativeTitleStrategy(appPrefix = ''): EnvironmentProviders {
   ]);
 }
 
+/**
+ * Registers [`NativeStackRouteReuseStrategy`] as Angular's [`RouteReuseStrategy`] to keep
+ * recently visited desktop views cached (bounded LRU, default 16 routes) across back navigation.
+ *
+ * Returns `EnvironmentProviders` — pass directly inside `ApplicationConfig.providers`.
+ */
 export function withNativeRouteReuse(): EnvironmentProviders {
   return makeEnvironmentProviders([
     NativeStackRouteReuseStrategy,

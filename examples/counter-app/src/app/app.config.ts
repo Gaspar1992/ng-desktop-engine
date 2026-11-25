@@ -1,4 +1,4 @@
-import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { ApplicationConfig } from '@angular/core';
 import { provideNativeDesktop } from '@ng-desktop/desktop';
 import { provideHttpClient, withFetch, withXsrfConfiguration } from '@ng-desktop/http';
 import {
@@ -10,7 +10,6 @@ import { appRoutes } from './app.routes';
 
 export const appConfig: ApplicationConfig = {
   providers: [
-    provideBrowserGlobalErrorListeners(),
     provideNativeDesktop(),
     provideNativeRouter(appRoutes, withComponentInputBinding()),
     withNativeTitleStrategy('Pokédex Nacional'),

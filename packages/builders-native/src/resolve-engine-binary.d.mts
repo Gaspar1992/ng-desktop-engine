@@ -30,6 +30,7 @@ export interface EngineBinaryResolution {
   targetKey: string;
 }
 
+/** Resolves the native Rust engine binary from `NG_DESKTOP_ENGINE_BIN`, `@ng-desktop/engine-*`, or `cargo`. */
 export function resolveEngineBinaryPath(
   options?: ResolveEngineBinaryOptions,
 ): EngineBinaryResolution;

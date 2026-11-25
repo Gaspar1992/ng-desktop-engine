@@ -1,7 +1,7 @@
 use super::png::encode_solid_png;
 use super::{
     generate_apparmor_profile, generate_appimage_apprun, generate_debian_control_with_permissions,
-    generate_desktop_entry, generate_flatpak_manifest_with_permissions,
+    generate_desktop_entry, generate_desktop_entry_for, generate_flatpak_manifest_with_permissions,
     generate_macos_entitlements_plist, generate_macos_info_plist, generate_runtime_manifest,
     generate_windows_appx_manifest_with_permissions, generate_windows_launcher_batch,
 };
@@ -171,7 +171,7 @@ fn validate_project_name(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn sanitize_debian_package_name(name: &str) -> String {
+pub(super) fn sanitize_debian_package_name(name: &str) -> String {
     let mut out = String::with_capacity(name.len());
     for ch in name.chars() {
         let lower = ch.to_ascii_lowercase();
@@ -473,7 +473,12 @@ fn build_appimage_installer(
 
     fs::write(
         app_dir.join(format!("{}.desktop", cfg.project_name)),
-        generate_desktop_entry(&cfg.project_name, &cfg.project_name),
+        generate_desktop_entry_for(
+            &cfg.project_name,
+            &cfg.project_name,
+            &cfg.project_name,
+            &cfg.project_name,
+        ),
     )
     .map_err(|e| e.to_string())?;
     let icon_path = app_dir.join(format!("{}.png", cfg.project_name));
@@ -531,15 +536,22 @@ fn build_flatpak_installer(
     )?;
     write_runtime_metadata(cfg, version, &flatpak_dir)?;
 
+    let flatpak_id = format!("dev.ngnative.{}", cfg.project_name.replace('-', "_"));
     let manifest_path = flatpak_dir.join(format!("{}.yml", cfg.project_name));
     fs::write(
         &manifest_path,
         generate_flatpak_manifest_with_permissions(&cfg.project_name, &cfg.permissions),
     )
     .map_err(|e| e.to_string())?;
+    let flatpak_exec = format!("/app/bin/{}", cfg.project_name);
     fs::write(
         flatpak_dir.join(format!("{}.desktop", cfg.project_name)),
-        generate_desktop_entry(&cfg.project_name, &cfg.project_name),
+        generate_desktop_entry_for(
+            &cfg.project_name,
+            &cfg.project_name,
+            &flatpak_exec,
+            &flatpak_id,
+        ),
     )
     .map_err(|e| e.to_string())?;
     write_png_or_fallback(
@@ -550,7 +562,6 @@ fn build_flatpak_installer(
     )?;
 
     let arch = appimage_arch_for_host();
-    let flatpak_id = format!("dev.ngnative.{}", cfg.project_name.replace('-', "_"));
     let bundle_path = base_dir.join(format!("{}-{version}-{arch}.flatpak", cfg.project_name));
     if !command_exists("flatpak-builder") || !command_exists("flatpak") {
         return Ok(InstallerBuildResult {

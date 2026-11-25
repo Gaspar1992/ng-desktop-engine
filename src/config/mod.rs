@@ -1,3 +1,8 @@
+//! Workspace configuration resolution and least-privilege capability manifests.
+//!
+//! Parses `angular.json`, Nx `project.json`, runtime manifests (`ng-desktop.runtime.json`),
+//! CLI flags, and environment overrides into [`AngularNativeConfig`] and [`AppPermissions`].
+
 pub mod permissions;
 
 pub use permissions::AppPermissions;

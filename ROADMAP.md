@@ -287,11 +287,11 @@ Following the completion of Phase 16 in **`v0.6.0`** (`PR #39`–`PR #42`), two 
 - [x] **Complete CSS & Animation Parity (`PR #41`):** Added `:hover`, `:focus`, `:active`, and `:disabled` pseudo-classes, CSS custom properties (`--var`/`var()`) with automatic light/dark `@media` synthesis, responsive `@media` (`prefers-color-scheme`, `min-width`, `max-width`), `opacity`, `transition`, `ViewEncapsulation.Emulated` scoping (`_ngcontent-*`, `_nghost-*`), reactive `RenderCommand::SetTheme`, and Pokédex theme toggle (`<Control>t`).
 - [x] **Compiled Native Multi-OS Installers (`PR #39`, `PR #42`):** Upgraded `src/packager/` (`builders.rs`, `png.rs`), `ng-desktop`, 3-OS CI, and `release.yml` to compile real `.deb`, `AppImage`, `Flatpak`, `.msix`, and `.dmg` packages alongside retrospective engine hardening across **233 automated tests**.
 
-### Phase 17: Official Interactive Documentation Website on GitHub Pages (Planned 🌐)
+### Phase 17: Official Interactive Documentation Website on GitHub Pages (In Progress 🌐)
 
-1. **Angular 22 Interactive Docs Portal (`docs-site/` -> `dist/ng-native-docs`):**
-   - [ ] Create the `ng-native-docs` Angular 22 application (`--base-href /ng-native-engine/`) featuring an interactive 29-primitive explorer, live `.ngb` template compiler playground, architecture guides, and external-app tutorials.
+1. **Angular 22 Interactive Docs Portal (`docs-site/` -> `dist/ng-desktop-docs`):**
+   - [ ] Create the `ng-desktop-docs` Angular 22 application (`--base-href /ng-desktop-engine/`) featuring an interactive 29-primitive explorer, live `.ngb` template compiler playground, architecture guides, and external-app tutorials.
 2. **Automated TypeScript & Rust API Reference (`scripts/build-api-docs.mjs`):**
-   - [ ] Bundle `@ng-desktop/*` TypeScript API reference (`/api-ts/`), `cargo doc --no-deps` Rust engine documentation (`/api-rust/`), `.nojekyll`, and `404.html` SPA routing fallback into `dist/ng-native-docs/browser`.
+   - [ ] Bundle `@ng-desktop/*` TypeScript API reference (`/api-ts/`), `cargo doc --no-deps` Rust engine documentation (`/api-rust/`), `.nojekyll`, and `404.html` SPA routing fallback into `dist/ng-desktop-docs/browser`.
 3. **GitHub Pages Continuous Deployment (`.github/workflows/docs-pages.yml`):**
-   - [ ] Automatically build and deploy `dist/ng-native-docs/browser` to `https://gaspar1992.github.io/ng-native-engine/` via `actions/upload-pages-artifact@v3` and `actions/deploy-pages@v4` on every push to `main`.
+   - [ ] Automatically build and deploy `dist/ng-desktop-docs/browser` to `https://gaspar1992.github.io/ng-desktop-engine/` via `actions/upload-pages-artifact@v3` and `actions/deploy-pages@v4` on every push to `main`.

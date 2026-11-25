@@ -1,3 +1,6 @@
+//! Cross-platform Hot Module Replacement (`HMR`) IPC server and client over Unix Domain Sockets
+//! and loopback TCP pointer files, plus reusable [`test_harness`] helpers.
+
 pub mod test_harness;
 
 use crate::desktop::http_codec::{escape_json, extract_json_string};

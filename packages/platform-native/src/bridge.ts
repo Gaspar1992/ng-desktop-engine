@@ -10,16 +10,20 @@ import { InMemorySqliteStore, resolveNativeImageAsset } from './bridge-sqlite';
 
 export type { NativeComputeMatch, NativeXdgDirKind } from './bridge-fs-compute';
 
+/** Logical transport category reported to Rust `NativeHttpEngine` and telemetry. */
 export type NativeHttpCallKind = 'json' | 'graphql' | 'asset' | 'batch' | 'text';
 
+/** OS network reachability classification exposed by `NativeNetworkService`. */
 export type NativeConnectivity = 'full' | 'limited' | 'offline';
 
+/** Snapshot of OS connectivity and metered network status. */
 export interface NativeNetworkStatus {
   online: boolean;
   metered: boolean;
   connectivity: NativeConnectivity;
 }
 
+/** Per-request headers and options passed across `bridge.httpRequest`. */
 export interface NativeHttpRequestOptions {
   headers?: Record<string, string>;
   responseType?: string;
@@ -27,6 +31,7 @@ export interface NativeHttpRequestOptions {
   withCredentials?: boolean;
 }
 
+/** Global configuration shared with Rust `NativeHttpEngine` (HTTP/2, XSRF, caching). */
 export interface NativeHttpConfig {
   platform?: string;
   useFetchTransport?: boolean;

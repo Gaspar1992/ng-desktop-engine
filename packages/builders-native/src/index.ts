@@ -80,8 +80,10 @@ export {
 export { buildMultiResolutionIcons } from './icon-compiler.mjs';
 export {
   emitStyleInstruction,
+  extractCssVariables,
   formatStyleRuleExtensions,
   parseStylesCss,
+  type SharedCssVariables,
   type StyleRuleIr,
 } from './style-compiler.mjs';
 export {

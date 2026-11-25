@@ -1,73 +1,76 @@
-<ng-box id="detail_view" orientation="vertical" spacing="10px" hexpand="true">
-  <ng-box id="detail_nav" class="toolbar-card" orientation="horizontal" spacing="8px">
-    <ng-button id="btn_back" class="secondary-action" (click)="back.emit()"
-      >‹ Volver a la Pokédex</ng-button
-    >
-    <ng-button id="btn_prev" class="secondary-action" (click)="previous.emit()"
-      >‹ Anterior</ng-button
-    >
-    <ng-button id="btn_next" class="secondary-action" (click)="next.emit()">Siguiente ›</ng-button>
-    <ng-button
-      id="btn_toggle_fav"
-      [class]="isFavorite() ? 'fav-active-action' : 'suggested-action'"
-      (click)="toggleFavorite.emit(noteModel().note)"
-    >
-      {{ isFavorite() ? '★ En Favoritos' : '☆ Añadir a Favoritos' }}
-    </ng-button>
-  </ng-box>
-
-  <ng-paned id="pokedex_split" orientation="horizontal" position="410px" hexpand="true">
-    <app-pokemon-card
-      id="poke_card"
-      [name]="detail().displayName"
-      [number]="detail().number"
-      [sprite]="detail().spriteUrl"
-    >
-      <ng-label id="poke_genus" class="genus-subtitle">{{ detail().genus }}</ng-label>
-      <ng-box id="types_box" orientation="horizontal" spacing="8px">
-        @for (t of detail().types; track t.label) {
-        <app-type-badge [badgeClass]="t.badgeClass" [type]="t.label" />
-        }
-      </ng-box>
-      <ng-label id="poke_description" class="lore-description">{{ detail().description }}</ng-label>
-    </app-pokemon-card>
-
-    <ng-box id="detail_right_pane" orientation="vertical" spacing="10px" hexpand="true">
-      <ng-grid id="specs_grid" class="specs-panel" row-spacing="8px" column-spacing="24px">
-        <ng-label id="lbl_h_title" class="spec-label">Altura</ng-label>
-        <ng-label id="lbl_w_title" class="spec-label">Peso</ng-label>
-        <ng-label id="lbl_height" class="spec-val">{{ detail().heightMeters }}</ng-label>
-        <ng-label id="lbl_weight" class="spec-val">{{ detail().weightKg }}</ng-label>
-        <ng-label id="lbl_abil_title" class="spec-label">Habilidad</ng-label>
-        <ng-label id="lbl_exp_title" class="spec-label">Exp. Base / Total</ng-label>
-        <ng-label id="lbl_ability" class="spec-val">{{ detail().ability }}</ng-label>
-        <ng-label id="lbl_base_exp" class="spec-val"
-          >{{ detail().baseExperience }} · {{ totalStats() }} PTS</ng-label
-        >
-      </ng-grid>
-
-      <ng-expander id="stats_expander" label="Estadísticas Base Oficiales" expanded="true">
-        <ng-box id="stats_box" class="panel-card" orientation="vertical" spacing="8px">
-          @for (stat of detail().stats; track stat.key) {
-          <app-stat-meter [label]="stat.label" [value]="stat.value" />
-          }
-        </ng-box>
-      </ng-expander>
-
-      <ng-expander id="notes_expander" label="Notas de Campo de la Pokédex" expanded="true">
-        <ng-box id="notes_box" class="panel-card" orientation="vertical" spacing="10px">
-          <ng-text-view id="poke_notes" editable="true" [formField]="noteForm.note" />
-          <ng-button
-            id="btn_save_note"
-            class="suggested-action"
-            (click)="saveNote.emit(noteModel().note)"
-            >Guardar Nota</ng-button
-          >
-          @if (noteStatus()) {
-          <ng-label id="note_status" class="status-ok">{{ noteStatus() }}</ng-label>
-          }
-        </ng-box>
-      </ng-expander>
+<ng-scroll id="detail_scroll" hexpand="true" vexpand="true" min-height="420px">
+  <ng-box id="detail_view" orientation="vertical" spacing="10px" hexpand="true">
+    <ng-box id="detail_nav" class="toolbar-card" orientation="horizontal" spacing="8px">
+      <ng-button id="btn_back" class="secondary-action" (click)="back.emit()"
+        >‹ Volver a la Pokédex</ng-button
+      >
+      <ng-button id="btn_prev" class="secondary-action" (click)="previous.emit()"
+        >‹ Anterior</ng-button
+      >
+      <ng-button id="btn_next" class="secondary-action" (click)="next.emit()"
+        >Siguiente ›</ng-button
+      >
+      <ng-button
+        id="btn_toggle_fav"
+        [class]="isFavorite() ? 'fav-active-action' : 'suggested-action'"
+        (click)="toggleFavorite.emit(note())"
+      >
+        {{ isFavorite() ? '★ En Favoritos' : '☆ Añadir a Favoritos' }}
+      </ng-button>
     </ng-box>
-  </ng-paned>
-</ng-box>
+
+    <ng-paned id="pokedex_split" orientation="horizontal" position="410px" hexpand="true">
+      <app-pokemon-card
+        id="poke_card"
+        [name]="detail().displayName"
+        [number]="detail().number"
+        [sprite]="detail().spriteUrl"
+      >
+        <ng-label id="poke_genus" class="genus-subtitle">{{ detail().genus }}</ng-label>
+        <ng-box id="types_box" orientation="horizontal" spacing="8px">
+          @for (t of detail().types; track t.label) {
+          <app-type-badge [badgeClass]="t.badgeClass" [type]="t.label" />
+          }
+        </ng-box>
+        <ng-label id="poke_description" class="lore-description"
+          >{{ detail().description }}</ng-label
+        >
+      </app-pokemon-card>
+
+      <ng-box id="detail_right_pane" orientation="vertical" spacing="10px" hexpand="true">
+        <ng-grid id="specs_grid" class="specs-panel" row-spacing="8px" column-spacing="24px">
+          <ng-label id="lbl_h_title" class="spec-label">Altura</ng-label>
+          <ng-label id="lbl_w_title" class="spec-label">Peso</ng-label>
+          <ng-label id="lbl_height" class="spec-val">{{ detail().heightMeters }}</ng-label>
+          <ng-label id="lbl_weight" class="spec-val">{{ detail().weightKg }}</ng-label>
+          <ng-label id="lbl_abil_title" class="spec-label">Habilidad</ng-label>
+          <ng-label id="lbl_exp_title" class="spec-label">Exp. Base / Total</ng-label>
+          <ng-label id="lbl_ability" class="spec-val">{{ detail().ability }}</ng-label>
+          <ng-label id="lbl_base_exp" class="spec-val"
+            >{{ detail().baseExperience }} · {{ totalStats() }} PTS</ng-label
+          >
+        </ng-grid>
+
+        <ng-expander id="stats_expander" label="Estadísticas Base Oficiales" expanded="true">
+          <ng-box id="stats_box" class="panel-card" orientation="vertical" spacing="8px">
+            @for (stat of detail().stats; track stat.key) {
+            <app-stat-meter [label]="stat.label" [value]="stat.value" />
+            }
+          </ng-box>
+        </ng-expander>
+
+        <ng-expander id="notes_expander" label="Notas de Campo de la Pokédex" expanded="true">
+          <ng-box id="notes_box" class="panel-card" orientation="vertical" spacing="10px">
+            <ng-text-view id="poke_notes" editable="true" [formField]="noteForm" />
+            <ng-button id="btn_save_note" class="suggested-action" (click)="saveNote.emit(note())"
+              >Guardar Nota</ng-button
+            >
+            @if (noteStatus()) {
+            <ng-label id="note_status" class="status-ok">{{ noteStatus() }}</ng-label>
+            }
+          </ng-box>
+        </ng-expander>
+      </ng-box>
+    </ng-paned>
+  </ng-box>
+</ng-scroll>

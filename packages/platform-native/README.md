@@ -18,7 +18,6 @@ import { bootstrapNativeApplication, NATIVE_UI_DIRECTIVES } from '@ng-desktop/pl
 
 @Component({
   selector: 'app-root',
-  standalone: true,
   imports: [NATIVE_UI_DIRECTIVES],
   template: `
     <ng-window id="win" title="Desktop App">

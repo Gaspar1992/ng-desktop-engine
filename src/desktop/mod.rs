@@ -1,3 +1,6 @@
+//! Native desktop OS integration services (`HTTP`, `SQLite`, `inotify`/`kqueue`/`Win32`
+//! file watchers, multi-threaded compute pool, portals, and system environment).
+
 use crate::config::AppPermissions;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};

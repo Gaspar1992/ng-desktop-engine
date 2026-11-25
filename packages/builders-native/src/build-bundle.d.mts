@@ -31,6 +31,7 @@ export interface CompileBundleResult {
   hmrDelta: HmrDeltaSummary;
 }
 
+/** Emits textual `.ngb` instructions from compiled style rules, signals, methods, and widget AST. */
 export function emitNgbBundle(
   styleRules: StyleRuleIr[],
   numericSignals: Record<string, number>,
@@ -40,6 +41,8 @@ export function emitNgbBundle(
   sourceLabel: string,
 ): string;
 
+/** Compiles an Angular 22 workspace project into `main.ngb`, `app.bundle.js`, `server.bundle.js`, and manifests. */
 export function compileBundle(options?: CompileBundleOptions): CompileBundleResult;
 
+/** Watches application sources and pushes incremental HMR reloads over Unix socket / loopback TCP IPC. */
 export function watchBundle(options?: CompileBundleOptions): FSWatcher;

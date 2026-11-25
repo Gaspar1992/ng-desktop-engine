@@ -4,15 +4,15 @@ Build native desktop apps from an existing or new **Angular 22+** application (`
 
 ---
 
-## 1. Platform Support & Prerequisites (`v0.4.0`)
+## 1. Platform Support & Prerequisites (`v0.6.0`)
 
-Before adding `@ng-desktop/*` to an external project, check the current runtime maturity per operating system (see [`ROADMAP.md`](../ROADMAP.md) for the `v0.5.0` Windows/macOS runtime parity plan):
+Before adding `@ng-desktop/*` to an external project, check the current runtime maturity per operating system (see [`ROADMAP.md`](../ROADMAP.md) for the full roadmap):
 
-| Target OS                 | Runtime Status (`v0.4.0`)                                            | What Works Today                                                                                                    |
-| :------------------------ | :------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------ |
-| **Linux (`linux-gtk4`)**  | **Full Ivy Runtime** (`GTK4 / Libadwaita` + `JavaScriptCore`)        | Compiled Angular 22+ apps, signals, forms, router, HTTP/2 (`libsoup-3.0`), SQLite, XDG + `inotify`, Unix socket HMR |
-| **Windows (`win32-x64`)** | **Live Win32 FFI (`user32.dll`), JS Parity in `v0.5.0`**             | Window/control realization via `Win32Sys` & `AppxManifest` staging; compiled Ivy JS execution arrives in `v0.5.0`   |
-| **macOS (`darwin-*`)**    | **Live Objective-C AppKit FFI (`AppKitSys`), JS Parity in `v0.5.0`** | Window/control realization via `AppKitSys` & `.app` bundle staging; compiled Ivy JS execution arrives in `v0.5.0`   |
+| Target OS                 | Runtime Status (`v0.6.0`)                                          | What Works Today                                                                                                                  |
+| :------------------------ | :----------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------- |
+| **Linux (`linux-gtk4`)**  | **Full Ivy Runtime** (`GTK4 / Libadwaita` + `JavaScriptCore`)      | Compiled Angular 22+ apps, CSS vars/media/emulated scoping, 2D virtual grid, SQLite, XDG + `inotify`, `.deb`/`AppImage`/`Flatpak` |
+| **Windows (`win32-x64`)** | **Full Ivy Runtime** (`Win32 / WinUI 3 FFI` + `QuickJS-NG`)        | Compiled Angular 22+ apps, shared layout solver, registry theme, HTTP/SQLite/FS watcher portals, `.msix` installers               |
+| **macOS (`darwin-*`)**    | **Full Ivy Runtime** (`Objective-C AppKit FFI` + `JavaScriptCore`) | Compiled Angular 22+ apps, shared layout solver, `CoreFoundation` portals, `kqueue` FS watcher, `.app` & `.dmg` installers        |
 
 ### Required Tooling
 
@@ -69,7 +69,7 @@ pnpm add -D @ng-desktop/builders
 Wire native providers in `src/app/app.config.ts`:
 
 ```ts
-import { ApplicationConfig, provideZonelessChangeDetection } from '@angular/core';
+import { ApplicationConfig } from '@angular/core';
 import { provideNativeDesktop } from '@ng-desktop/desktop';
 import { provideHttpClient, withFetch, withXsrfConfiguration } from '@ng-desktop/http';
 import { provideNativeEcosystemCompat } from '@ng-desktop/platform';
@@ -82,7 +82,6 @@ import { appRoutes } from './app.routes';
 
 export const appConfig: ApplicationConfig = {
   providers: [
-    provideZonelessChangeDetection(),
     provideNativeDesktop(),
     provideNativeRouter(appRoutes, withComponentInputBinding()),
     withNativeTitleStrategy('My Desktop App'),
@@ -125,7 +124,6 @@ import { NATIVE_UI_DIRECTIVES } from '@ng-desktop/platform';
 
 @Component({
   selector: 'app-home',
-  standalone: true,
   imports: [NATIVE_UI_DIRECTIVES],
   styles: `
     .toolbar {
@@ -178,7 +176,6 @@ import { NATIVE_UI_DIRECTIVES } from '@ng-desktop/platform';
 
 @Component({
   selector: 'app-settings',
-  standalone: true,
   imports: [NATIVE_UI_DIRECTIVES, NATIVE_SIGNAL_FORM_DIRECTIVES],
   template: `
     <ng-box orientation="vertical" spacing="10px">
@@ -213,7 +210,6 @@ import { NATIVE_UI_DIRECTIVES } from '@ng-desktop/platform';
 
 @Component({
   selector: 'app-reactive-settings',
-  standalone: true,
   imports: [ReactiveFormsModule, NATIVE_FORM_DIRECTIVES, NATIVE_UI_DIRECTIVES],
   template: `
     <ng-box [formGroup]="form" orientation="vertical" spacing="10px">
@@ -272,7 +268,6 @@ interface TaskRow {
 
 @Component({
   selector: 'app-task-list',
-  standalone: true,
   imports: [NATIVE_UI_DIRECTIVES, NativeVirtualListComponent],
   template: `
     <ng-box orientation="vertical" spacing="8px" hexpand="true" vexpand="true">
@@ -359,7 +354,7 @@ export class EditorRootComponent {
 }
 ```
 
-> **Note:** On `v0.4.0`, interactive `confirmDialog`, `openFileDialog`, `saveFileDialog`, clipboard, and theme signals use `DesktopServices` in-memory/host-bridge state; full native XDG Desktop Portal, Win32 Common Item Dialog, and Cocoa panel integrations land in `v0.5.0`.
+> **Note:** On `v0.6.0`, `confirmDialog`, `openFileDialog`, `saveFileDialog`, theme detection, filesystem watchers, and notifications integrate directly with OS-native portals (`XDG Desktop Portal` / `GtkFileDialog` on Linux, Win32 Common Item Dialog & Registry on Windows, and Cocoa panels on macOS), with deterministic in-memory fallbacks in headless/test runs.
 
 ### E. OS Storage, SQLite Live Queries, & File Watching (`@ng-desktop/desktop`)
 
@@ -463,9 +458,9 @@ Supported capability tokens: `network`, `sqlite`, `filesystem:xdg`, `filesystem:
 | `Native engine not found for <target>`                              | No matching `@ng-desktop/engine-*` package or `cargo` binary found. Install platform optional dependencies or set `NG_DESKTOP_ENGINE_BIN`. |
 | Missing `libgtk-4.so.1` or `libjavascriptcoregtk-6.0.so.1` on Linux | Install runtime packages (`libgtk-4-1`, `libadwaita-1-0`, `libjavascriptcoregtk-6.0-1`, `libsoup-3.0-0`, `libsqlite3-0`).                  |
 | Permission denied at runtime (`mode: 'strict'`)                     | Run `npx ng-desktop permissions` to inspect inferred capabilities and add required tokens to `permissions.allow`.                          |
-| Windows or macOS fails to execute Angular JS bundles                | Expected in `v0.4.0`: live Win32/AppKit UI FFI exists, while full multi-OS ES2024 JS engine parity is scheduled for `v0.5.0`.              |
+| Missing platform packages or prebuilt binary                        | Use `@ng-desktop/engine-*` optional dependencies matching your OS/CPU or pass `NG_DESKTOP_ENGINE_BIN=/path/to/ng-native-engine`.           |
 
 ### Further Reading
 
 - [**Ecosystem Compatibility Guide**](./ECOSYSTEM_COMPATIBILITY.md) — Integrating NgRx, Angular Aria, Angular CDK, and Nx (plus why Material MDC templates are incompatible).
-- [**Architectural Roadmap**](./../ROADMAP.md) — Current `v0.4.0` maturity matrix and `v0.5.0` / `v0.6.0` milestones.
+- [**Architectural Roadmap**](./../ROADMAP.md) — Full `v0.6.0` maturity matrix and Phase 17 GitHub Pages docs portal milestones.

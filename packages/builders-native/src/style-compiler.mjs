@@ -462,17 +462,17 @@ function applyDeclaration(rule, rawProp, value) {
 }
 
 /**
- * Parses component CSS with the `postcss` AST into the native Style IR, supporting simple
- * class selectors, interactive pseudo-classes, `@media` queries, `--var`/`var()` tokens
- * with automatic light/dark `@media` variant synthesis, `opacity`, `transition`, and
- * Angular `ViewEncapsulation.Emulated` scoping tokens.
+ * Extracts `--var` custom properties from `:root` / `host` rules and `@media (prefers-color-scheme)` blocks.
  */
-export function parseStylesCss(cssSource, from = 'app.css') {
+export function extractCssVariables(
+  cssSource,
+  from = 'styles.css',
+  target = { baseVars: new Map(), lightVars: new Map(), darkVars: new Map() },
+) {
+  const baseVars = target?.baseVars ?? new Map();
+  const lightVars = target?.lightVars ?? new Map();
+  const darkVars = target?.darkVars ?? new Map();
   const root = postcss.parse(cssSource, { from });
-  const baseVars = new Map();
-  const lightVars = new Map();
-  const darkVars = new Map();
-
   root.walkRules((cssRule) => {
     const media = resolveInheritedMedia(cssRule);
     if (media.unsupported) return;
@@ -485,6 +485,22 @@ export function parseStylesCss(cssSource, from = 'app.css') {
       }
     });
   });
+  return { baseVars, lightVars, darkVars };
+}
+
+/**
+ * Parses component CSS with the `postcss` AST into the native Style IR, supporting simple
+ * class selectors, interactive pseudo-classes, `@media` queries, `--var`/`var()` tokens
+ * with automatic light/dark `@media` variant synthesis, `opacity`, `transition`, and
+ * Angular `ViewEncapsulation.Emulated` scoping tokens.
+ */
+export function parseStylesCss(cssSource, from = 'app.css', sharedVars = null) {
+  const root = postcss.parse(cssSource, { from });
+  const baseVars = new Map(sharedVars?.baseVars ?? []);
+  const lightVars = new Map(sharedVars?.lightVars ?? []);
+  const darkVars = new Map(sharedVars?.darkVars ?? []);
+
+  extractCssVariables(cssSource, from, { baseVars, lightVars, darkVars });
 
   const rulesByKey = new Map();
   const upsertRule = (target, media) => {

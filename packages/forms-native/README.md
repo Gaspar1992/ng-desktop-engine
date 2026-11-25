@@ -19,7 +19,6 @@ import { NATIVE_UI_DIRECTIVES } from '@ng-desktop/platform';
 
 @Component({
   selector: 'app-preferences',
-  standalone: true,
   imports: [NATIVE_UI_DIRECTIVES, NATIVE_SIGNAL_FORM_DIRECTIVES],
   template: `
     <ng-box orientation="vertical" spacing="10px">
@@ -54,7 +53,6 @@ import { NATIVE_UI_DIRECTIVES } from '@ng-desktop/platform';
 
 @Component({
   selector: 'app-legacy-preferences',
-  standalone: true,
   imports: [ReactiveFormsModule, NATIVE_FORM_DIRECTIVES, NATIVE_UI_DIRECTIVES],
   template: `
     <ng-box [formGroup]="form" orientation="vertical" spacing="10px">

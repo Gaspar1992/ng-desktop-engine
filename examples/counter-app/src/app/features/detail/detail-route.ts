@@ -1,4 +1,4 @@
-import { Component, effect, inject, input } from '@angular/core';
+import { Component, effect, inject, input, untracked } from '@angular/core';
 import { Router } from '@ng-desktop/router';
 import { PokedexService } from '../../core/services/pokedex.service';
 import { PokemonDetailView } from './pokemon-detail-view';
@@ -36,11 +36,13 @@ export class DetailRouteComponent {
       if (!Number.isInteger(parsed) || parsed < 1 || parsed > 1025) {
         return;
       }
-      if (
-        this.pokedex.viewMode() !== 'detail' ||
-        this.pokedex.selectedId() !== parsed ||
-        this.pokedex.selectedDetail()?.id !== parsed
-      ) {
+      const needsLoad = untracked(
+        () =>
+          this.pokedex.viewMode() !== 'detail' ||
+          this.pokedex.selectedId() !== parsed ||
+          this.pokedex.selectedDetail()?.id !== parsed,
+      );
+      if (needsLoad) {
         void this.pokedex.openPokemon(parsed);
       }
     });

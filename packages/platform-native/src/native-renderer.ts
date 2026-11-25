@@ -915,11 +915,13 @@ export class NativeRenderer2 extends Renderer2 {
     }
 
     if (target.isVirtual) {
-      // Built-in virtual containers own their internal <ng-scroll> and expose scrollBottom as an Angular output;
-      // forwarding the host DOM listener to <ng-scroll> would fire every scrollBottom binding twice.
+      // Built-in virtual containers own their internal <ng-scroll> / <ng-list> and expose scrollBottom /
+      // rowActivated as Angular outputs; forwarding host DOM listeners would fire them twice with raw payloads.
       if (
-        (target.tag === 'ng-virtual-list' || target.tag === 'ng-virtual-grid') &&
-        (eventName === 'scrollBottom' || eventName === 'scroll-bottom')
+        ((target.tag === 'ng-virtual-list' || target.tag === 'ng-virtual-grid') &&
+          (eventName === 'scrollBottom' || eventName === 'scroll-bottom')) ||
+        (target.tag === 'ng-virtual-list' &&
+          (eventName === 'rowActivated' || eventName === 'row-activated'))
       ) {
         return () => {};
       }

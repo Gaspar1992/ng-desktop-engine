@@ -1,4 +1,13 @@
-import { computed, Signal, signal, WritableSignal } from '@angular/core';
+import {
+  computed,
+  effect,
+  inject,
+  Injector,
+  Signal,
+  signal,
+  untracked,
+  WritableSignal,
+} from '@angular/core';
 import {
   ensureNgNativeBridge,
   NativeHttpBridgeResponse,
@@ -45,6 +54,7 @@ export function createNativeHttpResource<T = unknown>(
   const isLoading = computed(() => status() === 'loading');
   const hasValue = computed(() => value() !== undefined);
   let requestSeq = 0;
+  let lastLoadedUrl: string | undefined;
 
   const applyResponse = (targetUrl: string, res: NativeHttpBridgeResponse): boolean => {
     if (res.status >= 200 && res.status < 300) {
@@ -78,6 +88,7 @@ export function createNativeHttpResource<T = unknown>(
   const reload = (): boolean => {
     const seq = ++requestSeq;
     const targetUrl = resolveUrl();
+    lastLoadedUrl = targetUrl;
     if (!targetUrl) {
       return resetToIdle();
     }
@@ -104,6 +115,7 @@ export function createNativeHttpResource<T = unknown>(
   const reloadAsync = async (): Promise<boolean> => {
     const seq = ++requestSeq;
     const targetUrl = resolveUrl();
+    lastLoadedUrl = targetUrl;
     if (!targetUrl) {
       return resetToIdle();
     }
@@ -131,6 +143,29 @@ export function createNativeHttpResource<T = unknown>(
   };
 
   reload();
+
+  if (typeof urlOrFn === 'function') {
+    let injector: Injector | null = null;
+    try {
+      injector = inject(Injector);
+    } catch {
+      injector = null;
+    }
+    if (injector) {
+      effect(
+        () => {
+          const nextUrl = url();
+          if (nextUrl === lastLoadedUrl) {
+            return;
+          }
+          untracked(() => {
+            reload();
+          });
+        },
+        { injector },
+      );
+    }
+  }
 
   return {
     url,

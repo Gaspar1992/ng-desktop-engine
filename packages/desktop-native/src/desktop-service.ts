@@ -102,6 +102,7 @@ function parseBridgePayloadObject(raw: unknown): Record<string, unknown> {
 export class NativeDesktopService {
   private readonly bridge = ensureNgNativeBridge();
   private readonly actionHandlers = new Map<string, () => void>();
+  private readonly windowEventMasks = new Map<string, Set<string>>();
   readonly theme: WritableSignal<NativeThemeMode>;
   readonly windowGeometry: WritableSignal<NativeWindowGeometry>;
   readonly appMenu: WritableSignal<readonly NativeMenuItem[]>;
@@ -344,7 +345,10 @@ export class NativeDesktopService {
     if (options?.preventClose !== undefined) {
       this.setPreventClose(options.preventClose, windowNodeId);
     } else {
-      this.bridge.setAttribute(windowNodeId, 'event-mask', 'close-request');
+      const masks = this.windowEventMasks.get(windowNodeId) ?? new Set<string>();
+      masks.add('close-request');
+      this.windowEventMasks.set(windowNodeId, masks);
+      this.bridge.setAttribute(windowNodeId, 'event-mask', Array.from(masks).join(','));
     }
     const unlisten = this.bridge.listen(windowNodeId, 'close-request', (raw) => {
       const parsed = parseBridgePayloadObject(raw);

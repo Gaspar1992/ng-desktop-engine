@@ -103,7 +103,6 @@ function isTruthyDisabledInput(value: NativeBoolInput): boolean {
 @Directive({
   selector:
     'ng-window,adw-window,ng-dialog,gtk-dialog,adw-dialog,ng-header-bar,adw-header-bar,gtk-header-bar,ng-scroll,gtk-scrolled-window,ng-box,gtk-box,ng-grid,gtk-grid,ng-separator,gtk-separator,ng-button,gtk-button,ng-label,gtk-label,ng-entry,gtk-entry,ng-switch,gtk-switch,ng-checkbox,ng-check,ng-check-button,gtk-check-button,ng-slider,ng-scale,gtk-scale,ng-select,ng-dropdown,gtk-dropdown,gtk-drop-down,ng-image,adw-image,gtk-picture,ng-picture,ng-level-bar,gtk-level-bar,ng-flow,ng-flow-box,gtk-flow-box,ng-spinner,gtk-spinner,ng-progress-bar,gtk-progress-bar,ng-paned,gtk-paned,ng-stack,gtk-stack,adw-navigation-view,ng-expander,gtk-expander,ng-text-view,gtk-text-view,ng-password-entry,gtk-password-entry,ng-spin-button,gtk-spin-button,ng-search-entry,gtk-search-entry,ng-clamp,adw-clamp,ng-list,ng-table,gtk-list-box,gtk-list-view,ng-popover,gtk-popover,ng-menu,adw-entry-row,adw-password-entry-row,adw-switch-row,adw-combo-row,adw-spin-row',
-  standalone: true,
 })
 export class NativeElementDirective {
   private readonly renderer = inject(Renderer2);
@@ -188,7 +187,6 @@ export class NativeElementDirective {
 @Directive({
   selector:
     'ng-window,adw-window,ng-dialog,gtk-dialog,adw-dialog,ng-header-bar,adw-header-bar,gtk-header-bar',
-  standalone: true,
 })
 export class NativeWindowDirective {
   private readonly renderer = inject(Renderer2);
@@ -236,7 +234,6 @@ export class NativeWindowDirective {
 @Directive({
   selector:
     'ng-box,gtk-box,ng-grid,gtk-grid,ng-flow,ng-flow-box,gtk-flow-box,ng-paned,gtk-paned,ng-scroll,gtk-scrolled-window,ng-stack,gtk-stack,adw-navigation-view,ng-expander,gtk-expander,ng-clamp,adw-clamp,ng-separator,gtk-separator',
-  standalone: true,
 })
 export class NativeContainerDirective {
   private readonly renderer = inject(Renderer2);
@@ -321,7 +318,6 @@ export class NativeContainerDirective {
  */
 @Directive({
   selector: 'ng-button,gtk-button,ng-label,gtk-label',
-  standalone: true,
 })
 export class NativeTextWidgetDirective {
   private readonly renderer = inject(Renderer2);
@@ -350,7 +346,6 @@ export class NativeTextWidgetDirective {
 @Directive({
   selector:
     'ng-image,adw-image,gtk-picture,ng-picture,ng-level-bar,gtk-level-bar,ng-progress-bar,gtk-progress-bar,ng-spinner,gtk-spinner',
-  standalone: true,
 })
 export class NativeMediaAndMeterDirective {
   private readonly renderer = inject(Renderer2);
@@ -391,7 +386,6 @@ export class NativeMediaAndMeterDirective {
 @Directive({
   selector:
     'ng-entry,gtk-entry,ng-search-entry,gtk-search-entry,ng-password-entry,gtk-password-entry,ng-text-view,gtk-text-view,ng-switch,gtk-switch,ng-checkbox,ng-check,ng-check-button,gtk-check-button,ng-slider,ng-scale,gtk-scale,ng-spin-button,gtk-spin-button,ng-select,ng-dropdown,gtk-dropdown,gtk-drop-down,adw-entry-row,adw-password-entry-row,adw-switch-row,adw-combo-row,adw-spin-row',
-  standalone: true,
 })
 export class NativeInputWidgetDirective {
   private readonly renderer = inject(Renderer2);
@@ -440,7 +434,6 @@ export class NativeInputWidgetDirective {
  */
 @Directive({
   selector: 'ng-list,ng-table,gtk-list-box,gtk-list-view',
-  standalone: true,
 })
 export class NativeListDirective {
   private readonly renderer = inject(Renderer2);
@@ -468,7 +461,6 @@ export class NativeListDirective {
  */
 @Directive({
   selector: 'ng-popover,gtk-popover,ng-menu',
-  standalone: true,
 })
 export class NativePopoverDirective {
   private readonly renderer = inject(Renderer2);
@@ -503,7 +495,6 @@ export class NativePopoverDirective {
  */
 @Directive({
   selector: 'ng-slider,ng-scale,gtk-scale,ng-spin-button,gtk-spin-button,adw-spin-row',
-  standalone: true,
 })
 export class NativeNumericRangeDirective {
   private readonly renderer = inject(Renderer2);

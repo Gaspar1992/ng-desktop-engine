@@ -77,7 +77,7 @@ A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22
 ## 📂 Repository Structure
 
 ```text
-ng-native-engine/
+ng-desktop-engine/
 ├── src/
 │   ├── lib.rs                    # Library entry point & module declarations
 │   ├── main.rs                   # Native engine runner, GTK4 event loop & HMR IPC handler

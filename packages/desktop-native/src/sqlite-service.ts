@@ -1,6 +1,7 @@
 import { computed, DestroyRef, inject, Injectable, Signal, signal } from '@angular/core';
 import { ensureNgNativeBridge } from '@ng-desktop/platform';
 
+/** Signal-backed handle returned by [`NativeSqliteService.liveQuery`]. */
 export interface NativeLiveQueryRef<T> {
   readonly rows: Signal<T[]>;
   readonly count: Signal<number>;

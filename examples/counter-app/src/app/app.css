@@ -15,6 +15,9 @@
   --specs-bg: #0284c7;
   --specs-fg: #ffffff;
   --specs-label: #e0f2fe;
+  --accent-genus: #7dd3fc;
+  --text-lore: #cbd5e1;
+  --status-ok: #4ade80;
 }
 
 @media (prefers-color-scheme: light) {
@@ -35,6 +38,9 @@
     --specs-bg: #0369a1;
     --specs-fg: #ffffff;
     --specs-label: #bae6fd;
+    --accent-genus: #0369a1;
+    --text-lore: #334155;
+    --status-ok: #15803d;
   }
 }
 
@@ -53,15 +59,6 @@
   padding: 12px;
   gap: 10px;
   border-radius: 12px;
-  transition: background 180ms ease;
-}
-
-.pokemon-card {
-  background: var(--surface-card);
-  color: var(--text-primary);
-  padding: 18px;
-  gap: 10px;
-  border-radius: 14px;
   transition: background 180ms ease;
 }
 
