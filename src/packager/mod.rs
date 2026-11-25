@@ -1,3 +1,14 @@
+pub mod builders;
+mod png;
+
+pub use builders::{
+    BuiltInstaller, InstallerBuildOptions, InstallerBuildResult, InstallerBuildStatus,
+    InstallerFormat, build_all_installers, build_all_installers_with_options, build_installer,
+    build_installer_with_options, build_installers_for_host,
+    build_installers_for_host_with_options, debian_arch_for_host, macos_arch_for_host,
+    msix_arch_for_host,
+};
+
 use crate::config::{AngularNativeConfig, AppPermissions};
 use std::fs;
 use std::path::Path;
@@ -127,7 +138,7 @@ pub fn generate_flatpak_manifest_with_permissions(app_id: &str, perms: &AppPermi
         finish_args.push(String::from("  - --filesystem=host"));
     }
     format!(
-        "app-id: {flatpak_id}\nruntime: org.gnome.Platform\nruntime-version: '47'\nsdk: org.gnome.Sdk\ncommand: {app_id}\nfinish-args:\n{}\n",
+        "app-id: {flatpak_id}\nruntime: org.gnome.Platform\nruntime-version: '47'\nsdk: org.gnome.Sdk\ncommand: {app_id}\nfinish-args:\n{}\nmodules:\n  - name: {app_id}\n    buildsystem: simple\n    build-commands:\n      - install -Dm755 {app_id} /app/bin/{app_id}\n      - mkdir -p /app/share/{app_id}\n      - cp -f main.ngb /app/share/{app_id}/main.ngb\n      - if [ -f app.bundle.js ]; then cp -f app.bundle.js /app/share/{app_id}/app.bundle.js; fi\n      - if [ -f server.bundle.js ]; then cp -f server.bundle.js /app/share/{app_id}/server.bundle.js; fi\n      - cp -f permissions.manifest.json /app/share/{app_id}/permissions.manifest.json\n      - cp -f ng-desktop.runtime.json /app/share/{app_id}/ng-desktop.runtime.json\n      - install -Dm644 {app_id}.desktop /app/share/applications/{flatpak_id}.desktop\n      - install -Dm644 {app_id}.png /app/share/icons/hicolor/256x256/apps/{flatpak_id}.png\n    sources:\n      - type: dir\n        path: .\n",
         finish_args.join("\n")
     )
 }
@@ -243,6 +254,16 @@ pub fn generate_windows_appx_manifest(app_id: &str, display_name: &str, version:
     )
 }
 
+fn normalize_msix_version(version: &str) -> String {
+    let core = version.split(['-', '+']).next().unwrap_or("0.1.0");
+    let mut parts: Vec<&str> = core.split('.').filter(|s| !s.is_empty()).collect();
+    while parts.len() < 4 {
+        parts.push("0");
+    }
+    parts.truncate(4);
+    parts.join(".")
+}
+
 /// Generates a Windows `AppxManifest.xml` emitting only the capabilities required by `perms`.
 /// Avoids declaring restricted `runFullTrust` unless `perms.full_system_access` is explicitly true.
 #[must_use]
@@ -252,11 +273,8 @@ pub fn generate_windows_appx_manifest_with_permissions(
     version: &str,
     perms: &AppPermissions,
 ) -> String {
-    let msix_version = if version.matches('.').count() == 2 {
-        format!("{version}.0")
-    } else {
-        String::from(version)
-    };
+    let msix_version = normalize_msix_version(version);
+    let identity_suffix = app_id.replace('_', "-");
     let mut capabilities = Vec::new();
     if perms.network {
         capabilities.push("    <Capability Name=\"internetClient\" />");
@@ -268,17 +286,17 @@ pub fn generate_windows_appx_manifest_with_permissions(
         capabilities.push("    <rescap:Capability Name=\"runFullTrust\" />");
     }
     let cap_block = if capabilities.is_empty() {
-        String::from("  <Capabilities />")
+        String::new()
     } else {
         format!(
-            "  <Capabilities>\n{}\n  </Capabilities>",
+            "\n  <Capabilities>\n{}\n  </Capabilities>",
             capabilities.join("\n")
         )
     };
     let rescap_ns = if perms.full_system_access {
-        "\n         xmlns:rescap=\"http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities\""
+        "\n         xmlns:rescap=\"http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities\"\n         IgnorableNamespaces=\"uap rescap\""
     } else {
-        ""
+        "\n         IgnorableNamespaces=\"uap\""
     };
     let entry_point = if perms.full_system_access {
         "Windows.FullTrustApplication"
@@ -290,18 +308,24 @@ pub fn generate_windows_appx_manifest_with_permissions(
         r##"<?xml version="1.0" encoding="utf-8"?>
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
          xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"{rescap_ns}>
-  <Identity Name="NgNative.{app_id}" Publisher="CN=NgNative" Version="{msix_version}" ProcessorArchitecture="x64" />
+  <Identity Name="NgNative.{identity_suffix}" Publisher="CN=NgNative" Version="{msix_version}" ProcessorArchitecture="x64" />
   <Properties>
     <DisplayName>{display_name}</DisplayName>
     <PublisherDisplayName>NgNative Engine</PublisherDisplayName>
+    <Logo>Assets\Logo.png</Logo>
   </Properties>
-{cap_block}
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
   <Applications>
     <Application Id="App" Executable="{app_id}.exe" EntryPoint="{entry_point}">
       <uap:VisualElements DisplayName="{display_name}" Description="Angular 22 Native WinUI 3 Desktop App"
                           BackgroundColor="#1e1e1e" Square150x150Logo="Assets\Logo.png" Square44x44Logo="Assets\SmallLogo.png" />
     </Application>
-  </Applications>
+  </Applications>{cap_block}
 </Package>
 "##
     )

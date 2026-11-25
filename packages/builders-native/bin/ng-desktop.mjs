@@ -43,7 +43,7 @@ function printHelp() {
       '  ng-desktop build [--project=<name>] [--config=<path>] [--version=<ver>] [--watch]',
       '  ng-desktop run [--project=<name>] [--config=<path>] [--version=<ver>] [--batch]',
       '  ng-desktop permissions [--project=<name>] [--config=<path>] [--strict]',
-      '  ng-desktop package [--project=<name>] [--config=<path>] [--version=<ver>] [--all]',
+      '  ng-desktop package [--project=<name>] [--config=<path>] [--version=<ver>] [--all] [--installer=<deb|appimage|flatpak|msix|dmg|auto|all>] [--strict-installer]',
       '  ng-desktop init [--project=<name>] [--target=<linux-gtk4|windows-winui|macos-appkit>]',
       '',
     ].join('\n'),
@@ -168,17 +168,19 @@ function main() {
 
   if (cmd === 'package') {
     const ws = resolveWorkspaceProject({ configPath, projectName });
-    const pkgFlag = args.includes('--all') ? '--package-all' : '--package';
-    launchHostEngine(
-      ws,
-      [
-        pkgFlag,
-        `--config=${ws.configFile}`,
-        `--project=${ws.projectName}`,
-        `--version=${version || ws.version}`,
-      ],
-      { preferReleaseCargo: true },
-    );
+    const installer = getFlag(args, '--installer');
+    const binary = getFlag(args, '--binary');
+    const engineArgs = [
+      ...(installer
+        ? [`--installer=${installer}`]
+        : [args.includes('--all') ? '--package-all' : '--package']),
+      ...(binary ? [`--binary=${binary}`] : []),
+      ...(args.includes('--strict-installer') ? ['--strict-installer'] : []),
+      `--config=${ws.configFile}`,
+      `--project=${ws.projectName}`,
+      `--version=${version || ws.version}`,
+    ];
+    launchHostEngine(ws, engineArgs, { preferReleaseCargo: true });
     return;
   }
 

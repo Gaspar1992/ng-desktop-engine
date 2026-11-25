@@ -60,7 +60,8 @@ fn os_from_target_platform(target_platform: &str) -> String {
     }
 }
 
-fn extract_cli_flag(args: &[String], flag: &str) -> Option<String> {
+#[must_use]
+pub fn extract_cli_flag(args: &[String], flag: &str) -> Option<String> {
     let prefix = format!("{flag}=");
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {

@@ -81,4 +81,13 @@ describe('Phase 6 — @ng-desktop/builders & Distribution Orchestration', () => 
     });
     expect(roots[0].children[2].events).toEqual({ click: 'increment' });
   });
+
+  it('exposes real installer flags in ng-desktop CLI help output', async () => {
+    const { execFileSync } = await import('node:child_process');
+    const { resolve } = await import('node:path');
+    const cliPath = resolve(process.cwd(), 'packages/builders-native/bin/ng-desktop.mjs');
+    const help = execFileSync(process.execPath, [cliPath, '--help'], { encoding: 'utf8' });
+    expect(help).toContain('--installer=<deb|appimage|flatpak|msix|dmg|auto|all>');
+    expect(help).toContain('--strict-installer');
+  });
 });

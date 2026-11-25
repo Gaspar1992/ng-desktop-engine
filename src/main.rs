@@ -1,10 +1,14 @@
-use ng_native_engine::config::AngularNativeConfig;
+use ng_native_engine::config::{AngularNativeConfig, extract_cli_flag};
 use ng_native_engine::engine::{NodeId, RenderEngine};
 use ng_native_engine::ipc::test_harness::{
     TestHarnessState, emit_status_error, emit_status_line, run_stdio_harness,
 };
 use ng_native_engine::ipc::{HmrIpcServer, HmrMessage, HmrResponse};
-use ng_native_engine::packager::{stage_all_distributions, stage_linux_distribution};
+use ng_native_engine::packager::{
+    InstallerBuildOptions, InstallerBuildStatus, InstallerFormat,
+    build_all_installers_with_options, build_installer_with_options,
+    build_installers_for_host_with_options, stage_all_distributions, stage_linux_distribution,
+};
 use ng_native_engine::platforms::{AnyPlatformBackend, PlatformBackend};
 use ng_native_engine::runtime::{JsEngineBackend, JsRuntime, NativeServerWorker};
 use std::env;
@@ -223,6 +227,66 @@ fn run_interactive_loop(
     engine.print_tree(ctx.win_id, 0).unwrap();
 }
 
+fn run_installer_cli(args: &[String], cfg: &AngularNativeConfig, target: &str) {
+    let binary_arg = extract_cli_flag(args, "--binary");
+    let strict = args.iter().any(|a| a == "--strict-installer");
+    let opts = InstallerBuildOptions {
+        binary_override: binary_arg.as_deref().map(Path::new),
+        require_bundle: strict,
+    };
+
+    let build_res = match target.trim().to_ascii_lowercase().as_str() {
+        "all" => build_all_installers_with_options(cfg, &cfg.version, opts),
+        "auto" | "" => build_installers_for_host_with_options(cfg, &cfg.version, opts),
+        other => InstallerFormat::from_str_lossy(other).map_or_else(
+            || {
+                Err(format!(
+                    "Unknown installer format '{other}'. Expected deb|appimage|flatpak|msix|dmg|auto|all."
+                ))
+            },
+            |fmt| build_installer_with_options(cfg, &cfg.version, fmt, opts).map(|res| vec![res]),
+        ),
+    };
+    let results = match build_res {
+        Ok(v) => v,
+        Err(err) => {
+            eprintln!("[NgDesktop Installer Error] {err}");
+            std::process::exit(1);
+        }
+    };
+
+    println!(
+        "[NgDesktop Installer] Packager results for '{}' v{}:",
+        cfg.project_name, cfg.version
+    );
+    let mut any_missing = false;
+    for res in &results {
+        let fmt = res.format.as_str();
+        match &res.status {
+            InstallerBuildStatus::Built {
+                artifact_path,
+                size_bytes,
+            } => println!("  [BUILT]  {fmt} -> {artifact_path} ({size_bytes} bytes)"),
+            InstallerBuildStatus::StagedOnly {
+                staging_dir,
+                missing_tool,
+                command_hint,
+            } => {
+                any_missing = true;
+                println!(
+                    "  [STAGED] {fmt} -> {staging_dir} (missing '{missing_tool}'; run: {command_hint})"
+                );
+            }
+        }
+    }
+    if strict && any_missing {
+        eprintln!(
+            "[NgDesktop Installer Error] --strict-installer requires all requested formats to compile on host."
+        );
+        std::process::exit(1);
+    }
+}
+
 fn handle_cli_actions(args: &[String], cfg: &AngularNativeConfig) -> bool {
     if args.iter().any(|a| a == "--version") {
         println!(
@@ -234,6 +298,11 @@ fn handle_cli_actions(args: &[String], cfg: &AngularNativeConfig) -> bool {
 
     if args.iter().any(|a| a == "--permissions-report") {
         println!("{}", cfg.permissions.to_json());
+        return true;
+    }
+
+    if let Some(target) = extract_cli_flag(args, "--installer") {
+        run_installer_cli(args, cfg, &target);
         return true;
     }
 

@@ -2,4 +2,5 @@
 /dist
 /out-tsc
 /.angular
+/odd
 node_modules/
