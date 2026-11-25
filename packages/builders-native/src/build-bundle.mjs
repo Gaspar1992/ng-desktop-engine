@@ -15,6 +15,7 @@ import { buildMultiResolutionIcons } from './icon-compiler.mjs';
 import { analyzeProjectPermissions } from './permission-analyzer.mjs';
 import { compileServerBundle, discoverServerRoutes, runEsbuildBuild } from './server-compiler.mjs';
 import {
+  buildStyleRuleKey,
   emitStyleInstruction,
   formatStyleRuleExtensions,
   parseStylesCss,
@@ -235,11 +236,11 @@ function collectComponentStyleRules(compMeta, baseDir) {
 }
 
 function dedupeStyleRules(rules) {
-  const byClass = new Map();
+  const byKey = new Map();
   for (const rule of rules) {
-    byClass.set(rule.className, rule);
+    byKey.set(buildStyleRuleKey(rule), rule);
   }
-  return [...byClass.values()];
+  return [...byKey.values()];
 }
 
 export function compileBundle({

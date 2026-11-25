@@ -1,25 +1,68 @@
+:root {
+  --surface-app: #0f172a;
+  --surface-card: #1e293b;
+  --surface-card-hover: #273549;
+  --surface-secondary: #334155;
+  --surface-secondary-hover: #475569;
+  --text-primary: #f8fafc;
+  --text-muted: #94a3b8;
+  --accent-primary: #e11d48;
+  --accent-primary-hover: #be123c;
+  --accent-fav: #d97706;
+  --accent-fav-hover: #b45309;
+  --error-bg: #450a0a;
+  --error-fg: #fecaca;
+  --specs-bg: #0284c7;
+  --specs-fg: #ffffff;
+  --specs-label: #e0f2fe;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --surface-app: #f8fafc;
+    --surface-card: #ffffff;
+    --surface-card-hover: #f1f5f9;
+    --surface-secondary: #e2e8f0;
+    --surface-secondary-hover: #cbd5e1;
+    --text-primary: #0f172a;
+    --text-muted: #475569;
+    --accent-primary: #e11d48;
+    --accent-primary-hover: #be123c;
+    --accent-fav: #d97706;
+    --accent-fav-hover: #b45309;
+    --error-bg: #fee2e2;
+    --error-fg: #991b1b;
+    --specs-bg: #0369a1;
+    --specs-fg: #ffffff;
+    --specs-label: #bae6fd;
+  }
+}
+
 .main-card {
-  background: #0f172a;
-  color: #f8fafc;
+  background: var(--surface-app);
+  color: var(--text-primary);
   padding: 20px;
   gap: 16px;
   border-radius: 16px;
+  transition: background 180ms ease;
 }
 
 .toolbar-card {
-  background: #1e293b;
-  color: #f8fafc;
+  background: var(--surface-card);
+  color: var(--text-primary);
   padding: 12px;
   gap: 10px;
   border-radius: 12px;
+  transition: background 180ms ease;
 }
 
 .pokemon-card {
-  background: #1e293b;
-  color: #f8fafc;
+  background: var(--surface-card);
+  color: var(--text-primary);
   padding: 18px;
   gap: 10px;
   border-radius: 14px;
+  transition: background 180ms ease;
 }
 
 .pokemon-grid {
@@ -32,29 +75,34 @@
   display: flex;
   flex-direction: column;
   flex: 1;
-  background: #1e293b;
-  color: #f8fafc;
+  background: var(--surface-card);
+  color: var(--text-primary);
   padding: 10px;
   gap: 6px;
   border-radius: 10px;
   min-width: 160px;
+  transition: background 180ms ease;
+}
+
+.grid-card:hover {
+  background: var(--surface-card-hover);
 }
 
 .section-title {
-  color: #f8fafc;
+  color: var(--text-primary);
   font-size: 20px;
   font-weight: 800;
 }
 
 .section-subtitle {
-  color: #94a3b8;
+  color: var(--text-muted);
   font-size: 13px;
   font-weight: normal;
 }
 
 .error-banner {
-  background: #450a0a;
-  color: #fecaca;
+  background: var(--error-bg);
+  color: var(--error-fg);
   padding: 10px;
   border-radius: 8px;
   font-size: 13px;
@@ -62,19 +110,19 @@
 }
 
 .card-name {
-  color: #f8fafc;
+  color: var(--text-primary);
   font-size: 14px;
   font-weight: 700;
 }
 
 .poke-num {
-  color: #94a3b8;
+  color: var(--text-muted);
   font-size: 11px;
   font-weight: 700;
 }
 
 .hero-title {
-  color: #f8fafc;
+  color: var(--text-primary);
   padding: 4px;
   gap: 4px;
   font-size: 24px;
@@ -82,30 +130,73 @@
 }
 
 .suggested-action {
-  background: #e11d48;
+  background: var(--accent-primary);
   color: #ffffff;
   padding: 6px;
   gap: 8px;
   border-radius: 8px;
   font-weight: bold;
+  transition: background 180ms ease;
+}
+
+.suggested-action:hover {
+  background: var(--accent-primary-hover);
+}
+
+.suggested-action:active {
+  opacity: 0.9;
+}
+
+.suggested-action:disabled {
+  opacity: 0.55;
 }
 
 .secondary-action {
-  background: #334155;
-  color: #f8fafc;
+  background: var(--surface-secondary);
+  color: var(--text-primary);
   padding: 10px;
   gap: 8px;
   border-radius: 8px;
   font-weight: bold;
+  transition: background 180ms ease;
+}
+
+.secondary-action:hover {
+  background: var(--surface-secondary-hover);
+}
+
+.secondary-action:focus {
+  opacity: 0.95;
+}
+
+.secondary-action:disabled {
+  opacity: 0.55;
 }
 
 .fav-active-action {
-  background: #d97706;
+  background: var(--accent-fav);
   color: #ffffff;
   padding: 10px;
   gap: 8px;
   border-radius: 8px;
   font-weight: bold;
+  transition: background 180ms ease;
+}
+
+.fav-active-action:hover {
+  background: var(--accent-fav-hover);
+}
+
+@media (max-width: 720px) {
+  .toolbar-card {
+    padding: 8px;
+    gap: 6px;
+  }
+
+  .specs-panel {
+    padding: 10px;
+    gap: 8px;
+  }
 }
 
 .badge-normal {
@@ -253,21 +344,21 @@
 }
 
 .specs-panel {
-  background: #0284c7;
-  color: #f8fafc;
+  background: var(--specs-bg);
+  color: var(--text-primary);
   padding: 14px;
   border-radius: 12px;
   gap: 12px;
 }
 
 .spec-label {
-  color: #e0f2fe;
+  color: var(--specs-label);
   font-weight: 700;
   font-size: 12px;
 }
 
 .spec-val {
-  color: #ffffff;
+  color: var(--specs-fg);
   font-weight: 800;
   font-size: 16px;
 }

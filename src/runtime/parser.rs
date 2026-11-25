@@ -339,6 +339,20 @@ mod tests {
         assert_eq!(rule.font_size, Some(20));
         assert_eq!(rule.font_weight, Some(700));
 
+        let interactive = parse_instruction(
+            "style btn #be123c #ffffff 8 6 pseudo=hover media-theme=light media-min-width=640 opacity=85 transition-ms=180 transition-prop=background",
+        )
+        .unwrap();
+        let Instruction::RegisterStyle(hover_rule) = interactive else {
+            panic!("expected RegisterStyle");
+        };
+        assert_eq!(hover_rule.pseudo_class.as_deref(), Some("hover"));
+        assert_eq!(hover_rule.media_theme.as_deref(), Some("light"));
+        assert_eq!(hover_rule.media_min_width, Some(640));
+        assert_eq!(hover_rule.opacity, Some(85));
+        assert_eq!(hover_rule.transition_ms, Some(180));
+        assert_eq!(hover_rule.transition_prop.as_deref(), Some("background"));
+
         assert!(parse_instruction("style card none none 0 0 radius").is_err());
         assert!(parse_instruction("style card none none 0 0 shadow=4").is_err());
     }

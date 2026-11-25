@@ -9,6 +9,7 @@ use super::gtk4_callbacks::{
     on_gtk_switch_active_notify, pack_node_id, set_window_prevent_close,
 };
 use super::gtk4_sys::{Gtk4Sys, GtkHandle};
+use crate::desktop::DesktopTheme;
 use crate::engine::{
     EventMask, EventPayload, NativeEvent, NodeId, RenderCommand, StyleId, StyleRule,
 };
@@ -160,6 +161,8 @@ pub struct GtkLinuxBackend {
     pub(super) parent_of: HashMap<NodeId, NodeId>,
     css_dirty: bool,
     css_reload_count: u64,
+    pub(super) active_theme: DesktopTheme,
+    pub(super) viewport_width: i32,
     pulse_tick: std::cell::Cell<u32>,
     window_states: std::cell::RefCell<HashMap<NodeId, (i32, i32, bool, bool)>>,
 }
@@ -228,6 +231,8 @@ impl GtkLinuxBackend {
             parent_of: HashMap::new(),
             css_dirty: false,
             css_reload_count: 0,
+            active_theme: DesktopTheme::Dark,
+            viewport_width: 1020,
             pulse_tick: std::cell::Cell::new(0),
             window_states: std::cell::RefCell::new(HashMap::new()),
         }
@@ -246,9 +251,16 @@ impl GtkLinuxBackend {
             parent_of: HashMap::new(),
             css_dirty: false,
             css_reload_count: 0,
+            active_theme: DesktopTheme::Dark,
+            viewport_width: 1020,
             pulse_tick: std::cell::Cell::new(0),
             window_states: std::cell::RefCell::new(HashMap::new()),
         }
+    }
+
+    #[must_use]
+    pub const fn active_theme(&self) -> DesktopTheme {
+        self.active_theme
     }
 
     #[must_use]
@@ -516,7 +528,7 @@ impl GtkLinuxBackend {
             }
             RenderCommand::SetText { id, text } => self.apply_gtk_set_text(*id, text),
             RenderCommand::SetAttribute { node, key, value } => {
-                self.apply_native_attribute(*node, key, value);
+                self.apply_gtk_set_attribute(*node, key, value);
             }
             RenderCommand::SetWindowIcon { node, icon } => {
                 let (Some(gtk), Some(widget)) = (&self.gtk, self.widgets.get(node)) else {
@@ -536,7 +548,10 @@ impl GtkLinuxBackend {
                 {
                     gtk.add_css_class(handle, &rule.class_name);
                 }
-                if let Some(rule) = rule_opt {
+                if let Some(rule) = rule_opt
+                    && rule.pseudo_class.is_none()
+                    && rule.matches_context(self.active_theme, self.viewport_width)
+                {
                     self.apply_style_rule_layout(*node, &rule);
                 }
             }
@@ -548,6 +563,13 @@ impl GtkLinuxBackend {
                 };
                 if let Some(handle) = widget.handle {
                     gtk.remove_css_class(handle, &rule.class_name);
+                }
+            }
+            RenderCommand::SetTheme { theme } => {
+                self.active_theme = *theme;
+                self.css_dirty = true;
+                if let Some(gtk) = &self.gtk {
+                    gtk.set_color_scheme(*theme == DesktopTheme::Dark);
                 }
             }
             RenderCommand::AppendChild { parent, child } => {
@@ -564,23 +586,49 @@ impl GtkLinuxBackend {
                 self.apply_remove_child(*parent, *child);
             }
             RenderCommand::DestroyWidget { id } => {
-                self.header_titles.remove(id);
-                self.window_states.borrow_mut().remove(id);
-                self.parent_of.remove(id);
-                self.dom_id_to_node.retain(|_, node| node != id);
-                set_window_prevent_close(pack_node_id(*id), false);
-                if let Some(widget) = self.widgets.remove(id)
-                    && let (Some(gtk), Some(handle)) = (&self.gtk, widget.handle)
-                {
-                    if widget.kind == GtkWidgetType::Popover {
-                        gtk.popover_detach(handle);
-                    }
-                    if widget.kind.is_toplevel() {
-                        gtk.destroy_window(handle);
-                    } else {
-                        gtk.unref_widget(handle);
-                    }
-                }
+                self.apply_gtk_destroy_widget(*id);
+            }
+        }
+    }
+
+    fn apply_gtk_set_attribute(&mut self, node: NodeId, key: &str, value: &str) {
+        if key == "width"
+            && self
+                .widgets
+                .get(&node)
+                .is_some_and(|w| w.kind.is_toplevel())
+            && let Some(px) = Self::parse_px_i32(value)
+            && px > 0
+            && px != self.viewport_width
+        {
+            self.viewport_width = px;
+            if self
+                .styles
+                .values()
+                .any(|r| r.media_min_width.is_some() || r.media_max_width.is_some())
+            {
+                self.css_dirty = true;
+            }
+        }
+        self.apply_native_attribute(node, key, value);
+    }
+
+    fn apply_gtk_destroy_widget(&mut self, id: NodeId) {
+        self.header_titles.remove(&id);
+        self.window_states.borrow_mut().remove(&id);
+        self.parent_of.remove(&id);
+        self.dom_id_to_node.retain(|_, node| *node != id);
+        set_window_prevent_close(pack_node_id(id), false);
+        if let Some(widget) = self.widgets.remove(&id)
+            && let (Some(gtk), Some(handle)) = (&self.gtk, widget.handle)
+        {
+            if widget.kind == GtkWidgetType::Popover {
+                gtk.popover_detach(handle);
+            }
+            if widget.kind.is_toplevel() {
+                gtk.destroy_window(handle);
+            } else {
+                gtk.unref_widget(handle);
             }
         }
     }

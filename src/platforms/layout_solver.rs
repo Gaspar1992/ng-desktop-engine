@@ -229,7 +229,11 @@ fn apply_attr_override(props: &mut EffectiveLayoutProps, key: &str, val: &str) {
     }
 }
 
-fn resolve_props(state: &NativeSceneState, node: &NativeSceneNode) -> EffectiveLayoutProps {
+fn resolve_props(
+    state: &NativeSceneState,
+    node: &NativeSceneNode,
+    viewport_width: i32,
+) -> EffectiveLayoutProps {
     let is_toolbar = matches!(
         node.native_class,
         "Microsoft.UI.Xaml.Controls.TitleBar" | "NSToolbar"
@@ -266,9 +270,22 @@ fn resolve_props(state: &NativeSceneState, node: &NativeSceneNode) -> EffectiveL
         grid_row: None,
     };
 
+    let active_theme = state.active_theme();
+    let mut visited_classes: Vec<&str> = Vec::new();
     for &style_id in &node.style_classes {
-        if let Some(rule) = state.get_style(style_id) {
-            apply_style_rule(&mut props, rule);
+        let Some(rule) = state.get_style(style_id) else {
+            continue;
+        };
+        if visited_classes.contains(&rule.class_name.as_str()) {
+            continue;
+        }
+        visited_classes.push(rule.class_name.as_str());
+        for (_, candidate) in state.styles_for_class(&rule.class_name) {
+            if candidate.pseudo_class.is_none()
+                && candidate.matches_context(active_theme, viewport_width)
+            {
+                apply_style_rule(&mut props, candidate);
+            }
         }
     }
     for (key, val) in &node.attributes {
@@ -309,8 +326,9 @@ fn container_inner_rect(outer: LayoutRect, props: &EffectiveLayoutProps) -> Layo
 fn measure_base_child(
     state: &NativeSceneState,
     child: &NativeSceneNode,
+    viewport_width: i32,
 ) -> (EffectiveLayoutProps, i32, i32) {
-    let props = resolve_props(state, child);
+    let props = resolve_props(state, child, viewport_width);
     let (def_w, def_h) = default_intrinsic_size(child);
     let base_w = props.width.unwrap_or(def_w).max(props.min_width).max(1);
     let base_h = props.height.unwrap_or(def_h).max(props.min_height).max(1);
@@ -330,6 +348,7 @@ fn measure_flex_children(
     axis: Axis,
     homogeneous: bool,
     children: &[NodeId],
+    viewport_width: i32,
 ) -> (Vec<MeasuredFlexChild>, i32, i32) {
     let mut measured = Vec::with_capacity(children.len());
     let mut fixed_sum = 0i32;
@@ -339,7 +358,7 @@ fn measure_flex_children(
         let Some(cnode) = state.get_node(cid) else {
             continue;
         };
-        let (props, base_w, base_h) = measure_base_child(state, cnode);
+        let (props, base_w, base_h) = measure_base_child(state, cnode, viewport_width);
         let (base_main, expands) = match axis {
             Axis::Vertical => (base_h, props.vexpand || homogeneous),
             Axis::Horizontal => (base_w, props.hexpand || homogeneous),
@@ -368,6 +387,7 @@ fn layout_flex_children(
     inner: LayoutRect,
     parent_props: &EffectiveLayoutProps,
     children: &[NodeId],
+    viewport_width: i32,
     out: &mut HashMap<NodeId, LayoutRect>,
 ) {
     let count = i32::try_from(children.len()).unwrap_or(0);
@@ -382,8 +402,13 @@ fn layout_flex_children(
         Axis::Horizontal => (inner.width - total_gap).max(count),
     };
 
-    let (measured, fixed_sum, flex_count) =
-        measure_flex_children(state, axis, parent_props.homogeneous, children);
+    let (measured, fixed_sum, flex_count) = measure_flex_children(
+        state,
+        axis,
+        parent_props.homogeneous,
+        children,
+        viewport_width,
+    );
 
     let extra = if parent_props.homogeneous {
         0
@@ -467,23 +492,29 @@ fn layout_flex_children(
         };
 
         cursor += child_main + margin * 2 + gap;
-        layout_subtree(state, item.id, rect, out);
+        layout_subtree(state, item.id, rect, viewport_width, out);
     }
+}
+
+#[derive(Clone, Copy)]
+struct GridArea {
+    inner: LayoutRect,
+    spacing: i32,
+    cols: usize,
+    viewport_width: i32,
 }
 
 fn layout_grid_children(
     state: &NativeSceneState,
-    inner: LayoutRect,
-    spacing: i32,
-    cols: usize,
+    area: GridArea,
     children: &[NodeId],
     out: &mut HashMap<NodeId, LayoutRect>,
 ) {
     if children.is_empty() {
         return;
     }
-    let col_count = cols.max(1);
-    let gap = spacing.max(0);
+    let col_count = area.cols.max(1);
+    let gap = area.spacing.max(0);
 
     let mut placements = Vec::with_capacity(children.len());
     let mut max_row = 0usize;
@@ -491,7 +522,7 @@ fn layout_grid_children(
         let Some(cnode) = state.get_node(cid) else {
             continue;
         };
-        let props = resolve_props(state, cnode);
+        let props = resolve_props(state, cnode, area.viewport_width);
         let col = props.grid_col.unwrap_or(idx % col_count).min(col_count - 1);
         let row = props.grid_row.unwrap_or(idx / col_count);
         max_row = max_row.max(row);
@@ -501,20 +532,20 @@ fn layout_grid_children(
     let row_count = max_row + 1;
     let total_cols = i32::try_from(col_count).unwrap_or(1);
     let total_rows = i32::try_from(row_count).unwrap_or(1);
-    let cell_w = ((inner.width - gap.saturating_mul(total_cols - 1)) / total_cols).max(1);
-    let cell_h = ((inner.height - gap.saturating_mul(total_rows - 1)) / total_rows).max(1);
+    let cell_w = ((area.inner.width - gap.saturating_mul(total_cols - 1)) / total_cols).max(1);
+    let cell_h = ((area.inner.height - gap.saturating_mul(total_rows - 1)) / total_rows).max(1);
 
     for (cid, props, col, row) in placements {
         let margin = props.margin.max(0);
         let x_idx = i32::try_from(col).unwrap_or(0);
         let y_idx = i32::try_from(row).unwrap_or(0);
         let rect = LayoutRect {
-            x: inner.x + x_idx * (cell_w + gap) + margin,
-            y: inner.y + y_idx * (cell_h + gap) + margin,
+            x: area.inner.x + x_idx * (cell_w + gap) + margin,
+            y: area.inner.y + y_idx * (cell_h + gap) + margin,
             width: (cell_w - margin * 2).max(1),
             height: (cell_h - margin * 2).max(1),
         };
-        layout_subtree(state, cid, rect, out);
+        layout_subtree(state, cid, rect, area.viewport_width, out);
     }
 }
 
@@ -523,13 +554,14 @@ fn layout_paned_children(
     inner: LayoutRect,
     parent_props: &EffectiveLayoutProps,
     children: &[NodeId],
+    viewport_width: i32,
     out: &mut HashMap<NodeId, LayoutRect>,
 ) {
     if children.is_empty() {
         return;
     }
     if children.len() == 1 {
-        layout_subtree(state, children[0], inner, out);
+        layout_subtree(state, children[0], inner, viewport_width, out);
         return;
     }
     let axis = parent_props.orientation.unwrap_or(Axis::Horizontal);
@@ -574,10 +606,10 @@ fn layout_paned_children(
             },
         ),
     };
-    layout_subtree(state, children[0], r1, out);
-    layout_subtree(state, children[1], r2, out);
+    layout_subtree(state, children[0], r1, viewport_width, out);
+    layout_subtree(state, children[1], r2, viewport_width, out);
     for &extra in &children[2..] {
-        layout_subtree(state, extra, r2, out);
+        layout_subtree(state, extra, r2, viewport_width, out);
     }
 }
 
@@ -585,6 +617,7 @@ fn layout_subtree(
     state: &NativeSceneState,
     node_id: NodeId,
     rect: LayoutRect,
+    viewport_width: i32,
     out: &mut HashMap<NodeId, LayoutRect>,
 ) {
     let Some(node) = state.get_node(node_id) else {
@@ -605,19 +638,22 @@ fn layout_subtree(
         return;
     }
 
-    let props = resolve_props(state, node);
+    let props = resolve_props(state, node, viewport_width);
     let inner = container_inner_rect(rect, &props);
     if matches!(node.source_tag.as_str(), "ng-clamp" | "adw-clamp") {
-        layout_flex_children(state, inner, &props, &visible_children, out);
+        layout_flex_children(state, inner, &props, &visible_children, viewport_width, out);
         return;
     }
     match node.native_class {
         "Microsoft.UI.Xaml.Controls.Grid" | "NSGridView" => {
             layout_grid_children(
                 state,
-                inner,
-                props.spacing,
-                props.columns.unwrap_or(2),
+                GridArea {
+                    inner,
+                    spacing: props.spacing,
+                    cols: props.columns.unwrap_or(2),
+                    viewport_width,
+                },
                 &visible_children,
                 out,
             );
@@ -625,18 +661,21 @@ fn layout_subtree(
         "Microsoft.UI.Xaml.Controls.ItemsRepeater" | "NSCollectionView" => {
             layout_grid_children(
                 state,
-                inner,
-                props.spacing,
-                props.columns.unwrap_or(3),
+                GridArea {
+                    inner,
+                    spacing: props.spacing,
+                    cols: props.columns.unwrap_or(3),
+                    viewport_width,
+                },
                 &visible_children,
                 out,
             );
         }
         "Microsoft.UI.Xaml.Controls.SplitView" | "NSSplitView" => {
-            layout_paned_children(state, inner, &props, &visible_children, out);
+            layout_paned_children(state, inner, &props, &visible_children, viewport_width, out);
         }
         _ => {
-            layout_flex_children(state, inner, &props, &visible_children, out);
+            layout_flex_children(state, inner, &props, &visible_children, viewport_width, out);
         }
     }
 }
@@ -653,14 +692,16 @@ pub fn solve_scene_layout(
     let Some(root_node) = state.get_node(root_id) else {
         return out;
     };
-    let props = resolve_props(state, root_node);
+    let props = resolve_props(state, root_node, viewport_width);
+    let eff_w = props.width.unwrap_or(viewport_width).max(160);
+    let eff_h = props.height.unwrap_or(viewport_height).max(120);
     let root_rect = LayoutRect {
         x: 0,
         y: 0,
-        width: props.width.unwrap_or(viewport_width).max(160),
-        height: props.height.unwrap_or(viewport_height).max(120),
+        width: eff_w,
+        height: eff_h,
     };
-    layout_subtree(state, root_id, root_rect, &mut out);
+    layout_subtree(state, root_id, root_rect, eff_w, &mut out);
     out
 }
 
@@ -1093,5 +1134,109 @@ mod tests {
         assert_eq!(rects[&a].x, 250);
         assert_eq!(rects[&a].width, 400);
         assert_eq!(rects[&b].y, 62);
+    }
+
+    #[test]
+    fn skips_pseudo_and_non_matching_media_rules_while_applying_matching_media_layout() {
+        let mut state = NativeSceneState::new();
+        let root = nid(0);
+        let box_node = nid(1);
+        let child = nid(2);
+
+        for (sid, rule) in [
+            (
+                StyleId(1),
+                StyleRule {
+                    class_name: String::from("panel"),
+                    padding: 10,
+                    ..StyleRule::default()
+                },
+            ),
+            (
+                StyleId(2),
+                StyleRule {
+                    class_name: String::from("panel"),
+                    pseudo_class: Some(String::from("hover")),
+                    padding: 40,
+                    ..StyleRule::default()
+                },
+            ),
+            (
+                StyleId(3),
+                StyleRule {
+                    class_name: String::from("panel"),
+                    media_theme: Some(String::from("light")),
+                    padding: 32,
+                    ..StyleRule::default()
+                },
+            ),
+            (
+                StyleId(4),
+                StyleRule {
+                    class_name: String::from("panel"),
+                    media_min_width: Some(1200),
+                    padding: 50,
+                    ..StyleRule::default()
+                },
+            ),
+            (
+                StyleId(5),
+                StyleRule {
+                    class_name: String::from("panel"),
+                    media_min_width: Some(800),
+                    padding: 24,
+                    ..StyleRule::default()
+                },
+            ),
+        ] {
+            state.apply_command(
+                &RenderCommand::RegisterStyle {
+                    style_id: sid,
+                    rule,
+                },
+                "AnchorComment",
+                |_| "NSView",
+            );
+        }
+
+        create_widget(&mut state, root, "ng-window");
+        create_widget(&mut state, box_node, "ng-box");
+        create_widget(&mut state, child, "ng-label");
+        state.apply_command(
+            &RenderCommand::ApplyStyleClass {
+                node: box_node,
+                style_id: StyleId(1),
+            },
+            "AnchorComment",
+            |_| "NSView",
+        );
+        for (p, c) in [(root, box_node), (box_node, child)] {
+            state.apply_command(
+                &RenderCommand::AppendChild {
+                    parent: p,
+                    child: c,
+                },
+                "AnchorComment",
+                |_| "NSView",
+            );
+        }
+
+        let rects = solve_scene_layout(&state, root, 900, 600);
+        // Active theme is Dark and viewport is 900px:
+        // StyleId(1) base padding=10 + StyleId(5) @media (min-width: 800px) padding=24 wins;
+        // StyleId(2) :hover, StyleId(3) light theme, and StyleId(4) min-width=1200 are skipped.
+        // root inner x = 12, box inner x = 12 + 24 = 36.
+        assert_eq!(rects[&child].x, 36);
+
+        state.apply_command(
+            &RenderCommand::SetTheme {
+                theme: crate::desktop::DesktopTheme::Light,
+            },
+            "AnchorComment",
+            |_| "NSView",
+        );
+        let light_rects = solve_scene_layout(&state, root, 700, 600);
+        // Active theme is Light and viewport is 700px: StyleId(3) padding=32 applies -> x = 12 + 32 = 44.
+        assert_eq!(light_rects[&child].x, 44);
     }
 }

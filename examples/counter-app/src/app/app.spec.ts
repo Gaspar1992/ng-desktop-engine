@@ -312,4 +312,36 @@ describe('App (100% Angular + @ng-desktop/server API)', () => {
 
     fixture.destroy();
   });
+
+  it('toggles dark/light theme via button or <Control>t shortcut and registers theme token styles', async () => {
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+
+    const fixture = TestBed.createComponent(App);
+    const desktop = TestBed.inject(NativeDesktopService);
+    const app = fixture.componentInstance;
+    fixture.detectChanges();
+    await Promise.resolve();
+
+    const mountCmds = bridge.__drainQueue();
+    expect(mountCmds).toContain('style main-card #f8fafc #0f172a 0 0 media-theme=light');
+    expect(mountCmds).toContain('style suggested-action #be123c none 0 0 pseudo=hover');
+    expect(mountCmds).toContain('☀ Claro');
+
+    app.toggleTheme();
+    fixture.detectChanges();
+    expect(desktop.theme()).toBe('light');
+    const lightCmds = bridge.__drainQueue();
+    expect(lightCmds).toContain('theme light');
+    expect(lightCmds).toContain('☾ Oscuro');
+
+    expect(desktop.triggerShortcut('<Control>t')).toBe(true);
+    fixture.detectChanges();
+    expect(desktop.theme()).toBe('dark');
+    const darkCmds = bridge.__drainQueue();
+    expect(darkCmds).toContain('theme dark');
+    expect(darkCmds).toContain('☀ Claro');
+
+    fixture.destroy();
+  });
 });

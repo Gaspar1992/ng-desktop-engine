@@ -371,6 +371,7 @@ export function ensureNgNativeBridge(): NgNativeBridge {
       },
       setSystemTheme(theme) {
         systemTheme = theme === 'light' ? 'light' : 'dark';
+        emit(`theme ${systemTheme}`);
       },
       getClipboard() {
         return clipboardText;

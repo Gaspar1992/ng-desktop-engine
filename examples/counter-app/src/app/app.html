@@ -27,6 +27,9 @@
         >
           {{ pokedex.favoritesOnly() ? 'Ver Todos' : '★ Solo Favoritos' }}
         </ng-button>
+        <ng-button id="btn_toggle_theme" class="secondary-action" (click)="toggleTheme()">
+          {{ theme() === 'dark' ? '☀ Claro' : '☾ Oscuro' }}
+        </ng-button>
       </ng-box>
 
       <ng-spinner

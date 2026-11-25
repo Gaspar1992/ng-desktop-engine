@@ -8,6 +8,7 @@ import {
   signal,
   untracked,
   viewChild,
+  ViewEncapsulation,
 } from '@angular/core';
 import { form, max, min } from '@angular/forms/signals';
 import { NativeDesktopService } from '@ng-desktop/desktop';
@@ -21,6 +22,7 @@ import { PokedexService } from './core/services/pokedex.service';
   imports: [NATIVE_SIGNAL_FORM_DIRECTIVES, NATIVE_UI_DIRECTIVES, RouterOutlet],
   templateUrl: './app.html',
   styleUrl: './app.css',
+  encapsulation: ViewEncapsulation.None,
 })
 export class App implements OnInit, OnDestroy {
   protected readonly pokedex = inject(PokedexService);
@@ -28,6 +30,7 @@ export class App implements OnInit, OnDestroy {
   private readonly router = inject(Router);
   private readonly searchEntry = viewChild<ElementRef<NativeElementNode>>('searchEntry');
 
+  protected readonly theme = this.desktop.theme;
   protected readonly windowTitle = signal('Pokédex Nacional');
   protected readonly subtitle = signal(
     'Angular 22 + Signal Forms + @ng-desktop/router + @ng-desktop/server',
@@ -130,6 +133,9 @@ export class App implements OnInit, OnDestroy {
     this.desktop.registerShortcut('Escape', 'back-to-list', () => {
       void this.backToList();
     });
+    this.desktop.registerShortcut('<Control>t', 'toggle-theme', () => {
+      this.toggleTheme();
+    });
 
     void this.pokedex.refreshFavorites();
     void this.pokedex.loadCatalogPage(true);
@@ -142,10 +148,15 @@ export class App implements OnInit, OnDestroy {
     this.desktop.unregisterShortcut('<Control>f');
     this.desktop.unregisterShortcut('<Control>b');
     this.desktop.unregisterShortcut('Escape');
+    this.desktop.unregisterShortcut('<Control>t');
   }
 
   onBeforeUnload(): void {
     this.desktop.saveWindowGeometry(this.desktop.windowGeometry());
+  }
+
+  toggleTheme(): void {
+    this.desktop.toggleTheme();
   }
 
   focusSearchEntry(): void {

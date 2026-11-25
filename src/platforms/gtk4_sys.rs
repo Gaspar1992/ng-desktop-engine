@@ -192,6 +192,8 @@ pub struct Gtk4Sys {
     pub(super) adw_clamp_new: Option<unsafe extern "C" fn() -> *mut c_void>,
     pub(super) adw_clamp_set_maximum_size: Option<unsafe extern "C" fn(*mut c_void, c_int)>,
     pub(super) adw_clamp_set_child: Option<unsafe extern "C" fn(*mut c_void, *mut c_void)>,
+    pub(super) adw_style_manager_get_default: Option<unsafe extern "C" fn() -> *mut c_void>,
+    pub(super) adw_style_manager_set_color_scheme: Option<unsafe extern "C" fn(*mut c_void, c_int)>,
     pub(super) gtk_list_box_new: unsafe extern "C" fn() -> *mut c_void,
     pub(super) gtk_list_box_append: unsafe extern "C" fn(*mut c_void, *mut c_void),
     pub(super) gtk_list_box_insert: unsafe extern "C" fn(*mut c_void, *mut c_void, c_int),
@@ -288,6 +290,10 @@ impl Gtk4Sys {
                 adw_lib.and_then(|lib| Self::load_fn(lib, c"adw_clamp_set_maximum_size"));
             let adw_clamp_set_child =
                 adw_lib.and_then(|lib| Self::load_fn(lib, c"adw_clamp_set_child"));
+            let adw_style_manager_get_default =
+                adw_lib.and_then(|lib| Self::load_fn(lib, c"adw_style_manager_get_default"));
+            let adw_style_manager_set_color_scheme =
+                adw_lib.and_then(|lib| Self::load_fn(lib, c"adw_style_manager_set_color_scheme"));
             let gtk_list_box_row_get_index: unsafe extern "C" fn(*mut c_void) -> c_int =
                 Self::load_fn(gtk_lib, c"gtk_list_box_row_get_index")?;
             super::gtk4_callbacks::set_list_box_row_index_fn(gtk_list_box_row_get_index);
@@ -593,6 +599,8 @@ impl Gtk4Sys {
                 adw_clamp_new,
                 adw_clamp_set_maximum_size,
                 adw_clamp_set_child,
+                adw_style_manager_get_default,
+                adw_style_manager_set_color_scheme,
                 gtk_list_box_new: Self::load_fn(gtk_lib, c"gtk_list_box_new")?,
                 gtk_list_box_append: Self::load_fn(gtk_lib, c"gtk_list_box_append")?,
                 gtk_list_box_insert: Self::load_fn(gtk_lib, c"gtk_list_box_insert")?,

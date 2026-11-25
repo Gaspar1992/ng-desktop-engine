@@ -359,6 +359,7 @@ export class NativeRenderer2 extends Renderer2 {
   private readonly bridge: NgNativeBridge;
   private readonly nodesById: Map<string, NativeElementNode>;
   private readonly nextId: () => string;
+  private readonly scopedClassesByScope: Map<string, Set<string>>;
   private readonly hooks?: NativeRendererHooks;
   private readonly materializedTextLabels = new Map<NativeElementNode, string>();
   private readonly imageLoadSeq = new WeakMap<NativeElementNode, number>();
@@ -373,12 +374,14 @@ export class NativeRenderer2 extends Renderer2 {
     nodesById: Map<string, NativeElementNode>,
     nextId: () => string,
     hooks?: NativeRendererHooks,
+    scopedClassesByScope: Map<string, Set<string>> = new Map(),
   ) {
     super();
     this.bridge = bridge;
     this.nodesById = nodesById;
     this.nextId = nextId;
     this.hooks = hooks;
+    this.scopedClassesByScope = scopedClassesByScope;
     this.destroyNode = (node: unknown) => {
       if (node instanceof NativeElementNode) {
         this.destroySubtreeNodes(node, true);
@@ -583,6 +586,33 @@ export class NativeRenderer2 extends Renderer2 {
     value: string,
     _namespace?: string | null,
   ): void {
+    if (name.startsWith('_ngcontent-')) {
+      const scopeToken = name.slice('_ngcontent-'.length);
+      if (scopeToken && el.encapsulationScope !== scopeToken) {
+        el.encapsulationScope = scopeToken;
+        if (!el.isVirtual) {
+          const scopedSet = this.scopedClassesByScope.get(scopeToken);
+          if (scopedSet) {
+            for (const existing of el.classes) {
+              if (scopedSet.has(existing)) {
+                this.bridge.addClass(el.id, `${existing}__${scopeToken}`);
+              }
+            }
+          }
+        }
+      }
+      return;
+    }
+    if (name.startsWith('_nghost-')) {
+      const hostToken = name.slice('_nghost-'.length);
+      if (hostToken && el.hostEncapsulationScope !== hostToken) {
+        el.hostEncapsulationScope = hostToken;
+        if (!el.isVirtual && this.scopedClassesByScope.get(hostToken)?.has('__host')) {
+          this.bridge.addClass(el.id, `__host__${hostToken}`);
+        }
+      }
+      return;
+    }
     if (isInternalAngularAttr(name)) {
       return;
     }
@@ -647,6 +677,12 @@ export class NativeRenderer2 extends Renderer2 {
     el.classes.add(name);
     if (!el.isVirtual) {
       this.bridge.addClass(el.id, name);
+      if (
+        el.encapsulationScope &&
+        this.scopedClassesByScope.get(el.encapsulationScope)?.has(name)
+      ) {
+        this.bridge.addClass(el.id, `${name}__${el.encapsulationScope}`);
+      }
     }
   }
 
@@ -654,6 +690,12 @@ export class NativeRenderer2 extends Renderer2 {
     el.classes.delete(name);
     if (!el.isVirtual) {
       this.bridge.removeClass(el.id, name);
+      if (
+        el.encapsulationScope &&
+        this.scopedClassesByScope.get(el.encapsulationScope)?.has(name)
+      ) {
+        this.bridge.removeClass(el.id, `${name}__${el.encapsulationScope}`);
+      }
     }
   }
 
@@ -1189,6 +1231,7 @@ export class NativeRendererFactory2 implements RendererFactory2 {
   private readonly nodesById = new Map<string, NativeElementNode>();
   private readonly defaultRenderer: NativeRenderer2;
   private readonly registeredTypeIds = new Set<string>();
+  private readonly scopedClassesByScope = new Map<string, Set<string>>();
   private nodeCounter = 1;
   private primaryWindowId: string | null = null;
   private primaryScrollId: string | null = null;
@@ -1213,6 +1256,7 @@ export class NativeRendererFactory2 implements RendererFactory2 {
         },
         getPrimaryWindowId: () => this.getPrimaryWindowId(),
       },
+      this.scopedClassesByScope,
     );
   }
 
@@ -1221,7 +1265,7 @@ export class NativeRendererFactory2 implements RendererFactory2 {
       const typeKey = type.id || '__anonymous__';
       if (!this.registeredTypeIds.has(typeKey)) {
         this.registeredTypeIds.add(typeKey);
-        registerParsedStyles(this.bridge, type.styles);
+        registerParsedStyles(this.bridge, type.styles, this.scopedClassesByScope);
       }
     }
     return this.defaultRenderer;

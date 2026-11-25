@@ -17,7 +17,16 @@ export interface StyleRuleIr {
   minChildren: number | null;
   maxChildren: number | null;
   homogeneous: boolean | null;
+  pseudoClass: string | null;
+  mediaTheme: 'light' | 'dark' | null;
+  mediaMinWidth: number | null;
+  mediaMaxWidth: number | null;
+  opacity: number | null;
+  transitionMs: number | null;
+  transitionProp: string | null;
 }
+
+export function buildStyleRuleKey(rule: StyleRuleIr): string;
 
 export function parseStylesCss(cssSource: string, from?: string): StyleRuleIr[];
 

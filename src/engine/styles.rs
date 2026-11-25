@@ -1,5 +1,7 @@
 use super::node::{EngineError, NodeId, StyleId};
+use crate::desktop::DesktopTheme;
 use std::collections::HashMap;
+use std::fmt::Write as _;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct StyleRule {
@@ -21,11 +23,66 @@ pub struct StyleRule {
     pub min_children: Option<u16>,
     pub max_children: Option<u16>,
     pub homogeneous: Option<bool>,
+    pub pseudo_class: Option<String>,
+    pub media_theme: Option<String>,
+    pub media_min_width: Option<u16>,
+    pub media_max_width: Option<u16>,
+    pub opacity: Option<u8>,
+    pub transition_ms: Option<u16>,
+    pub transition_prop: Option<String>,
 }
 
 impl StyleRule {
+    /// Returns the canonical lookup key for `StyleRegistry`, keeping plain base rules as `class_name`
+    /// while isolating pseudo-class (`:hover`/`:focus`/`:active`/`:disabled`) and `@media` variants.
+    #[must_use]
+    pub fn registry_key(&self) -> String {
+        if self.pseudo_class.is_none()
+            && self.media_theme.is_none()
+            && self.media_min_width.is_none()
+            && self.media_max_width.is_none()
+        {
+            return self.class_name.clone();
+        }
+        let mut key = self.class_name.clone();
+        if let Some(pseudo) = &self.pseudo_class {
+            let _ = write!(key, ":{pseudo}");
+        }
+        if let Some(theme) = &self.media_theme {
+            let _ = write!(key, "@theme={theme}");
+        }
+        if let Some(min_w) = self.media_min_width {
+            let _ = write!(key, "@minw={min_w}");
+        }
+        if let Some(max_w) = self.media_max_width {
+            let _ = write!(key, "@maxw={max_w}");
+        }
+        key
+    }
+
+    /// Returns `true` when any `@media` constraints on this rule match the active desktop theme and viewport width.
+    #[must_use]
+    pub fn matches_context(&self, theme: DesktopTheme, viewport_width: i32) -> bool {
+        if let Some(req_theme) = &self.media_theme
+            && !req_theme.eq_ignore_ascii_case(theme.as_str())
+        {
+            return false;
+        }
+        if let Some(min_w) = self.media_min_width
+            && viewport_width < i32::from(min_w)
+        {
+            return false;
+        }
+        if let Some(max_w) = self.media_max_width
+            && viewport_width > i32::from(max_w)
+        {
+            return false;
+        }
+        true
+    }
+
     /// Applies an optional extended `key=value` declaration (`radius`, `font-size`,
-    /// `font-weight`, `min-width`, `min-height`, and CSS Flexbox/Grid layout directives).
+    /// `font-weight`, `min-width`, `min-height`, CSS Flexbox/Grid, pseudo/media/opacity/transition directives).
     /// Returns `false` when the key is unknown or the value is invalid.
     pub fn apply_extension(&mut self, key: &str, raw_value: &str) -> bool {
         let trimmed = raw_value.trim();
@@ -53,7 +110,21 @@ impl StyleRule {
             "valign" if matches!(trimmed, "fill" | "start" | "end" | "center" | "baseline") => {
                 self.valign = Some(String::from(trimmed));
             }
-            "halign" | "valign" => return false,
+            "pseudo" if matches!(trimmed, "hover" | "focus" | "active" | "disabled") => {
+                self.pseudo_class = Some(String::from(trimmed));
+            }
+            "media-theme" if matches!(trimmed, "light" | "dark") => {
+                self.media_theme = Some(String::from(trimmed));
+            }
+            "transition-prop"
+                if matches!(
+                    trimmed,
+                    "all" | "background" | "color" | "opacity" | "padding" | "border-radius"
+                ) =>
+            {
+                self.transition_prop = Some(String::from(trimmed));
+            }
+            "halign" | "valign" | "pseudo" | "media-theme" | "transition-prop" => return false,
             _ => return self.apply_numeric_extension(key, trimmed),
         }
         true
@@ -68,7 +139,11 @@ impl StyleRule {
     }
 
     fn apply_numeric_extension(&mut self, key: &str, raw_value: &str) -> bool {
-        let Ok(value) = raw_value.trim_end_matches("px").trim().parse::<u16>() else {
+        let cleaned = raw_value
+            .trim_end_matches("px")
+            .trim_end_matches("ms")
+            .trim();
+        let Ok(value) = cleaned.parse::<u16>() else {
             return false;
         };
         match key {
@@ -79,6 +154,12 @@ impl StyleRule {
             "min-height" => self.min_height = Some(value),
             "min-children" | "min-per-row" => self.min_children = Some(value),
             "max-children" | "max-per-row" => self.max_children = Some(value),
+            "media-min-width" => self.media_min_width = Some(value),
+            "media-max-width" => self.media_max_width = Some(value),
+            "opacity" if value <= 100 => {
+                self.opacity = u8::try_from(value).ok();
+            }
+            "transition-ms" => self.transition_ms = Some(value),
             _ => return false,
         }
         true
@@ -110,14 +191,15 @@ impl StyleRegistry {
     }
 
     pub fn register_rule(&mut self, rule: StyleRule) -> StyleId {
-        if let Some(&existing_id) = self.ids_by_name.get(&rule.class_name) {
+        let key = rule.registry_key();
+        if let Some(&existing_id) = self.ids_by_name.get(&key) {
             self.rules_by_id.insert(existing_id, rule);
             return existing_id;
         }
 
         let id = StyleId(self.next_id);
         self.next_id += 1;
-        self.ids_by_name.insert(rule.class_name.clone(), id);
+        self.ids_by_name.insert(key, id);
         self.rules_by_id.insert(id, rule);
         id
     }
@@ -249,5 +331,53 @@ mod tests {
         assert_eq!(rule.min_children, Some(1));
         assert_eq!(rule.max_children, Some(12));
         assert_eq!(rule.homogeneous, Some(true));
+    }
+
+    #[test]
+    fn isolates_pseudo_and_media_style_variants_and_validates_context() {
+        let mut reg = StyleRegistry::new();
+        let base_id = reg.register_rule(StyleRule {
+            class_name: String::from("btn"),
+            background: Some(String::from("#111111")),
+            ..StyleRule::default()
+        });
+        let hover_id = reg.register_rule(StyleRule {
+            class_name: String::from("btn"),
+            background: Some(String::from("#222222")),
+            pseudo_class: Some(String::from("hover")),
+            opacity: Some(90),
+            transition_ms: Some(180),
+            transition_prop: Some(String::from("background")),
+            ..StyleRule::default()
+        });
+        let light_id = reg.register_rule(StyleRule {
+            class_name: String::from("btn"),
+            background: Some(String::from("#f8fafc")),
+            media_theme: Some(String::from("light")),
+            media_min_width: Some(640),
+            ..StyleRule::default()
+        });
+        assert_ne!(base_id, hover_id);
+        assert_ne!(base_id, light_id);
+        assert_ne!(hover_id, light_id);
+
+        let light_rule = reg.get_rule(light_id).unwrap();
+        assert!(!light_rule.matches_context(DesktopTheme::Dark, 800));
+        assert!(!light_rule.matches_context(DesktopTheme::Light, 500));
+        assert!(light_rule.matches_context(DesktopTheme::Light, 800));
+
+        let mut ext_rule = StyleRule {
+            class_name: String::from("fade"),
+            ..StyleRule::default()
+        };
+        assert!(ext_rule.apply_extension("pseudo", "focus"));
+        assert!(ext_rule.apply_extension("media-theme", "dark"));
+        assert!(ext_rule.apply_extension("media-min-width", "768px"));
+        assert!(ext_rule.apply_extension("media-max-width", "1280px"));
+        assert!(ext_rule.apply_extension("opacity", "75"));
+        assert!(ext_rule.apply_extension("transition-ms", "220ms"));
+        assert!(ext_rule.apply_extension("transition-prop", "opacity"));
+        assert!(!ext_rule.apply_extension("opacity", "105"));
+        assert!(!ext_rule.apply_extension("pseudo", "visited"));
     }
 }

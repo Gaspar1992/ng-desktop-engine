@@ -1,6 +1,15 @@
 import postcss from 'postcss';
 
 const SIMPLE_CLASS_SELECTOR = /^\.([a-zA-Z0-9_-]+)$/;
+const SUPPORTED_PSEUDOS = new Set(['hover', 'focus', 'focus-visible', 'active', 'disabled']);
+const SUPPORTED_TRANSITION_PROPS = new Set([
+  'all',
+  'background',
+  'color',
+  'opacity',
+  'padding',
+  'border-radius',
+]);
 
 function toPixelInt(raw) {
   const parsed = Number.parseInt(String(raw).trim().replace(/px$/, ''), 10);
@@ -27,7 +36,7 @@ function mapAlignKeyword(raw) {
   }
 }
 
-function createEmptyRule(className) {
+function createEmptyRule(className, meta = {}) {
   return {
     className,
     background: 'none',
@@ -47,7 +56,258 @@ function createEmptyRule(className) {
     minChildren: null,
     maxChildren: null,
     homogeneous: null,
+    pseudoClass: meta.pseudoClass ?? null,
+    mediaTheme: meta.mediaTheme ?? null,
+    mediaMinWidth: meta.mediaMinWidth ?? null,
+    mediaMaxWidth: meta.mediaMaxWidth ?? null,
+    opacity: null,
+    transitionMs: null,
+    transitionProp: null,
   };
+}
+
+export function buildStyleRuleKey(rule) {
+  return [
+    rule.className,
+    rule.pseudoClass ?? '',
+    rule.mediaTheme ?? '',
+    rule.mediaMinWidth ?? '',
+    rule.mediaMaxWidth ?? '',
+  ].join('::');
+}
+
+function parseMediaQuery(params, inherited) {
+  const next = {
+    mediaTheme: inherited.mediaTheme,
+    mediaMinWidth: inherited.mediaMinWidth,
+    mediaMaxWidth: inherited.mediaMaxWidth,
+    unsupported: inherited.unsupported,
+  };
+  let recognized = false;
+  const lower = String(params).toLowerCase();
+
+  const themeMatch = lower.match(/prefers-color-scheme\s*:\s*(light|dark)/);
+  if (themeMatch) {
+    const requestedTheme = themeMatch[1];
+    if (next.mediaTheme && next.mediaTheme !== requestedTheme) {
+      next.unsupported = true;
+    } else {
+      next.mediaTheme = requestedTheme;
+    }
+    recognized = true;
+  }
+
+  const minMatch = lower.match(/min-width\s*:\s*(\d+)px/);
+  if (minMatch) {
+    const minPx = Number.parseInt(minMatch[1], 10);
+    if (Number.isFinite(minPx)) {
+      next.mediaMinWidth =
+        next.mediaMinWidth === null ? minPx : Math.max(next.mediaMinWidth, minPx);
+      recognized = true;
+    }
+  }
+
+  const maxMatch = lower.match(/max-width\s*:\s*(\d+)px/);
+  if (maxMatch) {
+    const maxPx = Number.parseInt(maxMatch[1], 10);
+    if (Number.isFinite(maxPx)) {
+      next.mediaMaxWidth =
+        next.mediaMaxWidth === null ? maxPx : Math.min(next.mediaMaxWidth, maxPx);
+      recognized = true;
+    }
+  }
+
+  if (!recognized) {
+    next.unsupported = true;
+  }
+  return next;
+}
+
+function resolveInheritedMedia(cssRule) {
+  const chain = [];
+  let cur = cssRule.parent;
+  while (cur && cur.type !== 'root') {
+    if (cur.type !== 'atrule') {
+      return { mediaTheme: null, mediaMinWidth: null, mediaMaxWidth: null, unsupported: true };
+    }
+    if (String(cur.name).toLowerCase() !== 'media') {
+      return { mediaTheme: null, mediaMinWidth: null, mediaMaxWidth: null, unsupported: true };
+    }
+    chain.unshift(cur.params);
+    cur = cur.parent;
+  }
+  let ctx = { mediaTheme: null, mediaMinWidth: null, mediaMaxWidth: null, unsupported: false };
+  for (const params of chain) {
+    ctx = parseMediaQuery(params, ctx);
+  }
+  return ctx;
+}
+
+function isVariableRootSelector(selector) {
+  const trimmed = selector.trim();
+  if (/^(?::root|html|body|:host)$/i.test(trimmed)) {
+    return true;
+  }
+  return /^(?::host)?\[_nghost-[a-zA-Z0-9_-]+(?:=[^\]]*)?\]$/i.test(trimmed);
+}
+
+function parseSelectorTarget(rawSelector) {
+  let trimmed = String(rawSelector).trim();
+  if (!trimmed) return null;
+
+  let scopeToken = null;
+  const ngMatch = trimmed.match(/\[_ng(?:content|host)-([a-zA-Z0-9_-]+)(?:=[^\]]*)?\]/);
+  if (ngMatch) {
+    scopeToken = ngMatch[1];
+  }
+  trimmed = trimmed.replace(/\[_ng(?:content|host)-[^\]]+\]/g, '').trim();
+
+  let pseudoClass = null;
+  const pseudoMatch = trimmed.match(/^(.*?):([a-zA-Z-]+)$/);
+  if (pseudoMatch) {
+    const candidate = pseudoMatch[2].toLowerCase();
+    if (!SUPPORTED_PSEUDOS.has(candidate)) {
+      return null;
+    }
+    pseudoClass = candidate === 'focus-visible' ? 'focus' : candidate;
+    trimmed = pseudoMatch[1].trim();
+  }
+
+  if ((trimmed === '' || trimmed === ':host') && scopeToken) {
+    return {
+      className: `__host__${scopeToken}`,
+      pseudoClass,
+    };
+  }
+
+  const match = trimmed.match(SIMPLE_CLASS_SELECTOR);
+  if (!match) return null;
+
+  const baseClass = match[1];
+  return {
+    className: scopeToken ? `${baseClass}__${scopeToken}` : baseClass,
+    pseudoClass,
+  };
+}
+
+function findMatchingParen(input, openParenIdx) {
+  let depth = 1;
+  for (let idx = openParenIdx + 1; idx < input.length; idx += 1) {
+    if (input[idx] === '(') depth += 1;
+    else if (input[idx] === ')') {
+      depth -= 1;
+      if (depth === 0) return idx;
+    }
+  }
+  return -1;
+}
+
+function splitFirstTopLevelComma(inner) {
+  let depth = 0;
+  for (let idx = 0; idx < inner.length; idx += 1) {
+    const ch = inner[idx];
+    if (ch === '(') depth += 1;
+    else if (ch === ')') depth -= 1;
+    else if (ch === ',' && depth === 0) {
+      return [inner.slice(0, idx).trim(), inner.slice(idx + 1).trim()];
+    }
+  }
+  return [inner.trim(), null];
+}
+
+function resolveCssVariables(rawValue, vars, depth = 0) {
+  const input = String(rawValue);
+  if (depth >= 8 || !input.includes('var(')) {
+    return input;
+  }
+  let out = '';
+  let cursor = 0;
+  while (cursor < input.length) {
+    const varIdx = input.indexOf('var(', cursor);
+    if (varIdx === -1) {
+      out += input.slice(cursor);
+      break;
+    }
+    out += input.slice(cursor, varIdx);
+    const openIdx = varIdx + 3;
+    const closeIdx = findMatchingParen(input, openIdx);
+    if (closeIdx === -1) {
+      out += input.slice(varIdx);
+      break;
+    }
+    const inner = input.slice(openIdx + 1, closeIdx);
+    const [varName, fallback] = splitFirstTopLevelComma(inner);
+    if (vars.has(varName)) {
+      out += resolveCssVariables(vars.get(varName), vars, depth + 1);
+    } else if (fallback !== null) {
+      out += resolveCssVariables(fallback, vars, depth + 1);
+    } else {
+      out += input.slice(varIdx, closeIdx + 1);
+    }
+    cursor = closeIdx + 1;
+  }
+  return out.trim();
+}
+
+function parseOpacityPercent(raw) {
+  const trimmed = String(raw).trim();
+  if (!trimmed) return null;
+  if (trimmed.endsWith('%')) {
+    const pct = Number.parseFloat(trimmed.slice(0, -1));
+    return Number.isFinite(pct) ? Math.max(0, Math.min(100, Math.round(pct))) : null;
+  }
+  const num = Number.parseFloat(trimmed);
+  if (!Number.isFinite(num) || num < 0) return null;
+  const pct = num <= 1 ? Math.round(num * 100) : Math.round(num);
+  return Math.max(0, Math.min(100, pct));
+}
+
+function parseDurationMs(raw) {
+  const match = String(raw)
+    .trim()
+    .toLowerCase()
+    .match(/^(\d+(?:\.\d+)?)(ms|s)$/);
+  if (!match) return null;
+  const num = Number.parseFloat(match[1]);
+  if (!Number.isFinite(num) || num < 0) return null;
+  return match[2] === 's' ? Math.round(num * 1000) : Math.round(num);
+}
+
+function mapTransitionProp(token) {
+  const lower = String(token).trim().toLowerCase();
+  const normalized = lower === 'background-color' ? 'background' : lower;
+  return SUPPORTED_TRANSITION_PROPS.has(normalized) ? normalized : null;
+}
+
+function applyTransitionDeclaration(rule, prop, val) {
+  const firstSegment = String(val).split(',')[0]?.trim() ?? '';
+  if (!firstSegment || firstSegment.toLowerCase() === 'none') {
+    return;
+  }
+  if (prop === 'transition-duration') {
+    const ms = parseDurationMs(firstSegment);
+    if (ms !== null) rule.transitionMs = ms;
+    return;
+  }
+  if (prop === 'transition-property') {
+    const mapped = mapTransitionProp(firstSegment);
+    if (mapped) rule.transitionProp = mapped;
+    return;
+  }
+  for (const token of firstSegment.split(/\s+/)) {
+    const ms = parseDurationMs(token);
+    if (ms !== null) {
+      rule.transitionMs = ms;
+      continue;
+    }
+    const mappedProp = mapTransitionProp(token);
+    if (mappedProp) {
+      rule.transitionProp = mappedProp;
+    }
+  }
+  if (rule.transitionMs !== null && rule.transitionProp === null) {
+    rule.transitionProp = 'all';
+  }
 }
 
 function applyGridTemplateColumns(rule, value) {
@@ -139,7 +399,8 @@ function applyLayoutDeclaration(rule, prop, value) {
   }
 }
 
-function applyDeclaration(rule, prop, value) {
+function applyDeclaration(rule, rawProp, value) {
+  const prop = String(rawProp).toLowerCase();
   switch (prop) {
     case 'background':
     case 'background-color':
@@ -184,6 +445,16 @@ function applyDeclaration(rule, prop, value) {
     case 'min-height':
       rule.minHeight = toPixelInt(value);
       break;
+    case 'opacity': {
+      const op = parseOpacityPercent(value);
+      if (op !== null) rule.opacity = op;
+      break;
+    }
+    case 'transition':
+    case 'transition-duration':
+    case 'transition-property':
+      applyTransitionDeclaration(rule, prop, value);
+      break;
     default:
       applyLayoutDeclaration(rule, prop, value);
       break;
@@ -191,30 +462,110 @@ function applyDeclaration(rule, prop, value) {
 }
 
 /**
- * Parses component CSS with the `postcss` AST into the native Style IR.
- * Only simple class selectors (`.name`, including selector lists) are mapped;
- * pseudo-classes, combinators, and at-rules are skipped because the native
- * backends have no equivalent for them yet.
+ * Parses component CSS with the `postcss` AST into the native Style IR, supporting simple
+ * class selectors, interactive pseudo-classes, `@media` queries, `--var`/`var()` tokens
+ * with automatic light/dark `@media` variant synthesis, `opacity`, `transition`, and
+ * Angular `ViewEncapsulation.Emulated` scoping tokens.
  */
 export function parseStylesCss(cssSource, from = 'app.css') {
   const root = postcss.parse(cssSource, { from });
-  const rulesByClass = new Map();
+  const baseVars = new Map();
+  const lightVars = new Map();
+  const darkVars = new Map();
 
   root.walkRules((cssRule) => {
-    if (cssRule.parent?.type === 'atrule') return;
+    const media = resolveInheritedMedia(cssRule);
+    if (media.unsupported) return;
+    if (!cssRule.selectors.some(isVariableRootSelector)) return;
+    const targetMap =
+      media.mediaTheme === 'light' ? lightVars : media.mediaTheme === 'dark' ? darkVars : baseVars;
+    cssRule.walkDecls((decl) => {
+      if (decl.prop.startsWith('--')) {
+        targetMap.set(decl.prop, decl.value.trim());
+      }
+    });
+  });
+
+  const rulesByKey = new Map();
+  const upsertRule = (target, media) => {
+    const probe = createEmptyRule(target.className, {
+      pseudoClass: target.pseudoClass,
+      mediaTheme: media.mediaTheme,
+      mediaMinWidth: media.mediaMinWidth,
+      mediaMaxWidth: media.mediaMaxWidth,
+    });
+    const key = buildStyleRuleKey(probe);
+    const existing = rulesByKey.get(key);
+    if (existing) return existing;
+    rulesByKey.set(key, probe);
+    return probe;
+  };
+
+  root.walkRules((cssRule) => {
+    const media = resolveInheritedMedia(cssRule);
+    if (media.unsupported) return;
+
+    const localVars = new Map();
+    const propDecls = [];
+    cssRule.walkDecls((decl) => {
+      const val = decl.value.trim();
+      if (!val) return;
+      if (decl.prop.startsWith('--')) {
+        localVars.set(decl.prop, val);
+      } else {
+        propDecls.push([decl.prop, val]);
+      }
+    });
+    if (propDecls.length === 0) return;
+
+    const activeThemeVars =
+      media.mediaTheme === 'light' ? lightVars : media.mediaTheme === 'dark' ? darkVars : null;
+    const effectiveVars = new Map(baseVars);
+    if (activeThemeVars) {
+      for (const [k, v] of activeThemeVars) effectiveVars.set(k, v);
+    }
+    for (const [k, v] of localVars) effectiveVars.set(k, v);
 
     for (const selector of cssRule.selectors) {
-      const match = selector.trim().match(SIMPLE_CLASS_SELECTOR);
-      if (!match) continue;
+      const target = parseSelectorTarget(selector);
+      if (!target) continue;
 
-      const className = match[1];
-      const rule = rulesByClass.get(className) ?? createEmptyRule(className);
-      cssRule.walkDecls((decl) => applyDeclaration(rule, decl.prop, decl.value.trim()));
-      rulesByClass.set(className, rule);
+      const rule = upsertRule(target, media);
+      for (const [prop, rawVal] of propDecls) {
+        applyDeclaration(rule, prop, resolveCssVariables(rawVal, effectiveVars));
+      }
+
+      if (media.mediaTheme === null) {
+        for (const [themeName, overrideMap] of [
+          ['light', lightVars],
+          ['dark', darkVars],
+        ]) {
+          if (overrideMap.size === 0) continue;
+          const themedVars = new Map(effectiveVars);
+          for (const [k, v] of overrideMap) themedVars.set(k, v);
+          for (const [k, v] of localVars) themedVars.set(k, v);
+
+          const changedDecls = [];
+          for (const [prop, rawVal] of propDecls) {
+            if (!rawVal.includes('var(')) continue;
+            const baseResolved = resolveCssVariables(rawVal, effectiveVars);
+            const themedResolved = resolveCssVariables(rawVal, themedVars);
+            if (themedResolved !== baseResolved) {
+              changedDecls.push([prop, themedResolved]);
+            }
+          }
+          if (changedDecls.length > 0) {
+            const themeRule = upsertRule(target, { ...media, mediaTheme: themeName });
+            for (const [prop, resolvedVal] of changedDecls) {
+              applyDeclaration(themeRule, prop, resolvedVal);
+            }
+          }
+        }
+      }
     }
   });
 
-  return [...rulesByClass.values()];
+  return [...rulesByKey.values()];
 }
 
 const STYLE_EXTENSION_FIELDS = [
@@ -231,10 +582,17 @@ const STYLE_EXTENSION_FIELDS = [
   ['minChildren', 'min-children'],
   ['maxChildren', 'max-children'],
   ['homogeneous', 'homogeneous'],
+  ['pseudoClass', 'pseudo'],
+  ['mediaTheme', 'media-theme'],
+  ['mediaMinWidth', 'media-min-width'],
+  ['mediaMaxWidth', 'media-max-width'],
+  ['opacity', 'opacity'],
+  ['transitionMs', 'transition-ms'],
+  ['transitionProp', 'transition-prop'],
 ];
 
 /**
- * Formats optional Style IR typography/layout extensions as space-separated `key=value` tokens.
+ * Formats optional Style IR typography/layout/media/pseudo extensions as space-separated `key=value` tokens.
  */
 export function formatStyleRuleExtensions(rule) {
   const extensions = [];

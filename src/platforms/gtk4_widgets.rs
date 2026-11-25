@@ -15,6 +15,21 @@ impl Gtk4Sys {
         }
     }
 
+    pub fn set_color_scheme(&self, is_dark: bool) {
+        if let (Some(get_default), Some(set_scheme)) = (
+            self.adw_style_manager_get_default,
+            self.adw_style_manager_set_color_scheme,
+        ) {
+            unsafe {
+                let manager = get_default();
+                if !manager.is_null() {
+                    // ADW_COLOR_SCHEME_FORCE_DARK = 4, ADW_COLOR_SCHEME_FORCE_LIGHT = 1
+                    set_scheme(manager, if is_dark { 4 } else { 1 });
+                }
+            }
+        }
+    }
+
     pub fn configure_window_icon(&self, win: GtkHandle, app_id: &str, search_dir: &str) {
         if let Ok(c_dir) = CString::new(search_dir)
             && !self.icon_theme.is_null()
