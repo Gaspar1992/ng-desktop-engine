@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
  */
 
 const rootPkgPath = resolve(fileURLToPath(new URL('..', import.meta.url)), 'package.json');
-const defaultVersion = JSON.parse(readFileSync(rootPkgPath, 'utf8')).version ?? '0.5.0';
+const defaultVersion = JSON.parse(readFileSync(rootPkgPath, 'utf8')).version ?? '0.6.0';
 const args = process.argv.slice(2);
 const versionArg = (
   args.find((a) => a.startsWith('--version='))?.split('=')[1] ?? defaultVersion

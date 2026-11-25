@@ -2,7 +2,7 @@
 
 A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22+**, written in **Rust**.
 
-`ng-desktop-engine` replaces `@angular/platform-browser` and the browser DOM/WebView completely. Instead of bundling Chromium (Electron) or relying on an embedded HTML WebView (Tauri), Angular components drive **100% native OS widgets** across **Linux (GTK4 / Libadwaita)**, **Windows 11 (Win32 / WinUI)**, and **macOS (Cocoa / AppKit)** using ES2024+ embedded JS runtimes, a shared Rust layout solver, and native OS service drivers (see the [Platform Maturity Matrix](./ROADMAP.md#platform-maturity-matrix-v050)).
+`ng-desktop-engine` replaces `@angular/platform-browser` and the browser DOM/WebView completely. Instead of bundling Chromium (Electron) or relying on an embedded HTML WebView (Tauri), Angular components drive **100% native OS widgets** across **Linux (GTK4 / Libadwaita)**, **Windows 11 (Win32 / WinUI)**, and **macOS (Cocoa / AppKit)** using ES2024+ embedded JS runtimes, a shared Rust layout solver, and native OS service drivers (see the [Platform Maturity Matrix](./ROADMAP.md#platform-maturity-matrix-v060)).
 
 > **Using `@ng-desktop/*` in your own app?** Jump straight to the step-by-step [**External Angular 22+ & Nx Tutorial (`docs/GETTING_STARTED.md`)**](./docs/GETTING_STARTED.md).
 
@@ -176,7 +176,7 @@ ng-native-engine/
 │   ├── test_native_server_worker.rs # In-process @ng-desktop/server route worker tests
 │   ├── test_pipeline_and_hmr.rs  # Full bundle pipeline, HMR & cross-OS socket/TCP IPC tests
 │   └── test_scene_graph.rs       # Arena invariants, anchors & reverse event dispatch tests
-├── ROADMAP.md                    # Current v0.5.0 snapshot, parity matrix & upcoming milestones
+├── ROADMAP.md                    # Current v0.6.0 snapshot, parity matrix & upcoming milestones
 ├── CHANGELOG.md                  # Release notes and version changelog
 ├── SECURITY.md                   # Vulnerability disclosure policy, SLAs & FFI threat model
 ├── CONTRIBUTING.md               # Contribution guidelines, SOLID standards & release workflow
@@ -226,8 +226,8 @@ pnpm run build
 # 3. Live development with zero-latency Unix socket HMR
 pnpm run dev
 
-# 4. Stage Linux or multi-OS distribution bundles
-pnpm run package:linux   # or: pnpm run package:all
+# 4. Stage multi-OS bundles or build real native installers (.deb / .msix / .dmg)
+pnpm run package:linux   # or: pnpm run package:all / npx ng-desktop package --installer=deb --strict-installer
 
 # 5. Launch native window directly (or non-blocking CI batch mode)
 cargo run                # or: NG_NATIVE_BATCH=1 cargo run
@@ -248,11 +248,11 @@ cargo run                # or: NG_NATIVE_BATCH=1 cargo run
 | `pnpm run format:all`                               | Format both TypeScript/Angular/Markdown (`oxfmt`) and Rust (`cargo fmt`) |
 | `pnpm run format:check`                             | Verify formatting with `oxfmt`                                           |
 | `pnpm run lint`                                     | Lint TypeScript & Angular templates via `oxlint` + `angular-eslint`      |
-| `pnpm run test --watch=false`                       | Run all 91 Vitest specs across 16 test files in a single pass            |
+| `pnpm run test --watch=false`                       | Run all 101 Vitest specs across 17 test files in a single pass           |
 | `pnpm run test:containers`                          | Run Xvfb + GTK4 + FFI test suite in Ubuntu 24.04 & Fedora 41 containers  |
 | `cargo fmt --all -- --check`                        | Verify Rust formatting                                                   |
 | `cargo clippy --all-targets -- -D warnings`         | Run strict Rust Clippy lints (pedantic + nursery, zero warnings)         |
-| `cargo test`                                        | Execute all 74 unit tests + 46 integration tests (8 suites) in Rust      |
+| `cargo test`                                        | Execute all 86 unit tests + 46 integration tests (8 suites) in Rust      |
 
 ---
 
@@ -260,7 +260,7 @@ cargo run                # or: NG_NATIVE_BATCH=1 cargo run
 
 - See [**GETTING_STARTED.md**](./docs/GETTING_STARTED.md) for a copy-paste tutorial integrating `@ng-desktop/*` into an external Angular 22+ or Nx app.
 - See [**ECOSYSTEM_COMPATIBILITY.md**](./docs/ECOSYSTEM_COMPATIBILITY.md) for integration with **NgRx**, **Angular Aria**, **Angular CDK**, **Angular Material** gap analysis, **@ng-desktop/server**, and **Nx**.
-- See [**ROADMAP.md**](./ROADMAP.md) for the `v0.5.0` platform maturity matrix, remaining gaps, and `v0.6.0` milestones.
+- See [**ROADMAP.md**](./ROADMAP.md) for the `v0.6.0` platform maturity matrix, remaining gaps, and upcoming `v0.7.0` milestones.
 - See [**CHANGELOG.md**](./CHANGELOG.md) for release notes and detailed version history.
 
 ---
