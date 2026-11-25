@@ -46,6 +46,19 @@ export default [
     },
   },
   {
+    files: ['docs-site/**/*.ts'],
+    rules: {
+      '@angular-eslint/directive-selector': [
+        'error',
+        { type: 'attribute', prefix: ['docs', 'app'], style: 'camelCase' },
+      ],
+      '@angular-eslint/component-selector': [
+        'error',
+        { type: 'element', prefix: ['docs', 'app'], style: 'kebab-case' },
+      ],
+    },
+  },
+  {
     files: ['**/*.html'],
     languageOptions: {
       parser: angularTemplateParser,

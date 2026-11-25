@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>ng-desktop-engine — Angular 22 Native Desktop Apps</title>
+    <meta
+      name="description"
+      content="Compile Angular 22+ applications directly to GTK4, WinUI 3, and AppKit native desktop widgets powered by Rust — zero WebView, zero Electron."
+    />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <script>
+      try {
+        var savedTheme = localStorage.getItem('ng-desktop-docs-theme');
+        if (savedTheme === 'light' || savedTheme === 'dark') {
+          var schemeMeta = document.querySelector('meta[name="color-scheme"]');
+          if (schemeMeta) {
+            schemeMeta.setAttribute('content', savedTheme);
+          }
+        }
+      } catch (_err) {
+        /* Storage access may be restricted; fall back to system light dark scheme. */
+      }
+    </script>
+  </head>
+  <body>
+    <docs-root></docs-root>
+  </body>
+</html>

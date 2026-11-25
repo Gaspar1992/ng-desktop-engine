@@ -15,7 +15,11 @@
   },
   "overrides": [
     {
-      "files": ["packages/builders-native/src/*.mjs", "examples/*/src/main.ts"],
+      "files": [
+        "packages/builders-native/src/*.mjs",
+        "examples/*/src/main.ts",
+        "docs-site/src/main.ts"
+      ],
       "rules": {
         "no-console": "off"
       }

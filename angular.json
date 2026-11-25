@@ -91,6 +91,74 @@
           }
         }
       }
+    },
+    "ng-desktop-docs": {
+      "projectType": "application",
+      "schematics": {},
+      "root": "docs-site",
+      "sourceRoot": "docs-site/src",
+      "prefix": "docs",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "index": "docs-site/src/index.html",
+            "browser": "docs-site/src/main.ts",
+            "tsConfig": "docs-site/tsconfig.app.json",
+            "assets": [
+              {
+                "glob": "**/*",
+                "input": "docs-site/public"
+              }
+            ],
+            "styles": ["docs-site/src/styles.css"]
+          },
+          "configurations": {
+            "production": {
+              "baseHref": "/ng-desktop-engine/",
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "750kB",
+                  "maximumError": "1.5MB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "12kB",
+                  "maximumError": "24kB"
+                }
+              ],
+              "outputHashing": "all"
+            },
+            "development": {
+              "baseHref": "/",
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "configurations": {
+            "production": {
+              "buildTarget": "ng-desktop-docs:build:production"
+            },
+            "development": {
+              "buildTarget": "ng-desktop-docs:build:development"
+            }
+          },
+          "defaultConfiguration": "development"
+        },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "tsConfig": "docs-site/tsconfig.spec.json",
+            "include": ["**/*.spec.ts"]
+          }
+        }
+      }
     }
   }
 }

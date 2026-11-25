@@ -1,0 +1,305 @@
+:root {
+  color-scheme: light dark;
+
+  &:has(> head > meta[name='color-scheme'][content='dark']) {
+    color-scheme: dark;
+  }
+
+  &:has(> head > meta[name='color-scheme'][content='light']) {
+    color-scheme: light;
+  }
+
+  --bg: light-dark(#fafaf9, #0e1015);
+  --bg-elevated: light-dark(#ffffff, #151821);
+  --surface: light-dark(#f4f4f6, #1b1f2a);
+  --surface-muted: light-dark(#ebebef, #232837);
+  --border: light-dark(#dcdfe6, #2d3344);
+  --border-strong: light-dark(#bcc2d0, #40485f);
+  --text: light-dark(#14171f, #edf0f7);
+  --text-muted: light-dark(#4c5467, #9aa4b8);
+  --accent: light-dark(#c80036, #ff4d79);
+  --accent-strong: light-dark(#9f002b, #ff7a9b);
+  --accent-soft: light-dark(rgba(200, 0, 54, 0.1), rgba(255, 77, 121, 0.16));
+  --violet: light-dark(#5b21b6, #a78bfa);
+  --violet-soft: light-dark(rgba(91, 33, 182, 0.1), rgba(167, 139, 250, 0.15));
+  --code-bg: light-dark(#f3f4f8, #090b0f);
+  --success: light-dark(#0f766e, #34d399);
+  --warning: light-dark(#b45309, #fbbf24);
+  --shadow-sm: light-dark(0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(0, 0, 0, 0.35));
+  --shadow-md: light-dark(0 10px 30px rgba(15, 23, 42, 0.08), 0 14px 36px rgba(0, 0, 0, 0.48));
+  --font-sans:
+    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, Cantarell, sans-serif;
+  --font-mono:
+    ui-monospace, 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-sans);
+  line-height: 1.6;
+  background-color: var(--bg);
+  color: var(--text);
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background-color: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0.2em;
+}
+
+a:hover {
+  color: var(--accent-strong);
+}
+
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+code,
+pre,
+textarea.code-editor {
+  font-family: var(--font-mono);
+}
+
+code:not(pre code) {
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.12rem 0.42rem;
+  font-size: 0.875em;
+}
+
+pre {
+  margin: 0;
+  padding: 1rem 1.15rem;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow-x: auto;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.docs-container {
+  width: min(1200px, calc(100% - 2rem));
+  margin-inline: auto;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.28rem 0.72rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.5rem;
+  padding: 0.52rem 1rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    transform 120ms ease;
+}
+
+.btn:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+.btn-primary:hover {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: #ffffff;
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: var(--border);
+}
+
+.card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1.25rem;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Responsive accessible table pattern using @container queries */
+.table-wrapper {
+  container-type: inline-size;
+  overflow: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-sm);
+}
+
+.table-wrapper:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.docs-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.92rem;
+}
+
+.docs-table caption {
+  padding: 0.9rem 1.15rem 0.6rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-align: left;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.docs-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 700;
+  padding: 0.78rem 1rem;
+  border-bottom: 1px solid var(--border-strong);
+  white-space: nowrap;
+}
+
+.docs-table tbody th,
+.docs-table tbody td {
+  padding: 0.78rem 1rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.docs-table tbody tr:last-child th,
+.docs-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.docs-table tbody tr:hover {
+  background: var(--surface);
+}
+
+@container (width < 640px) {
+  .docs-table thead {
+    display: none;
+  }
+
+  .docs-table tbody,
+  .docs-table tr,
+  .docs-table th,
+  .docs-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .docs-table tbody tr {
+    margin: 0.75rem;
+    width: auto;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-elevated);
+    overflow: hidden;
+  }
+
+  .docs-table tbody th[scope='row'] {
+    background: var(--surface);
+    font-size: 1rem;
+  }
+
+  .docs-table tbody td {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 0.62rem 0.9rem;
+  }
+
+  .docs-table tbody td::before {
+    content: attr(data-label);
+    flex: 0 0 40%;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+}
+
+@media (forced-colors: active) {
+  .card,
+  .btn,
+  .table-wrapper,
+  pre {
+    border: 1px solid CanvasText;
+  }
+
+  .btn-primary {
+    border: 2px solid Highlight;
+  }
+}

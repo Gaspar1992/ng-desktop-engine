@@ -1,0 +1,9 @@
+/* TypeScript configuration for ng-desktop-docs Vitest unit tests. */
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../out-tsc/docs-spec",
+    "types": ["vitest/globals", "node"]
+  },
+  "include": ["src/**/*.ts"]
+}

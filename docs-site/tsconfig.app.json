@@ -1,0 +1,10 @@
+/* TypeScript configuration for the ng-desktop-docs browser documentation portal. */
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../out-tsc/docs-app",
+    "types": []
+  },
+  "files": ["src/main.ts"],
+  "include": ["src/**/*.d.ts"]
+}
