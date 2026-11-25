@@ -135,6 +135,6 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           cargo run -- --installer=dmg --strict-installer
-          DMG_FILE="$(ls dist/ng-linux-counter/packages/ng-linux-counter_*.dmg | head -n1)"
+          DMG_FILE="$(ls dist/ng-linux-counter/packages/ng-linux-counter-*.dmg | head -n1)"
           test -s "${DMG_FILE}"
           hdiutil verify "${DMG_FILE}"

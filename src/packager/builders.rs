@@ -157,6 +157,7 @@ fn mark_executable(path: &Path) -> Result<(), String> {
 }
 
 #[cfg(not(unix))]
+#[allow(clippy::unnecessary_wraps)]
 fn mark_executable(_path: &Path) -> Result<(), String> {
     Ok(())
 }
