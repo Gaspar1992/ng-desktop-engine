@@ -5,6 +5,15 @@ This project adheres to [Conventional Commits](https://www.conventionalcommits.o
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-25
+
+### Features, Virtualization, CSS Completeness & Real Installers (`v0.6.0`)
+
+- **retrospective runtime, security & Pokédex modernization (`PR #39`):** unlock bundled `QuickJS-NG` + `NativeServerWorker` startup in `src/main.rs`, add lazy `QuickJsEngine` initialization, enforce XDG sandbox containment (`src/desktop/fs_watcher.rs`, `src/runtime/host_bridge.rs`), isolate `AppPermissions.network` + lock-free `JscSys` HTTP dispatch, switch `curl` mutations to `--data-raw`, fix UTF-8 byte framing & `http_codec` reuse (`src/ipc/mod.rs`), fix multi-class padding/spacing & live viewport/grid sizing (`layout_solver.rs`), and modernize `examples/counter-app` onto Angular 22 Signal Forms, single router ownership, and `<Control>f`.
+- **variable-height Fenwick & 2D `<ng-virtual-grid>` (`PR #40`):** add `FenwickTree` prefix-sum index and `computeVirtualGridRange` in `@ng-desktop/platform`, export `<ng-virtual-grid>` (`NativeVirtualGridComponent`) with variable-height `<ng-virtual-list>`, migrate Pokédex catalog onto responsive 2D `<ng-virtual-grid>` + instant local fuzzy search, and remove redundant explicit `ChangeDetectionStrategy.OnPush` across Pokédex components (Angular 22 defaults to `OnPush`).
+- **complete CSS engine, `ViewEncapsulation.Emulated` & reactive `SetTheme` (`PR #41`):** support `:hover`/`:focus`/`:active`/`:disabled`, CSS custom properties (`--var`/`var()`) with automatic light/dark `@media` synthesis, responsive `@media` (`prefers-color-scheme`, `min-width`, `max-width`), `opacity`, `transition`, and `_ngcontent-*`/`_nghost-*` scoping across `style-compiler.mjs`, `css-style-parser.ts`, and `NativeRenderer2`, alongside `RenderCommand::SetTheme`, 4-tier GTK4 CSS cascade + `AdwStyleManager`, and Pokédex theme switcher (`<Control>t`).
+- **real compiled multi-OS installers (`PR #42`):** add `src/packager/builders.rs` + `src/packager/png.rs`, strict `--installer=<deb|appimage|flatpak|msix|dmg|auto|all>` & `--strict-installer` flags (`src/main.rs`, `ng-desktop`), Debian `Installed-Size` + permissions hardening, XSD-compliant `AppxManifest.xml` + pure-Rust icon fallbacks, macOS Hardened Runtime `codesign` + `hdiutil` `.dmg`, 3-OS CI installer validation, and GitHub Release installer publishing across **233 automated tests** (`101` Vitest across `17` suites, `86` Rust unit, `46` Rust integration across `8` suites).
+
 ## [0.5.0] - 2026-11-24
 
 ### Features & Multi-OS Runtime Parity (`v0.5.0`)

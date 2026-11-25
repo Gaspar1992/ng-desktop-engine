@@ -4,19 +4,19 @@ This document defines the deep technical analysis and phased engineering roadmap
 
 ---
 
-## 📍 Current Status Snapshot (`v0.5.0`)
+## 📍 Current Status Snapshot (`v0.6.0`)
 
-**At a glance:** Release **`v0.5.0`** (`Multi-OS Runtime Parity` — Linux GTK4, Windows 11 Win32/WinUI, macOS AppKit) | **`29` native widget primitives + `<ng-anchor>`** | **`7` `@ng-desktop/*` npm packages + `5` prebuilt `@ng-desktop/engine-*` binaries** | **`211` automated tests** (`91` Vitest across `16` suites, `74` Rust unit, `46` Rust integration across `8` suites).
+**At a glance:** Release **`v0.6.0`** (`High-Density UI, CSS Completeness & Real Multi-OS Installers`) | **`29` native widget primitives + `<ng-anchor>`** | **`7` `@ng-desktop/*` npm packages + `5` prebuilt `@ng-desktop/engine-*` binaries** | **`233` automated tests** (`101` Vitest across `17` suites, `86` Rust unit, `46` Rust integration across `8` suites).
 
-### Platform Maturity Matrix (`v0.5.0`)
+### Platform Maturity Matrix (`v0.6.0`)
 
-| Area                   | Linux (`GTK4 / Libadwaita`)                                                                         | Windows (`Win32 / WinUI`)                                                                                                                               | macOS (`AppKit`)                                                                                                              |
-| :--------------------- | :-------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------ | :---------------------------------------------------------------------------------------------------------------------------- |
-| **Embedded JS Engine** | Full Angular 22 Ivy runtime via `libjavascriptcoregtk-6.0.so.1` (`JscCApi`) + embedded `QuickJS-NG` | Full Angular 22 Ivy runtime & `NativeServerWorker` via embedded `QuickJS-NG` (`rquickjs` `0.14.0`)                                                      | Full Angular 22 Ivy runtime via `JavaScriptCore.framework` (`JscCApi`) + embedded `QuickJS-NG`                                |
-| **Native UI & Layout** | 29 primitives + `GtkBox`/`GtkGrid`/`GtkFlowBox` layout + Flexbox/Grid CSS projector                 | Live `user32.dll` window/control FFI + shared Flexbox/Grid/Paned/Clamp solver (`SetWindowPos`) + `WM_COMMAND` container propagation & typed callbacks   | Live Objective-C runtime FFI + shared layout solver (`setFrame:` with flipped Y) + `NgAppKitEventTarget` & delegate callbacks |
-| **OS Services**        | `libsoup-3.0`, `libsqlite3.so.0`, `inotify`, `GNetworkMonitor` + `GLib`, `OsDesktopPortalBackend`   | `winsqlite3.dll`, `winhttp.dll` probe, `FindFirstChangeNotificationW`, `GetUserDefaultLocaleName` / `wininet.dll`, `RegGetValueW` theme & Win32 portals | `libsqlite3.dylib`, `CFNetwork` probe, `kqueue` (`EVFILT_VNODE`), `CoreFoundation` locale/timezone, `AppKit` Cocoa portals    |
-| **HMR IPC**            | Non-blocking Unix Domain Socket (`src/ipc/mod.rs` + `hmr-client.mjs`)                               | Non-blocking loopback TCP pointer file (`tcp://127.0.0.1:<port>` across `src/ipc/mod.rs` & `hmr-client.mjs`)                                            | Non-blocking Unix Domain Socket (`src/ipc/mod.rs` + `hmr-client.mjs`)                                                         |
-| **Build & Release**    | Green 3-OS CI + `.deb`/`AppImage`/`Flatpak` staging + npm/crates OIDC Trusted Publishing            | Green 3-OS CI (`win32-x64` binary build + `AppxManifest.xml` staging + npm `@ng-desktop/engine-win32-x64-msvc`)                                         | Green 3-OS CI (`darwin-arm64`/`darwin-x64` binary builds + `.app` bundle staging + npm `@ng-desktop/engine-darwin-*`)         |
+| Area                   | Linux (`GTK4 / Libadwaita`)                                                                                                 | Windows (`Win32 / WinUI`)                                                                                                                               | macOS (`AppKit`)                                                                                                              |
+| :--------------------- | :-------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------ | :---------------------------------------------------------------------------------------------------------------------------- |
+| **Embedded JS Engine** | Full Angular 22 Ivy runtime via `libjavascriptcoregtk-6.0.so.1` (`JscCApi`) + embedded `QuickJS-NG`                         | Full Angular 22 Ivy runtime & `NativeServerWorker` via embedded `QuickJS-NG` (`rquickjs` `0.14.0`)                                                      | Full Angular 22 Ivy runtime via `JavaScriptCore.framework` (`JscCApi`) + embedded `QuickJS-NG`                                |
+| **Native UI & Layout** | 29 primitives + Fenwick `<ng-virtual-list>` / 2D `<ng-virtual-grid>` + `:hover`/`:focus`/CSS vars/`@media`/Emulated scoping | Live `user32.dll` window/control FFI + shared Flexbox/Grid/`@media` solver + Fenwick 2D virtualization & `SetTheme` scene state                         | Live Objective-C runtime FFI + shared Y-flipped Cocoa layout/`@media` solver + `NgAppKitEventTarget` & `SetTheme` scene state |
+| **OS Services**        | `libsoup-3.0`, `libsqlite3.so.0`, `inotify`, `GNetworkMonitor` + `AdwStyleManager` theme sync                               | `winsqlite3.dll`, `winhttp.dll` probe, `FindFirstChangeNotificationW`, `GetUserDefaultLocaleName` / `wininet.dll`, `RegGetValueW` theme & Win32 portals | `libsqlite3.dylib`, `CFNetwork` probe, `kqueue` (`EVFILT_VNODE`), `CoreFoundation` locale/timezone, `AppKit` Cocoa portals    |
+| **HMR IPC**            | Non-blocking Unix Domain Socket (`src/ipc/mod.rs` + `hmr-client.mjs`)                                                       | Non-blocking loopback TCP pointer file (`tcp://127.0.0.1:<port>` across `src/ipc/mod.rs` & `hmr-client.mjs`)                                            | Non-blocking Unix Domain Socket (`src/ipc/mod.rs` + `hmr-client.mjs`)                                                         |
+| **Build & Release**    | Green 3-OS CI + real `.deb` compilation (`dpkg-deb`) + `AppImage`/`Flatpak` + npm/crates OIDC                               | Green 3-OS CI + real `.msix` compilation (`makeappx.exe`) + npm `@ng-desktop/engine-win32-x64-msvc`                                                     | Green 3-OS CI + real `.dmg` compilation (`hdiutil create`) + npm `@ng-desktop/engine-darwin-*`                                |
 
 ---
 
@@ -256,12 +256,12 @@ When `@angular/platform-browser` is removed, Angular's Ivy runtime still require
 
 ---
 
-## 🔍 Remaining Architectural Gaps (`v0.5.0` Audit -> `v0.6.0`)
+## 🔍 Remaining Architectural Gaps (`v0.6.0` -> `v0.7.0`)
 
-Following the completion of multi-OS runtime parity in **`v0.5.0`** (`PR #35`, `PR #36`, `PR #37`), two primary engineering gaps remain for the next milestone:
+Following the completion of Phase 16 in **`v0.6.0`** (`PR #39`–`PR #42`), two focused engineering items remain for the next milestone:
 
-1. **1D Fixed-Height Virtualization & Partial CSS Coverage:** `<ng-virtual-list>` (`packages/platform-native/src/virtual-list.component.ts`) assumes fixed row heights in a single vertical dimension; responsive 2D grids and dynamic/variable item heights are not supported yet, and the CSS projector does not yet handle interactive pseudo-classes (`:hover`, `:focus`, `:active`, `:disabled`), media queries, or full `ViewEncapsulation.Emulated` host scoping.
-2. **Staging-Only Packager vs Signed Native Installers:** `src/packager/mod.rs` stages manifests and bundles (`.deb` metadata, `AppxManifest.xml`, `.app/Contents`, Flatpak YAML) without compiling signed final installers (`.msix`/`.exe`, notarized `.dmg`, `.deb`/`AppImage`).
+1. **Interactive Developer Documentation Portal (`docs-site/`):** Build the live Angular 22 documentation site on GitHub Pages with interactive primitive/compiler exploration and generated TypeScript + Rust API docs (`Phase 17`).
+2. **Commercial Code-Signing & Store Submission Certificates:** Wire external Authenticode (`signtool.exe`) and Apple Developer ID notarization (`notarytool`) secrets into `release.yml` on top of the ad-hoc / `NG_DESKTOP_MACOS_IDENTITY` signing hooks.
 
 ---
 
@@ -281,11 +281,11 @@ Following the completion of multi-OS runtime parity in **`v0.5.0`** (`PR #35`, `
 - [x] **Native OS Service Portals & Drivers (`PR #37`):** Added `OsDesktopPortalBackend` + Windows Registry `AppsUseLightTheme` detection (`src/desktop/os_portals.rs`), Windows & `CoreFoundation` locale/timezone/network probes (`src/desktop/system_env.rs`), macOS `kqueue` & Windows `FindFirstChangeNotificationW` watchers (`src/desktop/fs_watcher.rs`), and OS HTTP driver probes (`src/desktop/http_native.rs`).
 - [x] **Cross-Platform HMR IPC (`PR #37`):** Added Windows loopback TCP pointer files (`tcp://127.0.0.1:<port>`) alongside Unix Domain Sockets in `src/ipc/mod.rs` and `packages/builders-native/src/hmr-client.mjs` across **211 automated tests**.
 
-### Phase 16 (`v0.6.0`): High-Density UI, CSS Completeness & Signed Installers (Planned 🚀)
+### Phase 16 (`v0.6.0`): High-Density UI, CSS Completeness & Real Multi-OS Installers (Completed ✅)
 
-- [ ] **Variable-Height & 2D Virtualization:** Extend `<ng-virtual-list>` (`NativeVirtualListComponent`) with dynamic measured row heights and 2D virtualized grid support (`computeVirtualSliceRange` 2D / Fenwick-tree offset index).
-- [ ] **Complete CSS & Animation Parity:** Add `:hover`, `:focus`, `:active`, and `:disabled` pseudo-classes, CSS custom properties (`--var`), responsive breakpoints/media queries, full `ViewEncapsulation.Emulated` style scoping, and `GdkFrameClock` / `AdwTimedAnimation` / `CoreAnimation` transition hooks.
-- [ ] **Compiled & Signed Native Installers:** Upgrade `src/packager/mod.rs` and release pipelines from directory staging to reproducible native packages: `.deb` (`dpkg-deb`), `AppImage`, `Flatpak`, signed Windows `.msix`/`.exe`, and notarized macOS `.dmg`.
+- [x] **Variable-Height & 2D Virtualization (`PR #40`):** Extended `<ng-virtual-list>` (`FenwickTree` prefix-sum index) with measured variable row heights and shipped `<ng-virtual-grid>` (`NativeVirtualGridComponent`, `computeVirtualGridRange`), upgrading Pokédex onto virtualized 2D catalog scrolling + local fuzzy search and removing redundant explicit `OnPush` decorators (Angular 22 default).
+- [x] **Complete CSS & Animation Parity (`PR #41`):** Added `:hover`, `:focus`, `:active`, and `:disabled` pseudo-classes, CSS custom properties (`--var`/`var()`) with automatic light/dark `@media` synthesis, responsive `@media` (`prefers-color-scheme`, `min-width`, `max-width`), `opacity`, `transition`, `ViewEncapsulation.Emulated` scoping (`_ngcontent-*`, `_nghost-*`), reactive `RenderCommand::SetTheme`, and Pokédex theme toggle (`<Control>t`).
+- [x] **Compiled Native Multi-OS Installers (`PR #39`, `PR #42`):** Upgraded `src/packager/` (`builders.rs`, `png.rs`), `ng-desktop`, 3-OS CI, and `release.yml` to compile real `.deb`, `AppImage`, `Flatpak`, `.msix`, and `.dmg` packages alongside retrospective engine hardening across **233 automated tests**.
 
 ### Phase 17: Official Interactive Documentation Website on GitHub Pages (Planned 🌐)
 

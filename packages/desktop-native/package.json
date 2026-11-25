@@ -1,6 +1,6 @@
 {
   "name": "@ng-desktop/desktop",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Linux GTK4 / Desktop OS system services (Theme, Clipboard, Notifications, Dialogs, SQLite, Network, Compute, FileSystem, DropTarget)",
   "type": "module",
   "main": "./src/index.ts",
