@@ -47,6 +47,8 @@ export class NativeElementNode {
   readonly styles = new Map<string, string>();
   private readonly listeners = new Map<string, Set<NativeEventListener>>();
   textContent = '';
+  encapsulationScope: string | null = null;
+  hostEncapsulationScope: string | null = null;
 
   readonly classList: {
     add: (...tokens: string[]) => void;

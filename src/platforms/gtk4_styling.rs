@@ -2,13 +2,18 @@ use super::gtk4_callbacks::{pack_node_id, set_window_prevent_close};
 use super::gtk4_sys::{Gtk4Sys, GtkHandle};
 use super::linux_gtk::{GtkLinuxBackend, GtkWidgetType, WidgetVisibility};
 use super::scene_state::NativeSceneState;
+use crate::desktop::DesktopTheme;
 use crate::engine::{EventMask, NodeId, StyleRule};
 use std::fmt::Write as _;
 
 /// Translates a single engine `StyleRule` into a GTK4 CSS class block (pure, unit-testable).
 pub(super) fn render_gtk_css_rule(rule: &StyleRule) -> String {
     let mut css = String::new();
-    let _ = writeln!(css, ".{} {{", rule.class_name);
+    if let Some(pseudo) = &rule.pseudo_class {
+        let _ = writeln!(css, ".{}:{pseudo} {{", rule.class_name);
+    } else {
+        let _ = writeln!(css, ".{} {{", rule.class_name);
+    }
     if let Some(bg) = &rule.background {
         let _ = writeln!(css, "  background: {bg};");
     }
@@ -33,24 +38,56 @@ pub(super) fn render_gtk_css_rule(rule: &StyleRule) -> String {
     if let Some(mh) = rule.min_height {
         let _ = writeln!(css, "  min-height: {mh}px;");
     }
+    if let Some(op) = rule.opacity {
+        let scaled = f64::from(op) / 100.0;
+        let _ = writeln!(css, "  opacity: {scaled:.2};");
+    }
+    if let Some(ms) = rule.transition_ms {
+        let prop = rule.transition_prop.as_deref().unwrap_or("all");
+        let _ = writeln!(css, "  transition: {prop} {ms}ms ease;");
+    }
     let _ = writeln!(css, "}}");
     css
 }
 
 impl GtkLinuxBackend {
     pub(super) fn rebuild_css_stylesheet(&self) -> String {
-        let mut css = String::from(
-            "window { background: #0f172a; color: #f8fafc; }\n\
-             headerbar, windowhandle { min-height: 46px; }\n\
-             searchentry, entry, spinbutton, textview { border-radius: 8px; padding: 6px 10px; }\n\
-             button { border-radius: 8px; padding: 6px 12px; font-weight: 600; }\n\
-             levelbar block.filled { background: #38bdf8; border-radius: 4px; }\n\
-             levelbar block.empty { background: #1e293b; border-radius: 4px; }\n\
-             listbox { background: transparent; }\n\
-             popover > contents { background: #1e293b; color: #f8fafc; border-radius: 10px; padding: 8px; }\n",
-        );
-        let mut ordered: Vec<_> = self.styles.iter().collect();
-        ordered.sort_by_key(|(style_id, _)| style_id.0);
+        let base_theme = match self.active_theme {
+            DesktopTheme::Dark => {
+                "window { background: #0f172a; color: #f8fafc; }\n\
+                 headerbar, windowhandle { min-height: 46px; }\n\
+                 searchentry, entry, spinbutton, textview { border-radius: 8px; padding: 6px 10px; }\n\
+                 button { border-radius: 8px; padding: 6px 12px; font-weight: 600; transition: background 160ms ease; }\n\
+                 levelbar block.filled { background: #38bdf8; border-radius: 4px; }\n\
+                 levelbar block.empty { background: #1e293b; border-radius: 4px; }\n\
+                 listbox { background: transparent; }\n\
+                 popover > contents { background: #1e293b; color: #f8fafc; border-radius: 10px; padding: 8px; }\n"
+            }
+            DesktopTheme::Light => {
+                "window { background: #f8fafc; color: #0f172a; }\n\
+                 headerbar, windowhandle { min-height: 46px; }\n\
+                 searchentry, entry, spinbutton, textview { border-radius: 8px; padding: 6px 10px; }\n\
+                 button { border-radius: 8px; padding: 6px 12px; font-weight: 600; transition: background 160ms ease; }\n\
+                 levelbar block.filled { background: #0284c7; border-radius: 4px; }\n\
+                 levelbar block.empty { background: #e2e8f0; border-radius: 4px; }\n\
+                 listbox { background: transparent; }\n\
+                 popover > contents { background: #ffffff; color: #0f172a; border-radius: 10px; padding: 8px; }\n"
+            }
+        };
+        let mut css = String::from(base_theme);
+        let mut ordered: Vec<_> = self
+            .styles
+            .iter()
+            .filter(|(_, rule)| rule.matches_context(self.active_theme, self.viewport_width))
+            .collect();
+        // Cascade order: base (0) -> @media (1) -> :pseudo (2) -> @media+:pseudo (3)
+        ordered.sort_by_key(|(style_id, rule)| {
+            let has_media = rule.media_theme.is_some()
+                || rule.media_min_width.is_some()
+                || rule.media_max_width.is_some();
+            let tier = (u8::from(rule.pseudo_class.is_some()) << 1) | u8::from(has_media);
+            (tier, style_id.0)
+        });
         for (_, rule) in ordered {
             css.push_str(&render_gtk_css_rule(rule));
         }
@@ -658,6 +695,7 @@ impl GtkLinuxBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::platforms::{PlatformBackend, RenderCommand};
 
     #[test]
     fn renders_typography_and_radius_only_when_declared() {
@@ -686,8 +724,64 @@ mod tests {
         assert!(hero_css.contains("border-radius: 12px;"));
         assert!(hero_css.contains("font-size: 22px;"));
         assert!(hero_css.contains("font-weight: 800;"));
+        assert_eq!(hero_css.matches("font-weight: 800;").count(), 1);
         assert!(hero_css.contains("min-width: 240px;"));
         assert!(hero_css.contains("min-height: 180px;"));
         assert!(!hero_css.contains("padding"));
+    }
+
+    #[test]
+    fn renders_pseudo_opacity_transitions_and_filters_media_by_theme_and_width() {
+        let mut backend = GtkLinuxBackend::new_headless();
+        backend.flush_commands(&[
+            RenderCommand::RegisterStyle {
+                style_id: crate::engine::StyleId(1),
+                rule: StyleRule {
+                    class_name: String::from("action-btn"),
+                    background: Some(String::from("#e11d48")),
+                    transition_ms: Some(180),
+                    transition_prop: Some(String::from("background")),
+                    ..StyleRule::default()
+                },
+            },
+            RenderCommand::RegisterStyle {
+                style_id: crate::engine::StyleId(2),
+                rule: StyleRule {
+                    class_name: String::from("action-btn"),
+                    background: Some(String::from("#be123c")),
+                    pseudo_class: Some(String::from("hover")),
+                    opacity: Some(90),
+                    ..StyleRule::default()
+                },
+            },
+            RenderCommand::RegisterStyle {
+                style_id: crate::engine::StyleId(3),
+                rule: StyleRule {
+                    class_name: String::from("surface"),
+                    background: Some(String::from("#ffffff")),
+                    media_theme: Some(String::from("light")),
+                    media_min_width: Some(800),
+                    ..StyleRule::default()
+                },
+            },
+        ]);
+        assert_eq!(backend.css_reload_count(), 1);
+        let dark_css = backend.rebuild_css_stylesheet();
+        assert!(dark_css.contains("window { background: #0f172a;"));
+        assert!(dark_css.contains(".action-btn {"));
+        assert!(dark_css.contains("transition: background 180ms ease;"));
+        assert!(dark_css.contains(".action-btn:hover {"));
+        assert!(dark_css.contains("opacity: 0.90;"));
+        assert!(!dark_css.contains("background: #ffffff;"));
+
+        backend.flush_commands(&[RenderCommand::SetTheme {
+            theme: DesktopTheme::Light,
+        }]);
+        assert_eq!(backend.active_theme(), DesktopTheme::Light);
+        assert_eq!(backend.css_reload_count(), 2);
+        let light_css = backend.rebuild_css_stylesheet();
+        assert!(light_css.contains("window { background: #f8fafc;"));
+        assert!(light_css.contains(".surface {"));
+        assert!(light_css.contains("background: #ffffff;"));
     }
 }

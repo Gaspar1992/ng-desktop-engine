@@ -228,12 +228,13 @@ describe('@ng-desktop/platform — NativeRenderer2 & Bridge', () => {
       await Promise.resolve();
       const cmds = bridge.__drainQueue();
       expect(cmds).toContain(
-        'style hero-card #1e293b #f8fafc 12 8 radius=10 font-size=16 font-weight=700',
+        'style hero-card__abc #1e293b #f8fafc 12 8 radius=10 font-size=16 font-weight=700',
       );
       expect(cmds).not.toContain('create app-root');
       expect(cmds).not.toContain('create app-card');
       expect(cmds).not.toContain('_ngcontent-abc');
       expect(cmds).toContain(`add_class ${box.id} hero-card`);
+      expect(cmds).toContain(`add_class ${box.id} hero-card__abc`);
       expect(cmds).toContain(`add_class ${box.id} active`);
       expect(cmds).toContain(`remove_class ${box.id} active`);
       expect(cmds).toContain(`add_class ${box.id} highlighted`);
@@ -1140,5 +1141,78 @@ describe('@ng-desktop/platform — NativeRenderer2 & Bridge', () => {
     bridge.__dispatchEvent(popId, 'closed');
     expect(fixture.componentInstance.popClosed()).toBe(true);
     fixture.destroy();
+  });
+
+  it('isolates ViewEncapsulation.Emulated classes between components and resolves vars/pseudo/media at runtime', () => {
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+    const factory = new NativeRendererFactory2();
+
+    const rendererA = factory.createRenderer(null, {
+      id: 'comp-a',
+      encapsulation: 0,
+      styles: [
+        `
+        :root { --badge-bg: #dc2626; --badge-fg: #ffffff; }
+        @media (prefers-color-scheme: light) {
+          :root { --badge-bg: #fee2e2; --badge-fg: #991b1b; }
+        }
+        .badge[_ngcontent-compa] {
+          background: var(--badge-bg);
+          color: var(--badge-fg);
+          padding: 6px;
+          transition: background 180ms ease;
+        }
+        .badge[_ngcontent-compa]:hover {
+          opacity: 0.85;
+        }
+      `,
+      ],
+      data: {},
+    });
+
+    const rendererB = factory.createRenderer(null, {
+      id: 'comp-b',
+      encapsulation: 0,
+      styles: [
+        `
+        .badge[_ngcontent-compb] {
+          background: #2563eb;
+          color: #f8fafc;
+          padding: 8px;
+        }
+        @media (min-width: 720px) {
+          .badge[_ngcontent-compb] {
+            padding: 12px;
+          }
+        }
+      `,
+      ],
+      data: {},
+    });
+
+    const labelA = rendererA.createElement('ng-label');
+    rendererA.setAttribute(labelA, '_ngcontent-compa', '');
+    rendererA.addClass(labelA, 'badge');
+
+    const labelB = rendererB.createElement('ng-label');
+    rendererB.addClass(labelB, 'badge');
+    // Also verify out-of-order attribute application after addClass
+    rendererB.setAttribute(labelB, '_ngcontent-compb', '');
+
+    const cmds = bridge.__drainQueue().split('\n');
+    expect(cmds).toContain(
+      'style badge__compa #dc2626 #ffffff 6 0 transition-ms=180 transition-prop=background',
+    );
+    expect(cmds).toContain('style badge__compa #fee2e2 #991b1b 0 0 media-theme=light');
+    expect(cmds).toContain('style badge__compa none none 0 0 pseudo=hover opacity=85');
+    expect(cmds).toContain('style badge__compb #2563eb #f8fafc 8 0');
+    expect(cmds).toContain('style badge__compb none none 12 0 media-min-width=720');
+    expect(cmds).toContain(`add_class ${labelA.id} badge__compa`);
+    expect(cmds).toContain(`add_class ${labelB.id} badge__compb`);
+
+    rendererA.removeClass(labelA, 'badge');
+    const removeCmds = bridge.__drainQueue().split('\n');
+    expect(removeCmds).toContain(`remove_class ${labelA.id} badge__compa`);
   });
 });

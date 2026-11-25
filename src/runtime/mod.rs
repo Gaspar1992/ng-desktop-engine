@@ -205,7 +205,9 @@ impl JsRuntime {
                 Ok(())
             }
             Instruction::SetTheme { mode } => {
-                self.desktop.set_theme(DesktopTheme::from_str_lossy(&mode));
+                let theme = DesktopTheme::from_str_lossy(&mode);
+                self.desktop.set_theme(theme);
+                engine.set_theme(theme);
                 Ok(())
             }
             Instruction::SetClipboard { text } => {

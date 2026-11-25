@@ -1,3 +1,4 @@
+use crate::desktop::DesktopTheme;
 use crate::engine::{
     EventMask, NativeEvent, NodeId, RenderCommand, StyleId, StyleRule, WindowIconAsset,
     coalesce_frame_events,
@@ -24,18 +25,37 @@ pub struct NativeSceneNode {
 }
 
 /// Shared retaining state machine for cross-platform native scene trees (WinUI 3, AppKit).
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct NativeSceneState {
     nodes: HashMap<NodeId, NativeSceneNode>,
     styles: HashMap<StyleId, StyleRule>,
     window_icons: HashMap<NodeId, WindowIconAsset>,
     window_sizes: RefCell<HashMap<NodeId, (i32, i32)>>,
     pending_events: RefCell<Vec<NativeEvent>>,
+    active_theme: DesktopTheme,
+}
+
+impl Default for NativeSceneState {
+    fn default() -> Self {
+        Self {
+            nodes: HashMap::new(),
+            styles: HashMap::new(),
+            window_icons: HashMap::new(),
+            window_sizes: RefCell::new(HashMap::new()),
+            pending_events: RefCell::new(Vec::new()),
+            active_theme: DesktopTheme::Dark,
+        }
+    }
 }
 
 impl NativeSceneState {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    #[must_use]
+    pub const fn active_theme(&self) -> DesktopTheme {
+        self.active_theme
     }
 
     pub fn node_count(&self) -> usize {
@@ -52,6 +72,22 @@ impl NativeSceneState {
 
     pub fn get_style(&self, id: StyleId) -> Option<&StyleRule> {
         self.styles.get(&id)
+    }
+
+    pub fn styles_for_class(&self, class_name: &str) -> Vec<(StyleId, &StyleRule)> {
+        let mut matches: Vec<(StyleId, &StyleRule)> = self
+            .styles
+            .iter()
+            .filter(|(_, rule)| rule.class_name == class_name)
+            .map(|(id, rule)| (*id, rule))
+            .collect();
+        matches.sort_by_key(|(id, rule)| {
+            let has_media = rule.media_theme.is_some()
+                || rule.media_min_width.is_some()
+                || rule.media_max_width.is_some();
+            (u8::from(has_media), id.0)
+        });
+        matches
     }
 
     pub fn get_window_icon(&self, window: NodeId) -> Option<&WindowIconAsset> {
@@ -264,6 +300,9 @@ impl NativeSceneState {
                     n.style_classes.retain(|id| *id != *style_id);
                 }
             }
+            RenderCommand::SetTheme { theme } => {
+                self.active_theme = *theme;
+            }
             RenderCommand::AppendChild { parent, child } => {
                 if let Some(p) = self.nodes.get_mut(parent) {
                     p.children.push(*child);
@@ -389,5 +428,19 @@ mod tests {
         let drained = state.drain_events();
         assert_eq!(drained.len(), 1);
         assert_eq!(state.window_size_or(win, 1020, 720), (1440, 900));
+    }
+
+    #[test]
+    fn updates_active_theme_via_set_theme_command() {
+        let mut state = NativeSceneState::new();
+        assert_eq!(state.active_theme(), DesktopTheme::Dark);
+        state.apply_command(
+            &RenderCommand::SetTheme {
+                theme: DesktopTheme::Light,
+            },
+            "AnchorComment",
+            |_| "NativeLabel",
+        );
+        assert_eq!(state.active_theme(), DesktopTheme::Light);
     }
 }

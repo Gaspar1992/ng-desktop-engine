@@ -1,6 +1,7 @@
 use super::icons::WindowIconAsset;
 use super::node::{NodeId, StyleId};
 use super::styles::StyleRule;
+use crate::desktop::DesktopTheme;
 
 /// Game-engine Render Command Buffer entry.
 /// Angular mutations are queued during a tick and flushed in batch to the target OS backend.
@@ -51,6 +52,9 @@ pub enum RenderCommand {
     RemoveStyleClass {
         node: NodeId,
         style_id: StyleId,
+    },
+    SetTheme {
+        theme: DesktopTheme,
     },
     DestroyWidget {
         id: NodeId,

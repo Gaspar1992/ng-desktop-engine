@@ -49,6 +49,10 @@ impl<B: PlatformBackend> RenderEngine<B> {
         style_id
     }
 
+    pub fn set_theme(&mut self, theme: crate::desktop::DesktopTheme) {
+        self.commands.push(RenderCommand::SetTheme { theme });
+    }
+
     pub fn create_element(&mut self, tag: &str) -> Result<NodeId, EngineError> {
         let widget = WidgetKind::from_tag(tag)?;
         let id = self.arena.insert(widget);
