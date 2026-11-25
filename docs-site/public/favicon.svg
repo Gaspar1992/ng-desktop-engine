@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="shieldGrad" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#dd0031" />
+      <stop offset="100%" stop-color="#7c3aed" />
+    </linearGradient>
+  </defs>
+  <path
+    d="M32 4 8 13l3.6 31.2L32 60l20.4-15.8L56 13 32 4Z"
+    fill="url(#shieldGrad)"
+  />
+  <rect x="17" y="18" width="30" height="22" rx="4" fill="#ffffff" fill-opacity="0.95" />
+  <rect x="17" y="18" width="30" height="6" rx="3" fill="#18181b" fill-opacity="0.16" />
+  <circle cx="22" cy="21" r="1.5" fill="#dd0031" />
+  <circle cx="26.5" cy="21" r="1.5" fill="#f59e0b" />
+  <circle cx="31" cy="21" r="1.5" fill="#10b981" />
+  <path d="M25 35.5 32 26l7 9.5h-3.6L32 30.8l-3.4 4.7H25Z" fill="#18181b" />
+</svg>
