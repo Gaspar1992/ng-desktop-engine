@@ -205,10 +205,20 @@ impl StyleRegistry {
     }
 
     pub fn attach_class(&mut self, node: NodeId, class_name: &str) -> Result<StyleId, EngineError> {
-        let style_id = *self
-            .ids_by_name
-            .get(class_name)
-            .ok_or_else(|| EngineError::StyleNotFound(class_name.to_string()))?;
+        let style_id = if let Some(&id) = self.ids_by_name.get(class_name) {
+            id
+        } else if self
+            .rules_by_id
+            .values()
+            .any(|rule| rule.class_name == class_name)
+        {
+            self.register_rule(StyleRule {
+                class_name: class_name.to_string(),
+                ..StyleRule::default()
+            })
+        } else {
+            return Err(EngineError::StyleNotFound(class_name.to_string()));
+        };
 
         let list = self.node_styles.entry(node).or_default();
         if !list.contains(&style_id) {
@@ -379,5 +389,22 @@ mod tests {
         assert!(ext_rule.apply_extension("transition-prop", "opacity"));
         assert!(!ext_rule.apply_extension("opacity", "105"));
         assert!(!ext_rule.apply_extension("pseudo", "visited"));
+
+        let node = NodeId {
+            index: 1,
+            generation: 1,
+        };
+        let attached = reg.attach_class(node, "btn").unwrap();
+        assert_eq!(attached, base_id);
+
+        let pseudo_only = reg.register_rule(StyleRule {
+            class_name: String::from("hover-only"),
+            background: Some(String::from("#334155")),
+            pseudo_class: Some(String::from("hover")),
+            ..StyleRule::default()
+        });
+        assert_ne!(pseudo_only.0, 0);
+        assert!(reg.attach_class(node, "hover-only").is_ok());
+        assert!(reg.node_classes(node).contains(&"hover-only"));
     }
 }

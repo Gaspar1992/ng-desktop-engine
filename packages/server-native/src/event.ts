@@ -1,3 +1,4 @@
+/** HTTP methods matched by [`createNativeServerRouter`], including `' * '` wildcard routes. */
 export type NativeServerMethod =
   | 'GET'
   | 'POST'
@@ -8,19 +9,23 @@ export type NativeServerMethod =
   | 'OPTIONS'
   | '*';
 
+/** Logical XDG directory root exposed to local server route handlers. */
 export type NativeServerXdgKind = 'config' | 'data' | 'cache';
 
+/** Match entry returned by [`NativeServerComputeContext.fuzzyFilter`]. */
 export interface NativeServerComputeMatch {
   index: number;
   score: number;
   value: string;
 }
 
+/** Optional headers and call classification for outbound server-side HTTP requests. */
 export interface NativeServerHttpRequestOptions {
   headers?: Record<string, string>;
   callKind?: string;
 }
 
+/** Response returned from `event.context.http` inside a native server handler. */
 export interface NativeServerHttpResponse {
   status: number;
   statusText: string;
@@ -29,8 +34,10 @@ export interface NativeServerHttpResponse {
   cached?: boolean;
 }
 
+/** Positional bind parameter accepted by `event.context.db.execute` and `query`. */
 export type NativeServerSqlParam = string | number | boolean | null;
 
+/** Host-backed SQLite context available to native server route handlers. */
 export interface NativeServerDbContext {
   open(path: string): string;
   execute(sql: string, params?: readonly NativeServerSqlParam[]): boolean;
@@ -40,6 +47,7 @@ export interface NativeServerDbContext {
   ): T[];
 }
 
+/** Sandboxed XDG filesystem context available to native server route handlers. */
 export interface NativeServerFsContext {
   resolvePath(kind: NativeServerXdgKind, relPath: string): string;
   readText(path: string): string | null;
@@ -48,11 +56,13 @@ export interface NativeServerFsContext {
   pollChangedFiles(): string[];
 }
 
+/** Multithreaded Rust compute helper exposed on `event.context.compute`. */
 export interface NativeServerComputeContext {
   fuzzyFilter(items: readonly string[], query: string, limit?: number): NativeServerComputeMatch[];
   hash(input: string): string;
 }
 
+/** Outbound OS-native HTTP client exposed on `event.context.http`. */
 export interface NativeServerHttpContext {
   request(
     method: string,
@@ -68,6 +78,7 @@ export interface NativeServerHttpContext {
   ): Promise<NativeServerHttpResponse>;
 }
 
+/** Execution context injected into every handled `NativeServerEvent`. */
 export interface NativeServerContext {
   params: Record<string, string>;
   query: Record<string, string>;
@@ -77,6 +88,7 @@ export interface NativeServerContext {
   http: NativeServerHttpContext;
 }
 
+/** Incoming request payload routed to [`NativeServerRouter.handle`]. */
 export interface NativeServerRequest {
   method: string;
   url: string;
@@ -84,6 +96,7 @@ export interface NativeServerRequest {
   body?: string | null;
 }
 
+/** Serialized HTTP-like response returned by [`NativeServerRouter.handle`]. */
 export interface NativeServerResponse {
   status: number;
   statusText: string;
@@ -91,6 +104,7 @@ export interface NativeServerResponse {
   body: string;
 }
 
+/** Event object passed to native file-based API route handlers (`Analog`/`h3` ergonomics). */
 export interface NativeServerEvent {
   readonly method: string;
   readonly url: string;
@@ -105,8 +119,10 @@ export interface NativeServerEvent {
   };
 }
 
+/** Handler function signature exported by `src/server/routes/**` files. */
 export type NativeEventHandler<T = unknown> = (event: NativeServerEvent) => T | Promise<T>;
 
+/** Structured HTTP error converted into JSON responses by [`createNativeServerRouter`]. */
 export class NativeServerHttpError extends Error {
   readonly statusCode: number;
   readonly statusMessage: string;
@@ -127,6 +143,7 @@ export class NativeServerHttpError extends Error {
   }
 }
 
+/** Returns the standard HTTP reason phrase for common status codes. */
 export function defaultStatusText(status: number): string {
   switch (status) {
     case 200:
@@ -154,20 +171,24 @@ export function defaultStatusText(status: number): string {
   }
 }
 
+/** Identity helper providing type inference for local server route handlers. */
 export function defineNativeEventHandler<T = unknown>(
   handler: NativeEventHandler<T>,
 ): NativeEventHandler<T> {
   return handler;
 }
 
+/** Reads a named dynamic segment (e.g. `[id]`) from the matched route parameters. */
 export function getRouterParam(event: NativeServerEvent, name: string): string | undefined {
   return event.context.params[name];
 }
 
+/** Returns a shallow copy of the parsed URL query parameters for the current request. */
 export function getQuery(event: NativeServerEvent): Record<string, string> {
   return { ...event.context.query };
 }
 
+/** Parses JSON payloads or returns raw request body strings for non-JSON requests. */
 export function readBody<T = unknown>(event: NativeServerEvent): T {
   const raw = event.body;
   if (raw === null || raw === undefined || raw.length === 0) {
@@ -192,6 +213,7 @@ export function readBody<T = unknown>(event: NativeServerEvent): T {
   return raw as T;
 }
 
+/** Sets the HTTP status code (and optional reason phrase) on `event.response`. */
 export function setResponseStatus(
   event: NativeServerEvent,
   code: number,
@@ -203,10 +225,12 @@ export function setResponseStatus(
   }
 }
 
+/** Sets a lowercase response header on `event.response`. */
 export function setResponseHeader(event: NativeServerEvent, name: string, value: string): void {
   event.response.headers[name.toLowerCase()] = value;
 }
 
+/** Constructs a [`NativeServerHttpError`] for clean early-return error responses inside handlers. */
 export function createError(input: {
   statusCode?: number;
   statusMessage?: string;

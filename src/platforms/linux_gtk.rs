@@ -146,6 +146,8 @@ pub(super) struct NativeGtkWidget {
     pub(super) popover: PopoverConfig,
     /// Tracks explicit visibility flag (notably to defer presenting hidden dialogs until visible=true).
     pub(super) visibility: WidgetVisibility,
+    /// Tracks `(min, max)` numeric bounds for `Slider`, `SpinButton`, and `LevelBar`.
+    pub(super) value_range: (f64, f64),
 }
 
 /// Concrete Linux GTK4 + Libadwaita platform adapter backed by `libgtk-4.so.1`.
@@ -156,6 +158,7 @@ pub struct GtkLinuxBackend {
     pub(super) gtk: Option<Gtk4Sys>,
     pub(super) widgets: HashMap<NodeId, NativeGtkWidget>,
     pub(super) styles: HashMap<StyleId, StyleRule>,
+    pub(super) node_classes: HashMap<NodeId, Vec<String>>,
     pub(super) header_titles: HashMap<NodeId, (String, String)>,
     pub(super) dom_id_to_node: HashMap<String, NodeId>,
     pub(super) parent_of: HashMap<NodeId, NodeId>,
@@ -163,6 +166,7 @@ pub struct GtkLinuxBackend {
     css_reload_count: u64,
     pub(super) active_theme: DesktopTheme,
     pub(super) viewport_width: i32,
+    pending_viewport_width: std::cell::Cell<Option<i32>>,
     pulse_tick: std::cell::Cell<u32>,
     window_states: std::cell::RefCell<HashMap<NodeId, (i32, i32, bool, bool)>>,
 }
@@ -226,6 +230,7 @@ impl GtkLinuxBackend {
             gtk: Gtk4Sys::try_load_with_app_id(app_id),
             widgets: HashMap::new(),
             styles: HashMap::new(),
+            node_classes: HashMap::new(),
             header_titles: HashMap::new(),
             dom_id_to_node: HashMap::new(),
             parent_of: HashMap::new(),
@@ -233,6 +238,7 @@ impl GtkLinuxBackend {
             css_reload_count: 0,
             active_theme: DesktopTheme::Dark,
             viewport_width: 1020,
+            pending_viewport_width: std::cell::Cell::new(None),
             pulse_tick: std::cell::Cell::new(0),
             window_states: std::cell::RefCell::new(HashMap::new()),
         }
@@ -246,6 +252,7 @@ impl GtkLinuxBackend {
             gtk: None,
             widgets: HashMap::new(),
             styles: HashMap::new(),
+            node_classes: HashMap::new(),
             header_titles: HashMap::new(),
             dom_id_to_node: HashMap::new(),
             parent_of: HashMap::new(),
@@ -253,6 +260,7 @@ impl GtkLinuxBackend {
             css_reload_count: 0,
             active_theme: DesktopTheme::Dark,
             viewport_width: 1020,
+            pending_viewport_width: std::cell::Cell::new(None),
             pulse_tick: std::cell::Cell::new(0),
             window_states: std::cell::RefCell::new(HashMap::new()),
         }
@@ -444,6 +452,7 @@ impl GtkLinuxBackend {
             let (maximized, active) = gtk.window_flags(handle);
             let prev = prev_states.get(&id).copied();
             if prev.is_none_or(|(pw, ph, pm, _)| pw != w || ph != h || pm != maximized) {
+                self.pending_viewport_width.set(Some(w));
                 events.push(NativeEvent {
                     node: id,
                     event_name: String::from("resize"),
@@ -523,6 +532,7 @@ impl GtkLinuxBackend {
                         grid_row: None,
                         popover: PopoverConfig::default(),
                         visibility: WidgetVisibility::Visible,
+                        value_range: (0.0, 100.0),
                     },
                 );
             }
@@ -541,34 +551,20 @@ impl GtkLinuxBackend {
                 }
             }
             RenderCommand::ApplyStyleClass { node, style_id } => {
-                let rule_opt = self.styles.get(style_id).cloned();
-                if let (Some(gtk), Some(widget), Some(rule)) =
-                    (&self.gtk, self.widgets.get(node), rule_opt.as_ref())
-                    && let Some(handle) = widget.handle
-                {
-                    gtk.add_css_class(handle, &rule.class_name);
-                }
-                if let Some(rule) = rule_opt
-                    && rule.pseudo_class.is_none()
-                    && rule.matches_context(self.active_theme, self.viewport_width)
-                {
-                    self.apply_style_rule_layout(*node, &rule);
-                }
+                self.apply_style_class_command(*node, *style_id, true);
             }
             RenderCommand::RemoveStyleClass { node, style_id } => {
-                let (Some(gtk), Some(widget), Some(rule)) =
-                    (&self.gtk, self.widgets.get(node), self.styles.get(style_id))
-                else {
-                    return;
-                };
-                if let Some(handle) = widget.handle {
-                    gtk.remove_css_class(handle, &rule.class_name);
-                }
+                self.apply_style_class_command(*node, *style_id, false);
             }
             RenderCommand::SetTheme { theme } => {
-                self.active_theme = *theme;
-                self.css_dirty = true;
-                if let Some(gtk) = &self.gtk {
+                if self.active_theme != *theme {
+                    self.active_theme = *theme;
+                    self.css_dirty = true;
+                    if let Some(gtk) = &self.gtk {
+                        gtk.set_color_scheme(*theme == DesktopTheme::Dark);
+                    }
+                    self.reapply_all_node_style_layouts();
+                } else if let Some(gtk) = &self.gtk {
                     gtk.set_color_scheme(*theme == DesktopTheme::Dark);
                 }
             }
@@ -601,7 +597,39 @@ impl GtkLinuxBackend {
             && px > 0
             && px != self.viewport_width
         {
-            self.viewport_width = px;
+            self.set_viewport_width(px);
+        }
+        self.apply_native_attribute(node, key, value);
+    }
+
+    fn apply_style_class_command(&mut self, node: NodeId, style_id: StyleId, add: bool) {
+        let class_name_opt = self.styles.get(&style_id).map(|r| r.class_name.clone());
+        let Some(class_name) = class_name_opt else {
+            return;
+        };
+        if let (Some(gtk), Some(widget)) = (&self.gtk, self.widgets.get(&node))
+            && let Some(handle) = widget.handle
+        {
+            if add {
+                gtk.add_css_class(handle, &class_name);
+            } else {
+                gtk.remove_css_class(handle, &class_name);
+            }
+        }
+        if add {
+            let entry = self.node_classes.entry(node).or_default();
+            if !entry.contains(&class_name) {
+                entry.push(class_name.clone());
+            }
+            self.reapply_node_class_layouts(node, &class_name);
+        } else if let Some(classes) = self.node_classes.get_mut(&node) {
+            classes.retain(|c| c != &class_name);
+        }
+    }
+
+    fn set_viewport_width(&mut self, width: i32) {
+        if width > 0 && width != self.viewport_width {
+            self.viewport_width = width;
             if self
                 .styles
                 .values()
@@ -609,14 +637,45 @@ impl GtkLinuxBackend {
             {
                 self.css_dirty = true;
             }
+            self.reapply_all_node_style_layouts();
         }
-        self.apply_native_attribute(node, key, value);
+    }
+
+    fn reapply_node_class_layouts(&mut self, node: NodeId, class_name: &str) {
+        let mut matching: Vec<(StyleId, StyleRule)> = self
+            .styles
+            .iter()
+            .filter(|(_, r)| {
+                r.class_name == class_name
+                    && r.pseudo_class.is_none()
+                    && r.matches_context(self.active_theme, self.viewport_width)
+            })
+            .map(|(&id, r)| (id, r.clone()))
+            .collect();
+        matching.sort_by_key(|(id, _)| id.0);
+        for (_, rule) in matching {
+            self.apply_style_rule_layout(node, &rule);
+        }
+    }
+
+    fn reapply_all_node_style_layouts(&mut self) {
+        let pairs: Vec<(NodeId, Vec<String>)> = self
+            .node_classes
+            .iter()
+            .map(|(&node, classes)| (node, classes.clone()))
+            .collect();
+        for (node, classes) in pairs {
+            for class_name in classes {
+                self.reapply_node_class_layouts(node, &class_name);
+            }
+        }
     }
 
     fn apply_gtk_destroy_widget(&mut self, id: NodeId) {
         self.header_titles.remove(&id);
         self.window_states.borrow_mut().remove(&id);
         self.parent_of.remove(&id);
+        self.node_classes.remove(&id);
         self.dom_id_to_node.retain(|_, node| *node != id);
         set_window_prevent_close(pack_node_id(id), false);
         if let Some(widget) = self.widgets.remove(&id)
@@ -666,6 +725,7 @@ impl GtkLinuxBackend {
                 grid_row: None,
                 popover: PopoverConfig::default(),
                 visibility: WidgetVisibility::Visible,
+                value_range: (0.0, 100.0),
             },
         );
     }
@@ -1328,15 +1388,23 @@ impl PlatformBackend for GtkLinuxBackend {
     }
 
     fn flush_commands(&mut self, commands: &[RenderCommand]) {
-        if commands.is_empty() {
+        if let Some(new_w) = self.pending_viewport_width.take() {
+            self.set_viewport_width(new_w);
+        }
+        if commands.is_empty() && !self.css_dirty {
             return;
         }
-        self.flushed_frames += 1;
-        super::trace_flush_commands(self.backend_name(), self.flushed_frames, commands, |tag| {
-            self.map_native_widget(tag)
-        });
-        for cmd in commands {
-            self.apply_command_to_gtk(cmd);
+        if !commands.is_empty() {
+            self.flushed_frames += 1;
+            super::trace_flush_commands(
+                self.backend_name(),
+                self.flushed_frames,
+                commands,
+                |tag| self.map_native_widget(tag),
+            );
+            for cmd in commands {
+                self.apply_command_to_gtk(cmd);
+            }
         }
         if self.css_dirty {
             let stylesheet = self.rebuild_css_stylesheet();

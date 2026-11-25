@@ -1,13 +1,8 @@
 .pokemon-card {
-  background: #1e293b;
-  color: #f8fafc;
+  background: var(--surface-card);
+  color: var(--text-primary);
   padding: 18px;
   gap: 10px;
   border-radius: 14px;
-}
-
-.poke-num {
-  color: #94a3b8;
-  font-size: 13px;
-  font-weight: 800;
+  transition: background 180ms ease;
 }

@@ -36,6 +36,8 @@ fn push_png_chunk(out: &mut Vec<u8>, tag: [u8; 4], data: &[u8]) {
 
 /// Encodes a solid RGBA PNG image using uncompressed DEFLATE stored blocks (zero dependencies).
 pub(super) fn encode_solid_png(width: u32, height: u32, rgba: [u8; 4]) -> Vec<u8> {
+    let width = width.max(1);
+    let height = height.max(1);
     let w_usize = usize::try_from(width).unwrap_or(1);
     let h_usize = usize::try_from(height).unwrap_or(1);
     let mut row = Vec::with_capacity(w_usize * 4 + 1);
@@ -86,5 +88,9 @@ mod tests {
         assert!(png.windows(4).any(|w| w == b"IHDR"));
         assert!(png.windows(4).any(|w| w == b"IDAT"));
         assert!(png.ends_with(b"IEND\xae\x42\x60\x82"));
+
+        let clamped = encode_solid_png(0, 0, [0, 0, 0, 255]);
+        assert!(clamped.windows(4).any(|w| w == b"IDAT"));
+        assert!(clamped.ends_with(b"IEND\xae\x42\x60\x82"));
     }
 }

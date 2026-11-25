@@ -407,8 +407,54 @@ impl GtkLinuxBackend {
         }
     }
 
+    fn apply_range_attribute(&mut self, node: NodeId, key: &str, value: &str) -> bool {
+        if !matches!(key, "min" | "max") {
+            return false;
+        }
+        let Ok(bound) = value.trim().parse::<f64>() else {
+            return false;
+        };
+        let Some(w) = self.widgets.get_mut(&node) else {
+            return false;
+        };
+        if !matches!(
+            w.kind,
+            GtkWidgetType::Slider | GtkWidgetType::SpinButton | GtkWidgetType::LevelBar
+        ) {
+            return false;
+        }
+        if key == "min" {
+            w.value_range.0 = bound;
+            if w.value_range.0 > w.value_range.1 {
+                w.value_range.1 = bound;
+            }
+        } else {
+            w.value_range.1 = bound;
+            if w.value_range.1 < w.value_range.0 {
+                w.value_range.0 = bound;
+            }
+        }
+        let kind = w.kind;
+        let (min_v, max_v) = w.value_range;
+        if let (Some(gtk), Some(handle)) = (&self.gtk, w.handle) {
+            match kind {
+                GtkWidgetType::Slider => gtk.set_slider_range(handle, min_v, max_v),
+                GtkWidgetType::SpinButton => gtk.set_spin_button_range(handle, min_v, max_v),
+                GtkWidgetType::LevelBar => {
+                    gtk.set_level_bar_min(handle, min_v);
+                    gtk.set_level_bar_max(handle, max_v);
+                }
+                _ => {}
+            }
+        }
+        true
+    }
+
     pub(super) fn apply_native_attribute(&mut self, node: NodeId, key: &str, value: &str) {
         if self.apply_metadata_attribute(node, key, value) {
+            return;
+        }
+        if self.apply_range_attribute(node, key, value) {
             return;
         }
         let (Some(gtk), Some(widget)) = (&self.gtk, self.widgets.get(&node)) else {
@@ -558,11 +604,6 @@ impl GtkLinuxBackend {
                     gtk.set_level_bar_value(handle, v);
                 }
             }
-            (GtkWidgetType::LevelBar, "max") => {
-                if let Ok(m) = value.trim().parse::<f64>() {
-                    gtk.set_level_bar_max(handle, m);
-                }
-            }
             _ => Self::apply_extended_input_attribute(gtk, kind, handle, key, value),
         }
     }
@@ -594,11 +635,6 @@ impl GtkLinuxBackend {
             (GtkWidgetType::SpinButton, "value") => {
                 if let Ok(v) = value.trim().parse::<f64>() {
                     gtk.set_spin_button_value(handle, v);
-                }
-            }
-            (GtkWidgetType::SpinButton, "max") => {
-                if let Ok(m) = value.trim().parse::<f64>() {
-                    gtk.set_spin_button_range(handle, 0.0, m);
                 }
             }
             (GtkWidgetType::SpinButton, "step") => {

@@ -280,6 +280,18 @@ describe('Phase 5 — @ng-desktop/router, @ng-desktop/http & @ng-desktop/desktop
     expect(resource.reload()).toBe(false);
     expect(resource.status()).toBe('error');
     expect(resource.error()).toMatchObject({ status: 404 });
+
+    TestBed.runInInjectionContext(() => {
+      const reactiveId = signal<number | undefined>(1);
+      const reactiveResource = createNativeHttpResource<string>(
+        () => (reactiveId() ? `https://api.example.test/v2/items/${reactiveId()}` : undefined),
+        { map: (raw) => (raw as { name: string }).name.toUpperCase() },
+      );
+      expect(reactiveResource.value()).toBe('ALPHA');
+      reactiveId.set(25);
+      TestBed.tick();
+      expect(reactiveResource.value()).toBe('WIDGET');
+    });
   });
 
   it('provides NativeSqliteService liveQuery, NativeNetworkService, TitleStrategy, and RouteReuseStrategy', () => {
@@ -333,13 +345,23 @@ describe('Phase 5 — @ng-desktop/router, @ng-desktop/http & @ng-desktop/desktop
     } as unknown as ActivatedRouteSnapshot;
 
     expect(reuse.shouldDetach(mockSnapshot)).toBe(true);
-    const fakeHandle = { componentRef: 'detail-25' } as unknown as DetachedRouteHandle;
+    let destroyedAttached = false;
+    const fakeHandle = {
+      componentRef: {
+        destroy: () => {
+          destroyedAttached = true;
+        },
+      },
+    } as unknown as DetachedRouteHandle;
     reuse.store(mockSnapshot, fakeHandle);
     expect(reuse.shouldAttach(mockSnapshot)).toBe(true);
-    expect(reuse.retrieve(mockSnapshot)).toBe(fakeHandle);
     expect(reuse.cachedRoutes()).toEqual(['/detail/25']);
+    expect(reuse.retrieve(mockSnapshot)).toBe(fakeHandle);
+    expect(reuse.shouldAttach(mockSnapshot)).toBe(false);
+    expect(reuse.cachedRoutes()).toEqual([]);
     reuse.clearCache();
     expect(reuse.cachedRoutes()).toEqual([]);
+    expect(destroyedAttached).toBe(false);
   });
 
   it('supports createNativeHttpResource.reloadAsync with stale request cancellation', async () => {

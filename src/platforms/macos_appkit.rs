@@ -477,6 +477,7 @@ pub struct MacOsAppKitBackend {
     pub flushed_frames: u64,
     state: NativeSceneState,
     layout_rects: HashMap<NodeId, LayoutRect>,
+    layout_dirty: std::cell::Cell<bool>,
     ffi_driver: AppKitFfiDriver,
 }
 
@@ -511,6 +512,7 @@ impl MacOsAppKitBackend {
             flushed_frames: 0,
             state: NativeSceneState::default(),
             layout_rects: HashMap::new(),
+            layout_dirty: std::cell::Cell::new(false),
             ffi_driver: AppKitFfiDriver::new(false),
         }
     }
@@ -520,6 +522,7 @@ impl MacOsAppKitBackend {
             flushed_frames: 0,
             state: NativeSceneState::default(),
             layout_rects: HashMap::new(),
+            layout_dirty: std::cell::Cell::new(false),
             ffi_driver: AppKitFfiDriver::new(true),
         }
     }
@@ -639,9 +642,17 @@ impl MacOsAppKitBackend {
             merged.extend(self.state.drain_events());
             let coalesced = coalesce_frame_events(merged);
             self.state.record_window_resize_events(&coalesced);
+            if coalesced.iter().any(|ev| ev.event_name == "resize") {
+                self.layout_dirty.set(true);
+            }
             return coalesced;
         }
-        self.state.drain_events()
+        let events = self.state.drain_events();
+        self.state.record_window_resize_events(&events);
+        if events.iter().any(|ev| ev.event_name == "resize") {
+            self.layout_dirty.set(true);
+        }
+        events
     }
 
     fn map_appkit_tag(tag: &str) -> &'static str {
@@ -676,6 +687,7 @@ impl MacOsAppKitBackend {
             "ng-clamp" | "adw-clamp" => "NSBox",
             "ng-list" | "ng-table" | "gtk-list-box" | "gtk-list-view" => "NSTableView",
             "ng-popover" | "gtk-popover" | "ng-menu" => "NSPopover",
+            "ng-anchor" | "#comment" => "NSAnchorComment",
             _ => "NSView",
         }
     }
@@ -691,41 +703,44 @@ impl PlatformBackend for MacOsAppKitBackend {
     }
 
     fn flush_commands(&mut self, commands: &[RenderCommand]) {
-        if commands.is_empty() {
+        let layout_dirty = self.layout_dirty.replace(false);
+        if commands.is_empty() && !layout_dirty {
             return;
         }
-        self.flushed_frames += 1;
-        super::trace_flush_commands(
-            self.backend_name(),
-            self.flushed_frames,
-            commands,
-            Self::map_appkit_tag,
-        );
-        for cmd in commands {
-            self.state
-                .apply_command(cmd, "NSAnchorComment", Self::map_appkit_tag);
-            match cmd {
-                RenderCommand::CreateWidget { id, tag } => {
-                    self.ffi_driver
-                        .register_node(*id, Self::map_appkit_tag(tag));
+        if !commands.is_empty() {
+            self.flushed_frames += 1;
+            super::trace_flush_commands(
+                self.backend_name(),
+                self.flushed_frames,
+                commands,
+                Self::map_appkit_tag,
+            );
+            for cmd in commands {
+                self.state
+                    .apply_command(cmd, "NSAnchorComment", Self::map_appkit_tag);
+                match cmd {
+                    RenderCommand::CreateWidget { id, tag } => {
+                        self.ffi_driver
+                            .register_node(*id, Self::map_appkit_tag(tag));
+                    }
+                    RenderCommand::SetAttribute { node, key, value } if key == "event-mask" => {
+                        self.ffi_driver
+                            .update_event_mask(*node, EventMask::parse_attr(value));
+                    }
+                    RenderCommand::SetAttribute { node, key, value }
+                        if key == "prevent-close" && NativeSceneState::parse_truthy_attr(value) =>
+                    {
+                        self.ffi_driver
+                            .update_event_mask(*node, EventMask::CLOSE_REQUEST);
+                    }
+                    RenderCommand::DestroyWidget { id } => {
+                        self.ffi_driver.unregister_node(*id);
+                    }
+                    _ => {}
                 }
-                RenderCommand::SetAttribute { node, key, value } if key == "event-mask" => {
-                    self.ffi_driver
-                        .update_event_mask(*node, EventMask::parse_attr(value));
-                }
-                RenderCommand::SetAttribute { node, key, value }
-                    if key == "prevent-close" && NativeSceneState::parse_truthy_attr(value) =>
-                {
-                    self.ffi_driver
-                        .update_event_mask(*node, EventMask::CLOSE_REQUEST);
-                }
-                RenderCommand::DestroyWidget { id } => {
-                    self.ffi_driver.unregister_node(*id);
-                }
-                _ => {}
+                #[cfg(target_os = "macos")]
+                self.ffi_driver.apply_live_command(cmd);
             }
-            #[cfg(target_os = "macos")]
-            self.ffi_driver.apply_live_command(cmd);
         }
         self.recompute_layout();
         #[cfg(target_os = "macos")]

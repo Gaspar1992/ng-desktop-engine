@@ -191,6 +191,13 @@ describe('FenwickOffsetTree & variable-height / 2D grid virtualization', () => {
     expect(scrolledCmds).toContain('scroll-to 0,');
     expect(fixture.componentInstance.lastRange()!.startIndex).toBeGreaterThanOrEqual(28);
 
+    // Repeating scrollToIndex(30) after manual scroll must re-emit scroll-to
+    vList.onNativeScroll({ scrollTop: 0, clientHeight: 240 });
+    vList.scrollToIndex(30);
+    fixture.detectChanges();
+    expect(bridge.__drainQueue()).toContain('scroll-to 0,');
+    expect(vList.effectiveHeight()).toBe(240);
+
     bridge.__dispatchEvent(scrollId, 'scroll-bottom', {});
     expect(fixture.componentInstance.bottomCount()).toBe(1);
     fixture.destroy();

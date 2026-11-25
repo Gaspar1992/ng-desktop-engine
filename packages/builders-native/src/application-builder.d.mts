@@ -10,6 +10,7 @@ export interface ArchitectBuilderContextLike {
   addTeardown?: (teardown: () => void | Promise<void>) => void;
 }
 
+/** Options accepted by `@ng-desktop/builders:application` in `angular.json` or CLI overrides. */
 export interface NativeApplicationBuilderOptions {
   cwd?: string;
   configPath?: string;
@@ -27,6 +28,7 @@ export interface NativeApplicationBuilderOptions {
   packageFormats?: string[];
 }
 
+/** Result emitted after compiling `.ngb`, server routes, permissions manifest, and runtime config. */
 export interface NativeApplicationBuilderOutput {
   success: boolean;
   projectName: string;
@@ -49,6 +51,7 @@ export function createArchitectBuilder<TOpt, TOut>(
   handlerFn: (options?: TOpt, context?: ArchitectBuilderContextLike) => Promise<TOut>,
 ): ArchitectBuilderObject<TOpt, TOut>;
 
+/** Executes the native Angular application compiler + permission analyzer pipeline. */
 export function runNativeApplicationBuilder(
   options?: NativeApplicationBuilderOptions,
   context?: ArchitectBuilderContextLike,

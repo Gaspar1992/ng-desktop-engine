@@ -1,6 +1,7 @@
 import {
   buildStyleRuleKey,
   emitStyleInstruction,
+  extractCssVariables,
   formatStyleRuleExtensions,
   parseStylesCss,
 } from './style-compiler.mjs';
@@ -141,6 +142,39 @@ describe('Native style compiler (postcss AST)', () => {
     );
     expect(emitStyleInstruction(cardRule)).toBe(
       'style grid-card none none 0 0 min-width=160 orientation=vertical hexpand=true',
+    );
+  });
+
+  it('propagates shared :root CSS variables and light/dark overrides into child stylesheets', () => {
+    const shared = extractCssVariables(`
+      :root {
+        --surface-card: #1e293b;
+        --text-primary: #f8fafc;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --surface-card: #ffffff;
+          --text-primary: #0f172a;
+        }
+      }
+    `);
+    const childRules = parseStylesCss(
+      `
+      .panel-card {
+        background: var(--surface-card);
+        color: var(--text-primary);
+        padding: 14px;
+        border-radius: 12px;
+      }
+      `,
+      'detail.css',
+      shared,
+    );
+    const base = childRules.find((r) => !r.mediaTheme);
+    const light = childRules.find((r) => r.mediaTheme === 'light');
+    expect(emitStyleInstruction(base!)).toBe('style panel-card #1e293b #f8fafc 14 0 radius=12');
+    expect(emitStyleInstruction(light!)).toBe(
+      'style panel-card #ffffff #0f172a 0 0 media-theme=light',
     );
   });
 });

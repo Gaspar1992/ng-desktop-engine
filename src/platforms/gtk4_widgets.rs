@@ -150,6 +150,15 @@ impl Gtk4Sys {
         }
     }
 
+    pub fn set_slider_range(&self, slider: GtkHandle, min: f64, max: f64) {
+        if let Some(set_range) = self.gtk_range_set_range {
+            let (lo, hi) = if min <= max { (min, max) } else { (max, min) };
+            unsafe {
+                set_range(slider.0, lo, hi);
+            }
+        }
+    }
+
     pub fn create_drop_down(&self) -> GtkHandle {
         let null_list: [*const std::ffi::c_char; 1] = [std::ptr::null()];
         unsafe { GtkHandle((self.gtk_drop_down_new_from_strings)(null_list.as_ptr())) }
@@ -196,6 +205,14 @@ impl Gtk4Sys {
     pub fn set_level_bar_value(&self, bar: GtkHandle, val: f64) {
         unsafe {
             (self.gtk_level_bar_set_value)(bar.0, val);
+        }
+    }
+
+    pub fn set_level_bar_min(&self, bar: GtkHandle, min: f64) {
+        if let Some(set_min) = self.gtk_level_bar_set_min_value {
+            unsafe {
+                set_min(bar.0, min);
+            }
         }
     }
 

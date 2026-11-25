@@ -14,17 +14,20 @@ import {
   NativeServerXdgKind,
 } from './event';
 
+/** Route entry pairing an HTTP method, URL pattern (static, `:param`, or `*slug`), and handler. */
 export interface NativeServerRouteDefinition {
   method: NativeServerMethod;
   pattern: string;
   handler: NativeEventHandler;
 }
 
+/** In-process router dispatching local `HttpClient` requests inside the Rust server worker. */
 export interface NativeServerRouter {
   handle(request: NativeServerRequest): Promise<NativeServerResponse>;
   getRoutes(): readonly NativeServerRouteDefinition[];
 }
 
+/** Low-level host bridge contract exposed to `server.bundle.js` via `globalThis.__NG_NATIVE_SERVER_HOST__`. */
 export interface NativeServerHostBridge {
   sqliteOpen?(path: string): string;
   sqliteExecute(sql: string, params?: readonly NativeServerSqlParam[]): boolean;
@@ -301,6 +304,7 @@ function serializeResult(result: unknown, event: NativeServerEvent): NativeServe
   return { status, statusText, headers, body: JSON.stringify(result) };
 }
 
+/** Creates an in-process router sorting routes by specificity (`static > :param > *wildcard`). */
 export function createNativeServerRouter(
   routes: readonly NativeServerRouteDefinition[],
   contextFactory: () => Omit<NativeServerContext, 'params' | 'query'> = createHostServerContext,
@@ -407,6 +411,7 @@ export function createNativeServerRouter(
   };
 }
 
+/** Registers the compiled server router globally on `__NG_NATIVE_SERVER_ROUTER__` for Rust IPC dispatch. */
 export function registerNativeServerApp(
   routes: readonly NativeServerRouteDefinition[],
 ): NativeServerRouter {

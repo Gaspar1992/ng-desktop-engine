@@ -1,10 +1,9 @@
 import {
   EnvironmentProviders,
-  Inject,
+  inject,
   Injectable,
   InjectionToken,
   makeEnvironmentProviders,
-  Optional,
 } from '@angular/core';
 import { ensureNgNativeBridge, NgNativeBridge } from './bridge';
 import { getNativeActiveElement, NativeElementNode, NativeEventListener } from './native-element';
@@ -56,6 +55,14 @@ export const NATIVE_BRIDGE = new InjectionToken<NgNativeBridge>('NATIVE_BRIDGE',
   factory: () => ensureNgNativeBridge(),
 });
 
+function resolveOptionalBridge(): NgNativeBridge {
+  try {
+    return inject(NATIVE_BRIDGE, { optional: true }) ?? ensureNgNativeBridge();
+  } catch {
+    return ensureNgNativeBridge();
+  }
+}
+
 /**
  * Web `Storage`-compatible persistence adapter backed by the native SQLite engine (`ng_native_storage`)
  * and an in-memory map, enabling `@ngrx/store` meta-reducers and state hydration without a browser DOM.
@@ -63,11 +70,9 @@ export const NATIVE_BRIDGE = new InjectionToken<NgNativeBridge>('NATIVE_BRIDGE',
 @Injectable({ providedIn: 'root' })
 export class NativeStorage implements Storage {
   private readonly store = new Map<string, string>();
-  private readonly bridge: NgNativeBridge;
-  private nextId = 1;
+  private readonly bridge: NgNativeBridge = resolveOptionalBridge();
 
-  constructor(@Optional() @Inject(NATIVE_BRIDGE) bridge?: NgNativeBridge | null) {
-    this.bridge = bridge ?? ensureNgNativeBridge();
+  constructor() {
     this.ensureTable();
   }
 
@@ -106,13 +111,11 @@ export class NativeStorage implements Storage {
 
   setItem(key: string, value: string): void {
     const strValue = String(value);
-    const idNum = this.nextId++;
     this.store.set(key, strValue);
     try {
       this.bridge.sqliteExecute(
         `INSERT OR REPLACE INTO ng_native_storage (key, val) VALUES ('${escapeSqlLiteral(key)}', '${escapeSqlLiteral(strValue)}')`,
       );
-      this.bridge.setAttribute('__ng_native_storage__', `k_${idNum}`, key);
     } catch {
       // In-memory store remains consistent when disk persistence is unavailable
     }
@@ -146,11 +149,7 @@ export class NativeStorage implements Storage {
 @Injectable({ providedIn: 'root' })
 export class NativeAriaAnnouncer {
   private readonly announcements: NativeAriaAnnouncement[] = [];
-  private readonly bridge: NgNativeBridge;
-
-  constructor(@Optional() @Inject(NATIVE_BRIDGE) bridge?: NgNativeBridge | null) {
-    this.bridge = bridge ?? ensureNgNativeBridge();
-  }
+  private readonly bridge: NgNativeBridge = resolveOptionalBridge();
 
   announce(message: string, politeness: AriaPoliteness = 'polite'): Promise<void> {
     const clean = String(message ?? '').trim();

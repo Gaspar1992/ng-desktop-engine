@@ -211,7 +211,12 @@ impl WidgetKind {
             } => match key {
                 "value" => {
                     if let Ok(v) = value.trim().parse::<i64>() {
-                        *val = v.clamp(*min, *max);
+                        let (lo, hi) = if *min <= *max {
+                            (*min, *max)
+                        } else {
+                            (*max, *min)
+                        };
+                        *val = v.clamp(lo, hi);
                     }
                 }
                 "min" => {
@@ -280,7 +285,12 @@ impl WidgetKind {
             } => match key {
                 "value" => {
                     if let Ok(v) = value.trim().parse::<i64>() {
-                        *val = v.clamp(*min, *max);
+                        let (lo, hi) = if *min <= *max {
+                            (*min, *max)
+                        } else {
+                            (*max, *min)
+                        };
+                        *val = v.clamp(lo, hi);
                     }
                 }
                 "min" => {
@@ -366,5 +376,23 @@ impl WidgetKind {
     fn parse_px(raw: &str) -> Result<u32, std::num::ParseIntError> {
         let trimmed = raw.trim().trim_end_matches("px").trim();
         trimmed.parse::<u32>()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn slider_and_spin_button_do_not_panic_when_min_temporarily_exceeds_max() {
+        let mut slider = WidgetKind::from_tag("ng-slider").unwrap();
+        slider.set_attribute("min", "150");
+        slider.set_attribute("value", "175");
+        assert!(matches!(slider, WidgetKind::Slider { value: 150, .. }));
+
+        let mut spin = WidgetKind::from_tag("ng-spin-button").unwrap();
+        spin.set_attribute("min", "200");
+        spin.set_attribute("value", "250");
+        assert!(matches!(spin, WidgetKind::SpinButton { value: 200, .. }));
     }
 }

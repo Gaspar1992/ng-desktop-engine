@@ -17,6 +17,7 @@ import { compileServerBundle, discoverServerRoutes, runEsbuildBuild } from './se
 import {
   buildStyleRuleKey,
   emitStyleInstruction,
+  extractCssVariables,
   formatStyleRuleExtensions,
   parseStylesCss,
 } from './style-compiler.mjs';
@@ -212,8 +213,8 @@ function emitAppJsBundleIfPresent(outDir, projectName, allStyleRules, iconMeta) 
   return entryBundleFile;
 }
 
-function collectComponentStyleRules(compMeta, baseDir) {
-  const rules = [];
+function collectComponentCssSources(compMeta, baseDir) {
+  const sources = [];
   const stylePaths = [];
   if (compMeta.styleUrl) {
     stylePaths.push(compMeta.styleUrl);
@@ -224,13 +225,21 @@ function collectComponentStyleRules(compMeta, baseDir) {
   for (const relCss of stylePaths) {
     const absCss = resolve(baseDir, relCss);
     if (existsSync(absCss)) {
-      rules.push(...parseStylesCss(readFileSync(absCss, 'utf8'), relCss));
+      sources.push({ css: readFileSync(absCss, 'utf8'), from: relCss });
     }
   }
   if (Array.isArray(compMeta.styles)) {
     for (const inlineCss of compMeta.styles) {
-      rules.push(...parseStylesCss(inlineCss, `${compMeta.selector}.inline.css`));
+      sources.push({ css: inlineCss, from: `${compMeta.selector}.inline.css` });
     }
+  }
+  return sources;
+}
+
+function collectComponentStyleRules(compMeta, baseDir, sharedVars = null) {
+  const rules = [];
+  for (const { css, from } of collectComponentCssSources(compMeta, baseDir)) {
+    rules.push(...parseStylesCss(css, from, sharedVars));
   }
   return rules;
 }
@@ -284,7 +293,26 @@ export function compileBundle({
   const iconAbsPath = resolve(rootDir, iconRelPath);
 
   const componentRegistry = {};
-  const collectedRules = [...collectComponentStyleRules(component, appDir)];
+  const sharedVars = {
+    baseVars: new Map(),
+    lightVars: new Map(),
+    darkVars: new Map(),
+  };
+  const globalStylesPath = resolve(sourceRootAbs, 'styles.css');
+  if (existsSync(globalStylesPath)) {
+    extractCssVariables(readFileSync(globalStylesPath, 'utf8'), 'styles.css', sharedVars);
+  }
+  for (const { css, from } of collectComponentCssSources(component, appDir)) {
+    extractCssVariables(css, from, sharedVars);
+  }
+
+  const collectedRules = [];
+  if (existsSync(globalStylesPath)) {
+    collectedRules.push(
+      ...parseStylesCss(readFileSync(globalStylesPath, 'utf8'), 'styles.css', sharedVars),
+    );
+  }
+  collectedRules.push(...collectComponentStyleRules(component, appDir, sharedVars));
 
   const candidateFiles = collectComponentTsFiles(appDir, appDir);
   for (const file of candidateFiles) {
@@ -301,7 +329,7 @@ export function compileBundle({
           : meta.component.templateUrl && existsSync(resolve(compDir, meta.component.templateUrl))
             ? readFileSync(resolve(compDir, meta.component.templateUrl), 'utf8')
             : '';
-      collectedRules.push(...collectComponentStyleRules(meta.component, compDir));
+      collectedRules.push(...collectComponentStyleRules(meta.component, compDir, sharedVars));
       componentRegistry[meta.component.selector] = {
         templateHtml,
         templateUrl: meta.component.templateUrl || `${meta.component.selector}.html`,

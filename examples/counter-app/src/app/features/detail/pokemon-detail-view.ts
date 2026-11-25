@@ -1,13 +1,4 @@
-import {
-  Component,
-  computed,
-  effect,
-  input,
-  model,
-  output,
-  signal,
-  untracked,
-} from '@angular/core';
+import { Component, computed, input, model, output } from '@angular/core';
 import { form } from '@angular/forms/signals';
 import { NATIVE_SIGNAL_FORM_DIRECTIVES } from '@ng-desktop/forms';
 import { NATIVE_UI_DIRECTIVES } from '@ng-desktop/platform';
@@ -28,8 +19,7 @@ export class PokemonDetailView {
   readonly note = model<string>('');
   readonly noteStatus = input<string>('');
 
-  readonly noteModel = signal({ note: '' });
-  readonly noteForm = form(this.noteModel);
+  readonly noteForm = form(this.note);
 
   readonly totalStats = computed(() => {
     const current = this.detail();
@@ -41,20 +31,4 @@ export class PokemonDetailView {
   readonly next = output<void>();
   readonly toggleFavorite = output<string>();
   readonly saveNote = output<string>();
-
-  constructor() {
-    effect(() => {
-      const incoming = this.note();
-      if (untracked(() => this.noteModel().note) !== incoming) {
-        this.noteModel.set({ note: incoming });
-      }
-    });
-
-    effect(() => {
-      const edited = this.noteModel().note;
-      if (untracked(() => this.note()) !== edited) {
-        this.note.set(edited);
-      }
-    });
-  }
 }

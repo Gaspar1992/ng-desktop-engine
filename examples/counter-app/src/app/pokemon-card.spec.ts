@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNativePlatform } from '@ng-desktop/platform';
-import { PokemonCard } from './pokemon-card';
+import { PokemonCard } from './shared/ui/pokemon-card/pokemon-card';
 
 describe('PokemonCard', () => {
   let fixture: ComponentFixture<PokemonCard>;

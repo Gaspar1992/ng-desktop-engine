@@ -99,6 +99,21 @@ impl QuickJsEngine {
     fn eval_raw(&self, js_code: &str) -> Result<String, EngineError> {
         Self::eval_with_context(&self.runtime, &self.context, js_code)
     }
+
+    fn eval_and_drain_with_microtasks(&self, call: &str) -> Result<String, EngineError> {
+        let primary = self.eval_raw(call)?;
+        let followup = self.eval_raw("globalThis.__NG_NATIVE__.__drainQueue()")?;
+        let mut combined = String::new();
+        for chunk in [primary.trim(), followup.trim()] {
+            if !chunk.is_empty() && chunk != "undefined" {
+                if !combined.is_empty() {
+                    combined.push('\n');
+                }
+                combined.push_str(chunk);
+            }
+        }
+        Ok(combined)
+    }
 }
 
 impl JsEngineBackend for QuickJsEngine {
@@ -150,7 +165,7 @@ impl JsEngineBackend for QuickJsEngine {
         let call = format!(
             "globalThis.__NG_NATIVE__.__dispatchAndDrain({node_var:?}, {event_name:?}, {payload_js})"
         );
-        self.eval_raw(&call)
+        self.eval_and_drain_with_microtasks(&call)
     }
 
     fn tick_and_drain(
@@ -164,7 +179,7 @@ impl JsEngineBackend for QuickJsEngine {
             let completions_js = format_completions_js(completions);
             format!("globalThis.__NG_NATIVE__.__tickAndDrain({now_ms}, {completions_js})")
         };
-        self.eval_raw(&call)
+        self.eval_and_drain_with_microtasks(&call)
     }
 
     fn drain_native_commands(&mut self) -> Result<String, EngineError> {
@@ -215,5 +230,28 @@ mod tests {
             .dispatch_and_drain("btn", "clicked", &EventPayload::None)
             .unwrap();
         assert_eq!(after_click.trim(), "text lbl Count: 15");
+    }
+
+    #[test]
+    fn quickjs_drains_promise_microtasks_within_the_same_dispatch_tick() {
+        let mut qjs = QuickJsEngine::new();
+        let script = r#"
+            __NG_NATIVE__.createElement("lbl", "ng-label");
+            __NG_NATIVE__.createElement("btn", "ng-button");
+            __NG_NATIVE__.listen("btn", "clicked", () => {
+                Promise.resolve("microtask-ready").then((msg) => {
+                    const bytes = new TextEncoder().encode("Pokémon 🚀");
+                    const roundtrip = new TextDecoder().decode(bytes);
+                    __NG_NATIVE__.setText("lbl", `${msg}:${roundtrip}`);
+                });
+            });
+        "#;
+        qjs.eval_script(script).unwrap();
+        let _ = qjs.drain_native_commands().unwrap();
+
+        let after_click = qjs
+            .dispatch_and_drain("btn", "clicked", &EventPayload::None)
+            .unwrap();
+        assert_eq!(after_click.trim(), "text lbl microtask-ready:Pokémon 🚀");
     }
 }

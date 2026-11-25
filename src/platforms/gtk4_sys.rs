@@ -102,6 +102,7 @@ pub struct Gtk4Sys {
     pub(super) gtk_scale_new_with_range: unsafe extern "C" fn(c_int, f64, f64, f64) -> *mut c_void,
     pub(super) gtk_range_set_value: unsafe extern "C" fn(*mut c_void, f64),
     pub(super) gtk_range_get_value: unsafe extern "C" fn(*mut c_void) -> f64,
+    pub(super) gtk_range_set_range: Option<unsafe extern "C" fn(*mut c_void, f64, f64)>,
     pub(super) gtk_drop_down_new_from_strings:
         unsafe extern "C" fn(*const *const c_char) -> *mut c_void,
     pub(super) gtk_drop_down_set_selected: unsafe extern "C" fn(*mut c_void, c_uint),
@@ -138,6 +139,7 @@ pub struct Gtk4Sys {
     pub(super) gtk_picture_set_keep_aspect_ratio: unsafe extern "C" fn(*mut c_void, c_int),
     pub(super) gtk_level_bar_new: unsafe extern "C" fn() -> *mut c_void,
     pub(super) gtk_level_bar_set_value: unsafe extern "C" fn(*mut c_void, f64),
+    pub(super) gtk_level_bar_set_min_value: Option<unsafe extern "C" fn(*mut c_void, f64)>,
     pub(super) gtk_level_bar_set_max_value: unsafe extern "C" fn(*mut c_void, f64),
     pub(super) gtk_spinner_new: unsafe extern "C" fn() -> *mut c_void,
     pub(super) gtk_spinner_set_spinning: unsafe extern "C" fn(*mut c_void, c_int),
@@ -427,6 +429,7 @@ impl Gtk4Sys {
                 gtk_scale_new_with_range: Self::load_fn(gtk_lib, c"gtk_scale_new_with_range")?,
                 gtk_range_set_value: Self::load_fn(gtk_lib, c"gtk_range_set_value")?,
                 gtk_range_get_value: Self::load_fn(gtk_lib, c"gtk_range_get_value")?,
+                gtk_range_set_range: Self::load_fn(gtk_lib, c"gtk_range_set_range"),
                 gtk_drop_down_new_from_strings: Self::load_fn(
                     gtk_lib,
                     c"gtk_drop_down_new_from_strings",
@@ -498,6 +501,7 @@ impl Gtk4Sys {
                 )?,
                 gtk_level_bar_new: Self::load_fn(gtk_lib, c"gtk_level_bar_new")?,
                 gtk_level_bar_set_value: Self::load_fn(gtk_lib, c"gtk_level_bar_set_value")?,
+                gtk_level_bar_set_min_value: Self::load_fn(gtk_lib, c"gtk_level_bar_set_min_value"),
                 gtk_level_bar_set_max_value: Self::load_fn(
                     gtk_lib,
                     c"gtk_level_bar_set_max_value",

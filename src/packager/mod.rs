@@ -1,3 +1,6 @@
+//! Native desktop distribution staging and real installer compilation (`.deb`, `AppImage`,
+//! `Flatpak`, Windows `.msix`, macOS `.app` / `.dmg`), `AppArmor` profiles, and runtime manifests.
+
 pub mod builders;
 mod png;
 
@@ -10,16 +13,45 @@ pub use builders::{
 };
 
 use crate::config::{AngularNativeConfig, AppPermissions};
+use crate::desktop::http_codec::escape_json;
 use std::fs;
 use std::path::Path;
+
+fn escape_xml(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    for ch in raw.chars() {
+        match ch {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+/// Generates a Freedesktop `.desktop` launcher specification for Linux desktop environments
+/// (GNOME, KDE Plasma, Hyprland, Sway, Cosmic) with explicit `Exec` and `Icon` targets.
+#[must_use]
+pub fn generate_desktop_entry_for(
+    app_id: &str,
+    display_name: &str,
+    exec_cmd: &str,
+    icon_name: &str,
+) -> String {
+    format!(
+        "[Desktop Entry]\nType=Application\nName={display_name}\nExec={exec_cmd}\nIcon={icon_name}\nStartupWMClass={app_id}\nCategories=Utility;Development;\nTerminal=false\n"
+    )
+}
 
 /// Generates a Freedesktop `.desktop` launcher specification for Linux desktop environments
 /// (GNOME, KDE Plasma, Hyprland, Sway, Cosmic).
 #[must_use]
 pub fn generate_desktop_entry(app_id: &str, display_name: &str) -> String {
-    format!(
-        "[Desktop Entry]\nType=Application\nName={display_name}\nExec=/usr/bin/{app_id}\nIcon={app_id}\nStartupWMClass={app_id}\nCategories=Utility;Development;\nTerminal=false\n"
-    )
+    let exec_cmd = format!("/usr/bin/{app_id}");
+    generate_desktop_entry_for(app_id, display_name, &exec_cmd, app_id)
 }
 
 /// Generates a minimal Debian (`DEBIAN/control`) metadata specification using default permissions.
@@ -159,11 +191,11 @@ pub fn generate_runtime_manifest(cfg: &AngularNativeConfig, version: &str) -> St
             "  \"permissions\": {}\n",
             "}}"
         ),
-        cfg.project_name,
-        version,
-        cfg.target_platform,
-        cfg.output_path,
-        cfg.icon_search_dir,
+        escape_json(&cfg.project_name),
+        escape_json(version),
+        escape_json(&cfg.target_platform),
+        escape_json(&cfg.output_path),
+        escape_json(&cfg.icon_search_dir),
         cfg.permissions.to_json()
     )
 }
@@ -202,12 +234,14 @@ pub fn stage_linux_distribution(
     let apprun_path = appimage_dir.join("AppRun");
     let flatpak_path = flatpak_dir.join(format!("{}.yml", cfg.project_name));
 
+    let deb_pkg_name = builders::sanitize_debian_package_name(&cfg.project_name);
+    let deb_arch = debian_arch_for_host();
     fs::write(
         &control_path,
         generate_debian_control_with_permissions(
-            &cfg.project_name,
+            &deb_pkg_name,
             version,
-            "amd64",
+            deb_arch,
             &cfg.permissions,
         ),
     )
@@ -255,10 +289,18 @@ pub fn generate_windows_appx_manifest(app_id: &str, display_name: &str, version:
 }
 
 fn normalize_msix_version(version: &str) -> String {
-    let core = version.split(['-', '+']).next().unwrap_or("0.1.0");
-    let mut parts: Vec<&str> = core.split('.').filter(|s| !s.is_empty()).collect();
+    let trimmed = version.trim().trim_start_matches(['v', 'V']);
+    let core = trimmed.split(['-', '+']).next().unwrap_or("0.1.0");
+    let mut parts: Vec<String> = core
+        .split('.')
+        .filter(|s| !s.is_empty())
+        .map(|seg| {
+            seg.parse::<u16>()
+                .map_or_else(|_| String::from("0"), |n| n.to_string())
+        })
+        .collect();
     while parts.len() < 4 {
-        parts.push("0");
+        parts.push(String::from("0"));
     }
     parts.truncate(4);
     parts.join(".")
@@ -274,7 +316,10 @@ pub fn generate_windows_appx_manifest_with_permissions(
     perms: &AppPermissions,
 ) -> String {
     let msix_version = normalize_msix_version(version);
-    let identity_suffix = app_id.replace('_', "-");
+    let identity_suffix = escape_xml(&app_id.replace('_', "-"));
+    let escaped_name = escape_xml(display_name);
+    let escaped_app_id = escape_xml(app_id);
+    let arch = msix_arch_for_host();
     let mut capabilities = Vec::new();
     if perms.network {
         capabilities.push("    <Capability Name=\"internetClient\" />");
@@ -308,9 +353,9 @@ pub fn generate_windows_appx_manifest_with_permissions(
         r##"<?xml version="1.0" encoding="utf-8"?>
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
          xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"{rescap_ns}>
-  <Identity Name="NgNative.{identity_suffix}" Publisher="CN=NgNative" Version="{msix_version}" ProcessorArchitecture="x64" />
+  <Identity Name="NgNative.{identity_suffix}" Publisher="CN=NgNative" Version="{msix_version}" ProcessorArchitecture="{arch}" />
   <Properties>
-    <DisplayName>{display_name}</DisplayName>
+    <DisplayName>{escaped_name}</DisplayName>
     <PublisherDisplayName>NgNative Engine</PublisherDisplayName>
     <Logo>Assets\Logo.png</Logo>
   </Properties>
@@ -321,8 +366,8 @@ pub fn generate_windows_appx_manifest_with_permissions(
     <Resource Language="en-us" />
   </Resources>
   <Applications>
-    <Application Id="App" Executable="{app_id}.exe" EntryPoint="{entry_point}">
-      <uap:VisualElements DisplayName="{display_name}" Description="Angular 22 Native WinUI 3 Desktop App"
+    <Application Id="App" Executable="{escaped_app_id}.exe" EntryPoint="{entry_point}">
+      <uap:VisualElements DisplayName="{escaped_name}" Description="Angular 22 Native WinUI 3 Desktop App"
                           BackgroundColor="#1e1e1e" Square150x150Logo="Assets\Logo.png" Square44x44Logo="Assets\SmallLogo.png" />
     </Application>
   </Applications>{cap_block}
@@ -568,5 +613,28 @@ mod tests {
         assert!(mac_entitlements.contains("com.apple.security.app-sandbox"));
         assert!(mac_entitlements.contains("com.apple.security.network.client"));
         assert!(mac_entitlements.contains("com.apple.security.files.user-selected.read-write"));
+    }
+
+    #[test]
+    fn escapes_windows_paths_and_normalizes_v_prefixed_msix_versions() {
+        let mut cfg = AngularNativeConfig::default_standalone("my-app");
+        cfg.output_path = String::from(r"C:\Users\dev\my-app\dist");
+        cfg.icon_search_dir = String::from(r"C:\Users\dev\icons");
+        let runtime_json = generate_runtime_manifest(&cfg, "v0.6.0");
+        assert!(runtime_json.contains(r"C:\\Users\\dev\\my-app\\dist"));
+        assert!(runtime_json.contains(r"C:\\Users\\dev\\icons"));
+
+        let win_manifest = generate_windows_appx_manifest("my-app", "My & <App>", "v0.6.0-beta.1");
+        assert!(win_manifest.contains("Version=\"0.6.0.0\""));
+        assert!(win_manifest.contains("<DisplayName>My &amp; &lt;App&gt;</DisplayName>"));
+
+        let custom_desktop = generate_desktop_entry_for(
+            "my-app",
+            "My App",
+            "/app/bin/my-app",
+            "dev.ngnative.my_app",
+        );
+        assert!(custom_desktop.contains("Exec=/app/bin/my-app\n"));
+        assert!(custom_desktop.contains("Icon=dev.ngnative.my_app\n"));
     }
 }

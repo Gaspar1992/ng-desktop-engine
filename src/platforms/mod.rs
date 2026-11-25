@@ -1,3 +1,6 @@
+//! Cross-platform native UI backend adapters (`Linux GTK4`, `Windows WinUI 3`, `macOS AppKit`,
+//! and `HeadlessBackend`), shared Flexbox/Grid [`layout_solver`], and [`NativeSceneState`].
+
 pub mod appkit_sys;
 pub mod gtk4_callbacks;
 mod gtk4_controls;
@@ -239,5 +242,60 @@ mod tests {
         assert!(parse_trace_flag("YES"));
         assert!(!parse_trace_flag("0"));
         assert!(!parse_trace_flag("false"));
+    }
+
+    #[test]
+    fn winui_and_appkit_exclude_anchor_and_recompute_layout_on_resize() {
+        let mut winui = WinUiBackend::new_headless();
+        let mut cocoa = MacOsAppKitBackend::new_headless();
+        assert_eq!(
+            winui.map_native_widget("ng-anchor"),
+            "Microsoft.UI.Xaml.AnchorComment"
+        );
+        assert_eq!(cocoa.map_native_widget("ng-anchor"), "NSAnchorComment");
+
+        let win = NodeId {
+            index: 0,
+            generation: 1,
+        };
+        let box_id = NodeId {
+            index: 1,
+            generation: 1,
+        };
+        let init_cmds = [
+            RenderCommand::CreateWidget {
+                id: win,
+                tag: String::from("ng-window"),
+            },
+            RenderCommand::CreateWidget {
+                id: box_id,
+                tag: String::from("ng-box"),
+            },
+            RenderCommand::AppendChild {
+                parent: win,
+                child: box_id,
+            },
+        ];
+        winui.flush_commands(&init_cmds);
+        cocoa.flush_commands(&init_cmds);
+        assert_eq!(winui.get_layout_rect(box_id).unwrap().width, 996);
+        assert_eq!(cocoa.get_layout_rect(box_id).unwrap().width, 996);
+
+        let resize_ev = NativeEvent {
+            node: win,
+            event_name: String::from("resize"),
+            payload: crate::engine::EventPayload::Text(String::from(
+                r#"{"width":1400,"height":900,"maximized":false}"#,
+            )),
+        };
+        winui.queue_native_event(resize_ev.clone());
+        cocoa.queue_native_event(resize_ev);
+        let _ = winui.step_native_events();
+        let _ = cocoa.step_native_events();
+
+        winui.flush_commands(&[]);
+        cocoa.flush_commands(&[]);
+        assert_eq!(winui.get_layout_rect(box_id).unwrap().width, 1376);
+        assert_eq!(cocoa.get_layout_rect(box_id).unwrap().width, 1376);
     }
 }

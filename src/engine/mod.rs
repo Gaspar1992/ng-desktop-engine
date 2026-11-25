@@ -1,3 +1,6 @@
+//! OS-agnostic scene graph (`Arena`), command buffer (`CommandQueue`), stylesheet registry
+//! (`StyleRegistry`), widget attributes, and event coalescing (`EventMask`).
+
 pub mod arena;
 pub mod commands;
 pub mod events;

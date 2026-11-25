@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { ensureNgNativeBridge, type NativeComputeMatch } from '@ng-desktop/platform';
 
+/** Result item paired with its original index and fuzzy relevance score from `NativeComputeService`. */
 export interface NativeScoredItem<T> {
   item: T;
   index: number;

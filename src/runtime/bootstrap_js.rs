@@ -158,7 +158,7 @@ globalThis.__NG_NATIVE__ = (() => {
       return id;
     },
     createComment(id, text = 'anchor') {
-      emit(`comment ${id} ${text}`);
+      emit(`comment ${id} ${escapeNewlines(text)}`);
       return id;
     },
     setText(id, text) {
@@ -326,10 +326,12 @@ globalThis.__NG_NATIVE__ = (() => {
     },
     setClipboard(text) {
       clipboardText = String(text ?? '');
-      emit(`clipboard ${clipboardText}`);
+      emit(`clipboard ${escapeNewlines(clipboardText)}`);
     },
     sendNotification(title, body, icon = resolveAppId()) {
-      emit(`comment notify_${nextListenerId++} [${icon}] ${title}: ${body}`);
+      emit(
+        `comment notify_${nextListenerId++} [${escapeNewlines(icon)}] ${escapeNewlines(title)}: ${escapeNewlines(body)}`,
+      );
     },
     openFileDialog(_title = 'Open File', defaultPath = '/home/user/document.txt') {
       return defaultPath;
@@ -1289,9 +1291,24 @@ globalThis.__NG_NATIVE__ = (() => {
   if (typeof globalThis.TextEncoder === 'undefined') {
     globalThis.TextEncoder = class TextEncoder {
       encode(str = '') {
+        const s = String(str);
         const out = [];
-        for (let i = 0; i < str.length; i++) {
-          let code = str.charCodeAt(i);
+        for (let i = 0; i < s.length; i++) {
+          let code = s.charCodeAt(i);
+          if (code >= 0xd800 && code <= 0xdbff && i + 1 < s.length) {
+            const low = s.charCodeAt(i + 1);
+            if (low >= 0xdc00 && low <= 0xdfff) {
+              const cp = 0x10000 + ((code - 0xd800) << 10) + (low - 0xdc00);
+              out.push(
+                0xf0 | (cp >> 18),
+                0x80 | ((cp >> 12) & 0x3f),
+                0x80 | ((cp >> 6) & 0x3f),
+                0x80 | (cp & 0x3f),
+              );
+              i++;
+              continue;
+            }
+          }
           if (code < 0x80) out.push(code);
           else if (code < 0x800) {
             out.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
@@ -1308,7 +1325,49 @@ globalThis.__NG_NATIVE__ = (() => {
       decode(bytes = new Uint8Array()) {
         const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
         let out = '';
-        for (let i = 0; i < arr.length; i++) out += String.fromCharCode(arr[i]);
+        let i = 0;
+        while (i < arr.length) {
+          const b0 = arr[i++];
+          if (b0 < 0x80) {
+            out += String.fromCharCode(b0);
+          } else if ((b0 & 0xe0) === 0xc0 && i < arr.length) {
+            const b1 = arr[i++];
+            if ((b1 & 0xc0) === 0x80) {
+              const cp = ((b0 & 0x1f) << 6) | (b1 & 0x3f);
+              out += cp >= 0x80 ? String.fromCharCode(cp) : '\ufffd';
+            } else {
+              i--;
+              out += '\ufffd';
+            }
+          } else if ((b0 & 0xf0) === 0xe0 && i + 1 < arr.length) {
+            const b1 = arr[i++];
+            const b2 = arr[i++];
+            if ((b1 & 0xc0) === 0x80 && (b2 & 0xc0) === 0x80) {
+              const cp = ((b0 & 0x0f) << 12) | ((b1 & 0x3f) << 6) | (b2 & 0x3f);
+              out += cp >= 0x800 ? String.fromCharCode(cp) : '\ufffd';
+            } else {
+              i -= 2;
+              out += '\ufffd';
+            }
+          } else if ((b0 & 0xf8) === 0xf0 && i + 2 < arr.length) {
+            const b1 = arr[i++];
+            const b2 = arr[i++];
+            const b3 = arr[i++];
+            if ((b1 & 0xc0) === 0x80 && (b2 & 0xc0) === 0x80 && (b3 & 0xc0) === 0x80) {
+              const cp =
+                ((b0 & 0x07) << 18) |
+                ((b1 & 0x3f) << 12) |
+                ((b2 & 0x3f) << 6) |
+                (b3 & 0x3f);
+              out += cp >= 0x10000 && cp <= 0x10ffff ? String.fromCodePoint(cp) : '\ufffd';
+            } else {
+              i -= 3;
+              out += '\ufffd';
+            }
+          } else {
+            out += '\ufffd';
+          }
+        }
         return out;
       }
     };

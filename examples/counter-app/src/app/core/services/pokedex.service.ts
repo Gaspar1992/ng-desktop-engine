@@ -109,6 +109,9 @@ export class PokedexService {
   }
 
   loadMore(): Promise<void> {
+    if (this.loading() || !this.hasMore()) {
+      return Promise.resolve();
+    }
     return this.loadCatalogPage(false);
   }
 

@@ -4,10 +4,14 @@ import {
   computed,
   contentChild,
   effect,
+  ElementRef,
+  inject,
   input,
   output,
+  Renderer2,
   signal,
   TemplateRef,
+  viewChild,
 } from '@angular/core';
 import {
   NativeContainerDirective,
@@ -15,6 +19,7 @@ import {
   NativeListDirective,
   NativeTextWidgetDirective,
 } from './native-directives';
+import { NativeElementNode } from './native-element';
 import {
   computeVariableVirtualSliceRange,
   computeVirtualSliceRange,
@@ -50,7 +55,6 @@ export interface NativeVirtualRowActivatedEvent<T> {
  */
 @Component({
   selector: 'ng-virtual-list',
-  standalone: true,
   imports: [
     NgTemplateOutlet,
     NativeElementDirective,
@@ -60,6 +64,7 @@ export interface NativeVirtualRowActivatedEvent<T> {
   ],
   template: `
     <ng-scroll
+      #scrollHost
       [hexpand]="true"
       [vexpand]="true"
       [min-height]="viewportHeight()"
@@ -71,22 +76,26 @@ export interface NativeVirtualRowActivatedEvent<T> {
         @if (range().topSpacerHeight > 0) {
           <ng-box [height]="range().topSpacerHeight"></ng-box>
         }
-        <ng-list
-          [selection-mode]="selectionMode()"
-          [show-separators]="showSeparators()"
-          (rowActivated)="onRowActivated($event)"
-        >
-          @for (entry of visibleEntries(); track entry.key) {
-            @if (resolvedTemplate(); as tpl) {
-              <ng-container
-                [ngTemplateOutlet]="tpl"
-                [ngTemplateOutletContext]="{ $implicit: entry.item, index: entry.index }"
-              ></ng-container>
-            } @else {
-              <ng-label [text]="'' + entry.item"></ng-label>
+        @if (items().length === 0) {
+          <ng-content select="[ngVirtualEmpty]"></ng-content>
+        } @else {
+          <ng-list
+            [selection-mode]="selectionMode()"
+            [show-separators]="showSeparators()"
+            (rowActivated)="onRowActivated($event)"
+          >
+            @for (entry of visibleEntries(); track entry.key) {
+              @if (resolvedTemplate(); as tpl) {
+                <ng-container
+                  [ngTemplateOutlet]="tpl"
+                  [ngTemplateOutletContext]="{ $implicit: entry.item, index: entry.index }"
+                ></ng-container>
+              } @else {
+                <ng-label [text]="'' + entry.item"></ng-label>
+              }
             }
-          }
-        </ng-list>
+          </ng-list>
+        }
         @if (range().bottomSpacerHeight > 0) {
           <ng-box [height]="range().bottomSpacerHeight"></ng-box>
         }
@@ -112,7 +121,11 @@ export class NativeVirtualListComponent<T = unknown> {
   readonly rowActivated = output<NativeVirtualRowActivatedEvent<T>>();
   readonly scrollBottom = output<void>();
 
+  private readonly renderer = inject(Renderer2);
+  private readonly scrollHost = viewChild<ElementRef<NativeElementNode>>('scrollHost');
+
   readonly scrollTop = signal(0);
+  readonly measuredHeight = signal<number | null>(null);
   readonly scrollToAttr = signal<string | undefined>(undefined);
 
   private readonly heightTree = new FenwickOffsetTree(0, 48);
@@ -122,6 +135,7 @@ export class NativeVirtualListComponent<T = unknown> {
   readonly resolvedTemplate = computed(
     () => this.itemTemplateInput() ?? this.projectedTemplate() ?? null,
   );
+  readonly effectiveHeight = computed(() => this.measuredHeight() ?? this.viewportHeight());
 
   readonly isVariableHeight = computed(
     () =>
@@ -129,20 +143,15 @@ export class NativeVirtualListComponent<T = unknown> {
       (this.measureRevision() >= 0 && this.measuredOverrides.size > 0),
   );
 
-  readonly range = computed<VirtualSliceRange>(() => {
+  /** Builds/updates the Fenwick row-offset tree only when item heights or list contents change. */
+  private readonly heightTreeState = computed(() => {
     const source = this.items();
     const resolver = this.itemHeightResolver();
     this.measureRevision();
     const defaultHeight = Math.max(1, this.itemHeight());
 
     if (resolver === null && this.measuredOverrides.size === 0) {
-      return computeVirtualSliceRange(
-        source.length,
-        this.scrollTop(),
-        this.viewportHeight(),
-        defaultHeight,
-        this.overscan(),
-      );
+      return { tree: null as FenwickOffsetTree | null, defaultHeight };
     }
 
     const overrides = new Map<number, number>();
@@ -157,12 +166,25 @@ export class NativeVirtualListComponent<T = unknown> {
       }
     }
     this.heightTree.reset(source.length, defaultHeight, overrides);
-    return computeVariableVirtualSliceRange(
-      this.heightTree,
-      this.scrollTop(),
-      this.viewportHeight(),
-      this.overscan(),
-    );
+    return { tree: this.heightTree, defaultHeight };
+  });
+
+  readonly range = computed<VirtualSliceRange>(() => {
+    const source = this.items();
+    const { tree, defaultHeight } = this.heightTreeState();
+    const effHeight = this.effectiveHeight();
+
+    if (tree === null) {
+      return computeVirtualSliceRange(
+        source.length,
+        this.scrollTop(),
+        effHeight,
+        defaultHeight,
+        this.overscan(),
+      );
+    }
+
+    return computeVariableVirtualSliceRange(tree, this.scrollTop(), effHeight, this.overscan());
   });
 
   readonly visibleEntries = computed<readonly NativeVirtualListEntry<T>[]>(() => {
@@ -226,8 +248,16 @@ export class NativeVirtualListComponent<T = unknown> {
   /** Scrolls the native viewport to bring row `index` into view. */
   scrollToIndex(index: number): void {
     const y = this.offsetForIndex(index);
+    const coords = `0,${y}`;
+    const sameCoords = this.scrollToAttr() === coords;
     this.scrollTop.set(y);
-    this.scrollToAttr.set(`0,${y}`);
+    this.scrollToAttr.set(coords);
+    if (sameCoords) {
+      const hostEl = this.scrollHost()?.nativeElement;
+      if (hostEl) {
+        this.renderer.setAttribute(hostEl, 'scroll-to', coords);
+      }
+    }
   }
 
   onNativeScroll(event: unknown): void {
@@ -235,12 +265,18 @@ export class NativeVirtualListComponent<T = unknown> {
       return;
     }
     const obj = event as Record<string, unknown>;
-    let top: unknown = obj['scrollTop'];
-    if (typeof top !== 'number' && obj['target'] && typeof obj['target'] === 'object') {
-      top = (obj['target'] as Record<string, unknown>)['scrollTop'];
-    }
+    const target =
+      obj['target'] && typeof obj['target'] === 'object'
+        ? (obj['target'] as Record<string, unknown>)
+        : undefined;
+    const top = typeof obj['scrollTop'] === 'number' ? obj['scrollTop'] : target?.['scrollTop'];
     if (typeof top === 'number' && Number.isFinite(top)) {
       this.scrollTop.set(Math.max(0, top));
+    }
+    const height =
+      typeof obj['clientHeight'] === 'number' ? obj['clientHeight'] : target?.['clientHeight'];
+    if (typeof height === 'number' && Number.isFinite(height) && height > 0) {
+      this.measuredHeight.set(height);
     }
   }
 

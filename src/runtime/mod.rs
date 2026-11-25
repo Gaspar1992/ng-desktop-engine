@@ -1,3 +1,6 @@
+//! Embedded JavaScript runtime engines (`JavaScriptCore` JIT and `QuickJS-NG`), `.ngb`
+//! bytecode parser, reactive signal/attribute bindings, `HostBridge`, and `NativeServerWorker`.
+
 pub mod bootstrap_js;
 pub mod host_bridge;
 mod js_bridge;

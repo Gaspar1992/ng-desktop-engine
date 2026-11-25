@@ -10,7 +10,7 @@ import {
 import { NativePlatformLocation, Router } from '@ng-desktop/router';
 import { App } from './app';
 import { appConfig } from './app.config';
-import { PokedexService } from './pokedex.service';
+import { PokedexService } from './core/services/pokedex.service';
 
 describe('App (100% Angular + @ng-desktop/server API)', () => {
   const catalogResponse = {
