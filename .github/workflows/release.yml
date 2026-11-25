@@ -15,8 +15,65 @@ permissions:
   contents: write
 
 jobs:
+  build-frontend-and-packages:
+    name: Build Pokédex Bundle & @ng-desktop/* APF Packages
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js (with pnpm cache)
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Resolve release version dynamically
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            RAW_TAG="${{ inputs.tag_name }}"
+          else
+            RAW_TAG="${GITHUB_REF_NAME:-}"
+          fi
+          VER="${RAW_TAG#v}"
+          if [ -z "${VER}" ]; then
+            VER="$(node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('package.json','utf8')).version)")"
+          fi
+          echo "APP_VERSION=${VER}" >> "$GITHUB_ENV"
+
+      - name: Build Pokédex native bundle & @ng-desktop/* APF packages
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec ng build
+          node packages/builders-native/src/build-bundle.mjs --version="${APP_VERSION}"
+          pnpm run build:packages -- --version="${APP_VERSION}"
+          mkdir -p apf-tarballs
+          for pkg in platform-native forms-native router-native http-native desktop-native server-native builders-native; do
+            (cd "dist/packages/${pkg}" && npm pack --pack-destination "../../../apf-tarballs")
+          done
+          ls -lh dist/ng-linux-counter apf-tarballs/
+
+      - name: Upload compiled Angular bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-bundle-dist
+          path: dist/ng-linux-counter
+          if-no-files-found: error
+
+      - name: Upload @ng-desktop/* APF tarballs
+        uses: actions/upload-artifact@v7
+        with:
+          name: apf-library-tarballs
+          path: apf-tarballs/*.tgz
+          if-no-files-found: error
+
   build-os-bundles:
-    name: Build ${{ matrix.target }} (Engine + @ng-desktop/* Packages)
+    name: Build ${{ matrix.target }} (Engine + Installers + @ng-desktop/engine-*)
+    needs: build-frontend-and-packages
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -27,48 +84,37 @@ jobs:
             platform: linux
             dir_name: engine-linux-x64-gnu
             archive: ng-desktop-engine-linux-x86_64.tar.gz
-            pack_libs: true
           - os: ubuntu-24.04-arm
             target: linux-arm64
             platform: linux
             dir_name: engine-linux-arm64-gnu
             archive: ng-desktop-engine-linux-arm64.tar.gz
-            pack_libs: false
           - os: windows-latest
             target: win32-x64
             platform: windows
             dir_name: engine-win32-x64-msvc
             archive: ng-desktop-engine-windows-x86_64.zip
-            pack_libs: false
           - os: macos-latest
             target: darwin-arm64
             platform: macos
             dir_name: engine-darwin-arm64
             archive: ng-desktop-engine-macos-arm64.tar.gz
-            pack_libs: false
           - os: macos-15-intel
             target: darwin-x64
             platform: macos
             dir_name: engine-darwin-x64
             archive: ng-desktop-engine-macos-x86_64.tar.gz
-            pack_libs: false
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Setup pnpm
-        if: matrix.pack_libs
-        uses: pnpm/action-setup@v6
-
-      - name: Setup Node.js (with pnpm cache for libraries)
-        if: matrix.pack_libs
-        uses: actions/setup-node@v7
+      - name: Download compiled Pokédex bundle
+        uses: actions/download-artifact@v8
         with:
-          node-version: '24'
-          cache: 'pnpm'
+          name: app-bundle-dist
+          path: dist/ng-linux-counter
 
-      - name: Setup Node.js (engine-only staging)
-        if: ${{ !matrix.pack_libs }}
+      - name: Setup Node.js (engine staging)
         uses: actions/setup-node@v7
         with:
           node-version: '24'
@@ -87,12 +133,6 @@ jobs:
           fi
           echo "APP_VERSION=${VER}" >> "$GITHUB_ENV"
 
-      - name: Install dependencies & build APF packages
-        if: matrix.pack_libs
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm run build:packages -- --version="${APP_VERSION}"
-
       - name: Install Linux native libraries (Ubuntu)
         if: matrix.platform == 'linux'
         run: |
@@ -110,7 +150,7 @@ jobs:
       - name: Build release engine binary
         run: cargo build --release --locked
 
-      - name: Package Linux (Engine tarball + Engine npm package + APF Angular .tgz packages)
+      - name: Package Linux (Engine tarball + .deb Installer + Engine npm package)
         if: matrix.platform == 'linux'
         run: |
           VER="${APP_VERSION}"
@@ -123,15 +163,12 @@ jobs:
           node scripts/build-engine-packages.mjs --target="${{ matrix.target }}" --binary=target/release/ng-native-engine --version="${VER}"
           (cd "dist/engine-packages/${{ matrix.dir_name }}" && npm pack --pack-destination "../../../release-out")
 
-          # 3. Pack all 7 compiled APF/ESM Angular 22+ libraries (@ng-desktop/*) on the primary Linux leg
-          if [ "${{ matrix.pack_libs }}" = "true" ]; then
-            for pkg in platform-native forms-native router-native http-native desktop-native server-native builders-native; do
-              (cd "dist/packages/${pkg}" && npm pack --pack-destination "../../../release-out")
-            done
-          fi
+          # 3. Compile real Debian .deb installer + stage AppImage/Flatpak payloads
+          target/release/ng-native-engine --installer=deb --strict-installer --binary=target/release/ng-native-engine --version="${VER}"
+          cp dist/ng-linux-counter/packages/*.deb release-out/
           ls -lh release-out/
 
-      - name: Package Windows (Engine .zip + Engine npm package)
+      - name: Package Windows (Engine .zip + .msix Installer + Engine npm package)
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
@@ -146,9 +183,13 @@ jobs:
 
           # 2. Standalone Windows Engine archive
           Compress-Archive -Path "target/release/ng-native-engine.exe" -DestinationPath "release-out/${{ matrix.archive }}" -Force
+
+          # 3. Compile real Windows .msix installer
+          & "target\release\ng-native-engine.exe" --installer=msix --strict-installer "--binary=target\release\ng-native-engine.exe" "--version=$VER"
+          Copy-Item "dist\ng-linux-counter\packages\*.msix" "release-out\"
           Get-ChildItem release-out
 
-      - name: Package macOS (Engine tarball + Engine npm package)
+      - name: Package macOS (Engine tarball + .dmg Installer + Engine npm package)
         if: matrix.platform == 'macos'
         run: |
           VER="${APP_VERSION}"
@@ -160,6 +201,11 @@ jobs:
 
           # 2. Standalone macOS Engine archive
           tar -czf "release-out/${{ matrix.archive }}" -C target/release ng-native-engine
+
+          # 3. Compile real macOS .dmg disk image
+          target/release/ng-native-engine --installer=dmg --strict-installer --binary=target/release/ng-native-engine --version="${VER}"
+          hdiutil verify dist/ng-linux-counter/packages/*.dmg
+          cp dist/ng-linux-counter/packages/*.dmg release-out/
           ls -lh release-out/
 
       - name: Upload OS release artifacts
@@ -210,7 +256,7 @@ jobs:
           node scripts/generate-release-notes.mjs --version="${VER}" --out=ENGINE_RELEASE_NOTES.md
 
           cd artifacts
-          sha256sum ng-desktop-engine-*.tar.gz ng-desktop-engine-*.zip ng-desktop-*.tgz > SHA256SUMS-engine.txt
+          sha256sum ng-desktop-engine-*.tar.gz ng-desktop-engine-*.zip ng-desktop-*.tgz *.deb *.msix *.dmg > SHA256SUMS-engine.txt
           cat SHA256SUMS-engine.txt
 
       - name: Generate Sigstore SLSA build provenance attestations
@@ -220,6 +266,9 @@ jobs:
             artifacts/ng-desktop-*.tgz
             artifacts/ng-desktop-engine-*.tar.gz
             artifacts/ng-desktop-engine-*.zip
+            artifacts/*.deb
+            artifacts/*.msix
+            artifacts/*.dmg
 
       - name: Publish NgDesktop Engine & Angular 22+ Packages Release (${{ steps.meta.outputs.engine_tag }})
         uses: softprops/action-gh-release@v3
@@ -245,6 +294,9 @@ jobs:
             artifacts/ng-desktop-engine-windows-x86_64.zip
             artifacts/ng-desktop-engine-macos-arm64.tar.gz
             artifacts/ng-desktop-engine-macos-x86_64.tar.gz
+            artifacts/*.deb
+            artifacts/*.msix
+            artifacts/*.dmg
             artifacts/SHA256SUMS-engine.txt
 
   publish-npm:

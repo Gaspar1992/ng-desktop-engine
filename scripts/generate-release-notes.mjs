@@ -150,6 +150,14 @@ Following the official Angular monorepo publishing model, each package is versio
   - \`ng-desktop-engine-macos-arm64.tar.gz\`
   - \`ng-desktop-engine-macos-x86_64.tar.gz\`
 
+## 📦 Native Desktop Installers (Sample Pokédex App)
+
+| Platform | Architecture | Installer Artifact |
+| :--- | :--- | :--- |
+| **Linux (Debian / Ubuntu)** | \`amd64\` / \`arm64\` | \`ng-linux-counter_${version}_amd64.deb\`, \`ng-linux-counter_${version}_arm64.deb\` |
+| **Windows 11 (WinUI 3)** | \`x64\` | \`ng-linux-counter_${version}_x64.msix\` |
+| **macOS (AppKit Cocoa)** | \`arm64\` / \`x64\` | \`ng-linux-counter-${version}-arm64.dmg\`, \`ng-linux-counter-${version}-x64.dmg\` |
+
 ---
 
 ## 📜 Categorized Commit Log

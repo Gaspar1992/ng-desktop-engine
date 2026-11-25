@@ -70,8 +70,14 @@ jobs:
       - name: Run unit and integration tests (Headless + Xvfb GTK4 Display)
         run: xvfb-run -a cargo test --verbose
 
-      - name: Stage multi-OS distribution packages
-        run: cargo run -- --package-all
+      - name: Stage multi-OS distribution packages & build real Linux .deb installer
+        run: |
+          cargo run -- --package-all
+          cargo run -- --installer=deb --strict-installer
+          DEB_FILE="$(ls dist/ng-linux-counter/packages/ng-linux-counter_*.deb | head -n1)"
+          test -s "${DEB_FILE}"
+          dpkg-deb --info "${DEB_FILE}"
+          dpkg-deb --contents "${DEB_FILE}"
 
   cross-os-matrix:
     name: Native ${{ matrix.label }}
@@ -115,3 +121,20 @@ jobs:
 
       - name: Stage distribution packages (${{ matrix.label }})
         run: cargo run -- --package-all
+
+      - name: Build and verify native Windows .msix installer
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          cargo run -- --installer=msix --strict-installer
+          $msix = Get-ChildItem "dist/ng-linux-counter/packages/ng-linux-counter_*.msix" | Select-Object -First 1
+          if (-not $msix -or $msix.Length -le 0) { throw "Missing or empty .msix installer" }
+          Write-Host "Verified MSIX: $($msix.FullName) ($($msix.Length) bytes)"
+
+      - name: Build and verify native macOS .dmg installer
+        if: matrix.os == 'macos-latest'
+        run: |
+          cargo run -- --installer=dmg --strict-installer
+          DMG_FILE="$(ls dist/ng-linux-counter/packages/ng-linux-counter_*.dmg | head -n1)"
+          test -s "${DMG_FILE}"
+          hdiutil verify "${DMG_FILE}"
