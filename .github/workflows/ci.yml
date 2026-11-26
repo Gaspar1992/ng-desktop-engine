@@ -72,8 +72,9 @@ jobs:
 
       - name: Run unit, integration & strict E2E tests (Headless + Xvfb GTK4 Display)
         env:
+          NG_DESKTOP_GPU_BACKEND: 'software'
           NG_E2E_REQUIRE_FULL: '1'
-        run: xvfb-run -a cargo test --verbose
+        run: xvfb-run -a cargo test --verbose -- --test-threads=1
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@v2
