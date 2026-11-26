@@ -268,8 +268,53 @@ impl GtkLinuxBackend {
         }
     }
 
+    fn apply_grid_metadata_attribute(&mut self, node: NodeId, key: &str, value: &str) -> bool {
+        match key {
+            "columns" | "max-children" => {
+                let updated = self
+                    .widgets
+                    .get_mut(&node)
+                    .filter(|w| w.kind == GtkWidgetType::Grid)
+                    .is_some_and(|w| {
+                        if let Ok(cols) = value.trim().parse::<i32>() {
+                            w.grid_columns = cols.max(1);
+                            true
+                        } else {
+                            false
+                        }
+                    });
+                if updated {
+                    self.sync_grid_children(node, None);
+                    return true;
+                }
+                false
+            }
+            "col" | "column" => {
+                if let Some(w) = self.widgets.get_mut(&node) {
+                    w.grid_col = value.trim().parse::<i32>().ok().filter(|&c| c >= 0);
+                }
+                if let Some(&parent) = self.parent_of.get(&node) {
+                    self.sync_grid_children(parent, None);
+                }
+                true
+            }
+            "row" => {
+                if let Some(w) = self.widgets.get_mut(&node) {
+                    w.grid_row = value.trim().parse::<i32>().ok().filter(|&r| r >= 0);
+                }
+                if let Some(&parent) = self.parent_of.get(&node) {
+                    self.sync_grid_children(parent, None);
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn apply_metadata_attribute(&mut self, node: NodeId, key: &str, value: &str) -> bool {
-        if self.apply_popover_metadata_attribute(node, key, value) {
+        if self.apply_popover_metadata_attribute(node, key, value)
+            || self.apply_grid_metadata_attribute(node, key, value)
+        {
             return true;
         }
         if key == "id" {
@@ -352,17 +397,6 @@ impl GtkLinuxBackend {
                 }
                 "scroll-anchor" => {
                     w.scroll_anchor = Some(value.to_string());
-                }
-                "columns" | "max-children" if w.kind == GtkWidgetType::Grid => {
-                    if let Ok(cols) = value.trim().parse::<i32>() {
-                        w.grid_columns = cols.max(1);
-                    }
-                }
-                "col" | "column" => {
-                    w.grid_col = value.trim().parse::<i32>().ok().filter(|&c| c >= 0);
-                }
-                "row" => {
-                    w.grid_row = value.trim().parse::<i32>().ok().filter(|&r| r >= 0);
                 }
                 _ => {}
             }

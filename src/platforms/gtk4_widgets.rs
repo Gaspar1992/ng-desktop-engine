@@ -860,6 +860,20 @@ impl Gtk4Sys {
         }
     }
 
+    pub fn grid_detach_keeping_ref(&self, grid: GtkHandle, child: GtkHandle) {
+        unsafe {
+            (self.g_object_ref)(child.0);
+            (self.gtk_grid_remove)(grid.0, child.0);
+        }
+    }
+
+    pub fn grid_attach_releasing_ref(&self, grid: GtkHandle, child: GtkHandle, col: i32, row: i32) {
+        unsafe {
+            (self.gtk_grid_attach)(grid.0, child.0, col, row, 1, 1);
+            (self.g_object_unref)(child.0);
+        }
+    }
+
     pub fn set_hexpand(&self, widget: GtkHandle, expand: bool) {
         unsafe {
             (self.gtk_widget_set_hexpand)(widget.0, i32::from(expand));

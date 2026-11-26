@@ -1030,6 +1030,48 @@ impl GtkLinuxBackend {
         (col, row)
     }
 
+    pub(super) fn sync_grid_children(&self, grid_id: NodeId, newly_added: Option<NodeId>) {
+        let Some(gtk) = &self.gtk else {
+            return;
+        };
+        let Some(grid_w) = self.widgets.get(&grid_id) else {
+            return;
+        };
+        if grid_w.kind != GtkWidgetType::Grid {
+            return;
+        }
+        let Some(p_h) = grid_w.handle else {
+            return;
+        };
+        let mut placements: Vec<(NodeId, GtkHandle, i32, i32, bool)> = Vec::new();
+        let mut real_idx: i32 = 0;
+        for &child_id in &grid_w.children {
+            let Some(child_w) = self.widgets.get(&child_id) else {
+                continue;
+            };
+            if child_w.kind.is_toplevel() || child_w.kind == GtkWidgetType::Popover {
+                continue;
+            }
+            if let Some(c_h) = child_w.handle {
+                let (col, row) = self.resolve_grid_cell(grid_id, child_id, real_idx);
+                placements.push((child_id, c_h, col, row, Some(child_id) == newly_added));
+                real_idx += 1;
+            }
+        }
+        for &(_, c_h, _, _, is_new) in &placements {
+            if !is_new {
+                gtk.grid_detach_keeping_ref(p_h, c_h);
+            }
+        }
+        for (_, c_h, col, row, is_new) in placements {
+            if is_new {
+                gtk.grid_attach(p_h, c_h, col, row);
+            } else {
+                gtk.grid_attach_releasing_ref(p_h, c_h, col, row);
+            }
+        }
+    }
+
     fn apply_append_child(&mut self, parent: NodeId, child: NodeId) {
         self.parent_of.insert(child, parent);
         let (Some(parent_w), Some(child_w)) = (self.widgets.get(&parent), self.widgets.get(&child))
@@ -1167,17 +1209,14 @@ impl GtkLinuxBackend {
             total_real_children
         };
 
-        let grid_cell = if parent_kind == GtkWidgetType::Grid {
-            Some(self.resolve_grid_cell(parent, child, target_idx))
-        } else {
-            None
-        };
         let (Some(parent_w), Some(child_w)) = (self.widgets.get(&parent), self.widgets.get(&child))
         else {
             return;
         };
 
+        let was_existing = parent_w.children.contains(&child);
         if parent_kind != GtkWidgetType::Paned
+            && parent_kind != GtkWidgetType::Grid
             && let (Some(gtk), Some(c_h), Some(p_h)) = (&self.gtk, child_w.handle, parent_w.handle)
         {
             Self::attach_gtk_child_at(
@@ -1189,8 +1228,8 @@ impl GtkLinuxBackend {
                 ref_child.is_some(),
                 prev_real_sibling,
                 target_idx,
-                grid_cell,
-                parent_w.children.contains(&child),
+                None,
+                was_existing,
             );
         }
 
@@ -1206,6 +1245,8 @@ impl GtkLinuxBackend {
         }
         if parent_kind == GtkWidgetType::Paned {
             self.sync_paned_children(parent);
+        } else if parent_kind == GtkWidgetType::Grid {
+            self.sync_grid_children(parent, if was_existing { None } else { Some(child) });
         }
     }
 
@@ -1333,11 +1374,14 @@ impl GtkLinuxBackend {
                 }
             }
         }
-        if let Some(pw) = self.widgets.get_mut(&parent) {
+        let is_grid = self.widgets.get_mut(&parent).is_some_and(|pw| {
             pw.children.retain(|c| *c != child);
-        }
+            pw.kind == GtkWidgetType::Grid
+        });
         if is_paned {
             self.sync_paned_children(parent);
+        } else if is_grid {
+            self.sync_grid_children(parent, None);
         }
     }
 }
@@ -1441,5 +1485,116 @@ impl PlatformBackend for GtkLinuxBackend {
             self.css_dirty = false;
             self.css_reload_count += 1;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platforms::PlatformBackend;
+
+    #[test]
+    fn grid_reflows_cells_cleanly_after_remove_insert_and_columns_change() {
+        let mut backend = GtkLinuxBackend::new();
+        let grid = NodeId {
+            index: 1,
+            generation: 1,
+        };
+        let cards: Vec<NodeId> = (2..=7)
+            .map(|i| NodeId {
+                index: i,
+                generation: 1,
+            })
+            .collect();
+
+        let mut cmds = vec![
+            RenderCommand::CreateWidget {
+                id: grid,
+                tag: String::from("ng-grid"),
+            },
+            RenderCommand::SetAttribute {
+                node: grid,
+                key: String::from("columns"),
+                value: String::from("2"),
+            },
+        ];
+        for &c in &cards {
+            cmds.push(RenderCommand::CreateWidget {
+                id: c,
+                tag: String::from("ng-box"),
+            });
+            cmds.push(RenderCommand::AppendChild {
+                parent: grid,
+                child: c,
+            });
+        }
+        backend.flush_commands(&cmds);
+
+        // Remove top row (cards[0], cards[1]) and insert two new cards at the bottom, like virtual grid scrolling down.
+        let c8 = NodeId {
+            index: 8,
+            generation: 1,
+        };
+        let c9 = NodeId {
+            index: 9,
+            generation: 1,
+        };
+        backend.flush_commands(&[
+            RenderCommand::RemoveChild {
+                parent: grid,
+                child: cards[0],
+            },
+            RenderCommand::RemoveChild {
+                parent: grid,
+                child: cards[1],
+            },
+            RenderCommand::CreateWidget {
+                id: c8,
+                tag: String::from("ng-box"),
+            },
+            RenderCommand::CreateWidget {
+                id: c9,
+                tag: String::from("ng-box"),
+            },
+            RenderCommand::InsertBefore {
+                parent: grid,
+                child: c8,
+                ref_child: None,
+            },
+            RenderCommand::InsertBefore {
+                parent: grid,
+                child: c9,
+                ref_child: None,
+            },
+        ]);
+
+        let expected_order = [cards[2], cards[3], cards[4], cards[5], c8, c9];
+        assert_eq!(backend.widgets[&grid].children, expected_order);
+
+        let cells_2col: Vec<(i32, i32)> = expected_order
+            .iter()
+            .enumerate()
+            .map(|(idx, &id)| backend.resolve_grid_cell(grid, id, i32::try_from(idx).unwrap()))
+            .collect();
+        assert_eq!(
+            cells_2col,
+            vec![(0, 0), (1, 0), (0, 1), (1, 1), (0, 2), (1, 2)]
+        );
+
+        // Change columns to 3 -> cells must reflow into 2 rows of 3 without overlap
+        backend.flush_commands(&[RenderCommand::SetAttribute {
+            node: grid,
+            key: String::from("columns"),
+            value: String::from("3"),
+        }]);
+        let cells_3col: Vec<(i32, i32)> = expected_order
+            .iter()
+            .enumerate()
+            .map(|(idx, &id)| backend.resolve_grid_cell(grid, id, i32::try_from(idx).unwrap()))
+            .collect();
+        assert_eq!(
+            cells_3col,
+            vec![(0, 0), (1, 0), (2, 0), (0, 1), (1, 1), (2, 1)]
+        );
     }
 }

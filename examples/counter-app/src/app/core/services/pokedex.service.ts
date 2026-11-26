@@ -71,12 +71,16 @@ export class PokedexService {
 
   private catalogSeq = 0;
   private detailSeq = 0;
+  private pendingLoadMore = false;
 
   isFavorite(id: number): boolean {
     return this.favoriteIds().has(id);
   }
 
   async loadCatalogPage(reset = true): Promise<void> {
+    if (reset) {
+      this.pendingLoadMore = false;
+    }
     const seq = ++this.catalogSeq;
     const offset = reset ? 0 : this.catalogItems().length;
     const q = encodeURIComponent(this.searchQuery().trim());
@@ -104,12 +108,22 @@ export class PokedexService {
     } finally {
       if (seq === this.catalogSeq) {
         this.loading.set(false);
+        if (this.pendingLoadMore && this.hasMore()) {
+          this.pendingLoadMore = false;
+          void this.loadCatalogPage(false);
+        }
       }
     }
   }
 
   loadMore(): Promise<void> {
-    if (this.loading() || !this.hasMore()) {
+    if (this.loading()) {
+      if (this.hasMore()) {
+        this.pendingLoadMore = true;
+      }
+      return Promise.resolve();
+    }
+    if (!this.hasMore()) {
       return Promise.resolve();
     }
     return this.loadCatalogPage(false);
