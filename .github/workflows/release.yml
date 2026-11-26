@@ -49,7 +49,7 @@ jobs:
       - name: Build Pokédex native bundle & @ng-desktop/* APF packages
         run: |
           pnpm install --frozen-lockfile
-          pnpm exec ng build
+          pnpm exec ng build ng-linux-counter
           node packages/builders-native/src/build-bundle.mjs --version="${APP_VERSION}"
           pnpm run build:packages -- --version="${APP_VERSION}"
           mkdir -p apf-tarballs

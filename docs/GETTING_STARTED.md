@@ -4,11 +4,11 @@ Build native desktop apps from an existing or new **Angular 22+** application (`
 
 ---
 
-## 1. Platform Support & Prerequisites (`v0.6.0`)
+## 1. Platform Support & Prerequisites (`v0.7.0`)
 
 Before adding `@ng-desktop/*` to an external project, check the current runtime maturity per operating system (see [`ROADMAP.md`](../ROADMAP.md) for the full roadmap):
 
-| Target OS                 | Runtime Status (`v0.6.0`)                                          | What Works Today                                                                                                                  |
+| Target OS                 | Runtime Status (`v0.7.0`)                                          | What Works Today                                                                                                                  |
 | :------------------------ | :----------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------- |
 | **Linux (`linux-gtk4`)**  | **Full Ivy Runtime** (`GTK4 / Libadwaita` + `JavaScriptCore`)      | Compiled Angular 22+ apps, CSS vars/media/emulated scoping, 2D virtual grid, SQLite, XDG + `inotify`, `.deb`/`AppImage`/`Flatpak` |
 | **Windows (`win32-x64`)** | **Full Ivy Runtime** (`Win32 / WinUI 3 FFI` + `QuickJS-NG`)        | Compiled Angular 22+ apps, shared layout solver, registry theme, HTTP/SQLite/FS watcher portals, `.msix` installers               |
@@ -354,7 +354,7 @@ export class EditorRootComponent {
 }
 ```
 
-> **Note:** On `v0.6.0`, `confirmDialog`, `openFileDialog`, `saveFileDialog`, theme detection, filesystem watchers, and notifications integrate directly with OS-native portals (`XDG Desktop Portal` / `GtkFileDialog` on Linux, Win32 Common Item Dialog & Registry on Windows, and Cocoa panels on macOS), with deterministic in-memory fallbacks in headless/test runs.
+> **Note:** On `v0.7.0`, `confirmDialog`, `openFileDialog`, `saveFileDialog`, theme detection, filesystem watchers, and notifications integrate directly with OS-native portals (`XDG Desktop Portal` / `GtkFileDialog` on Linux, Win32 Common Item Dialog & Registry on Windows, and Cocoa panels on macOS), with deterministic in-memory fallbacks in headless/test runs.
 
 ### E. OS Storage, SQLite Live Queries, & File Watching (`@ng-desktop/desktop`)
 
@@ -463,4 +463,4 @@ Supported capability tokens: `network`, `sqlite`, `filesystem:xdg`, `filesystem:
 ### Further Reading
 
 - [**Ecosystem Compatibility Guide**](./ECOSYSTEM_COMPATIBILITY.md) — Integrating NgRx, Angular Aria, Angular CDK, and Nx (plus why Material MDC templates are incompatible).
-- [**Architectural Roadmap**](./../ROADMAP.md) — Full `v0.6.0` maturity matrix and Phase 17 GitHub Pages docs portal milestones.
+- [**Architectural Roadmap**](./../ROADMAP.md) — Full `v0.7.0` maturity matrix and Phase 17/18 milestones.

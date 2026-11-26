@@ -79,8 +79,9 @@ import { PIPELINE_STAGES, type PipelineStage } from '../data/architecture-pillar
           <h3>GPU-Aware Native Toolkits</h3>
           <p>
             GTK4 leverages GSK GPU acceleration (<code>vulkan</code>, <code>gl</code>,
-            <code>ngl</code>), AppKit enables <code>setWantsLayer:YES</code> Metal compositing, and
-            Windows drives DWM-composited HWNDs. Override via
+            <code>ngl</code>), AppKit drives <code>CALayer</code> Metal compositing, and Windows
+            drives DWM-composited HWNDs. Configure declaratively via
+            <code>angular.json</code> (<code>"gpu"</code>), <code>--gpu</code>, or
             <code>NG_DESKTOP_GPU_BACKEND=auto|vulkan|gl|ngl|metal|dwm|software</code>.
           </p>
         </article>
