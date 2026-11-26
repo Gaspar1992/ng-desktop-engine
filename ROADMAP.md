@@ -256,12 +256,11 @@ When `@angular/platform-browser` is removed, Angular's Ivy runtime still require
 
 ---
 
-## 🔍 Remaining Architectural Gaps (`v0.6.0` -> `v0.7.0`)
+## 🔍 Remaining Architectural Gaps (`v0.7.0+`)
 
-Following the completion of Phase 16 in **`v0.6.0`** (`PR #39`–`PR #42`), two focused engineering items remain for the next milestone:
+Following the completion of Phase 16 (`v0.6.0`) and Phase 17 (`v0.7.0`, GitHub Pages docs portal & automated TypeScript/Rust API reference), one focused engineering item remains for store distribution:
 
-1. **Interactive Developer Documentation Portal (`docs-site/`):** Build the live Angular 22 documentation site on GitHub Pages with interactive primitive/compiler exploration and generated TypeScript + Rust API docs (`Phase 17`).
-2. **Commercial Code-Signing & Store Submission Certificates:** Wire external Authenticode (`signtool.exe`) and Apple Developer ID notarization (`notarytool`) secrets into `release.yml` on top of the ad-hoc / `NG_DESKTOP_MACOS_IDENTITY` signing hooks.
+1. **Commercial Code-Signing & Store Submission Certificates:** Wire external Authenticode (`signtool.exe`) and Apple Developer ID notarization (`notarytool`) secrets into `release.yml` on top of the ad-hoc / `NG_DESKTOP_MACOS_IDENTITY` signing hooks.
 
 ---
 
@@ -287,11 +286,13 @@ Following the completion of Phase 16 in **`v0.6.0`** (`PR #39`–`PR #42`), two 
 - [x] **Complete CSS & Animation Parity (`PR #41`):** Added `:hover`, `:focus`, `:active`, and `:disabled` pseudo-classes, CSS custom properties (`--var`/`var()`) with automatic light/dark `@media` synthesis, responsive `@media` (`prefers-color-scheme`, `min-width`, `max-width`), `opacity`, `transition`, `ViewEncapsulation.Emulated` scoping (`_ngcontent-*`, `_nghost-*`), reactive `RenderCommand::SetTheme`, and Pokédex theme toggle (`<Control>t`).
 - [x] **Compiled Native Multi-OS Installers (`PR #39`, `PR #42`):** Upgraded `src/packager/` (`builders.rs`, `png.rs`), `ng-desktop`, 3-OS CI, and `release.yml` to compile real `.deb`, `AppImage`, `Flatpak`, `.msix`, and `.dmg` packages alongside retrospective engine hardening across **233 automated tests**.
 
-### Phase 17: Official Interactive Documentation Website on GitHub Pages (In Progress 🌐)
+### Phase 17 (`v0.7.0`): Official Interactive Documentation Website on GitHub Pages (Completed ✅)
 
-1. **Angular 22 Interactive Docs Portal (`docs-site/` -> `dist/ng-desktop-docs`):**
-   - [ ] Create the `ng-desktop-docs` Angular 22 application (`--base-href /ng-desktop-engine/`) featuring an interactive 29-primitive explorer, live `.ngb` template compiler playground, architecture guides, and external-app tutorials.
-2. **Automated TypeScript & Rust API Reference (`scripts/build-api-docs.mjs`):**
-   - [ ] Bundle `@ng-desktop/*` TypeScript API reference (`/api-ts/`), `cargo doc --no-deps` Rust engine documentation (`/api-rust/`), `.nojekyll`, and `404.html` SPA routing fallback into `dist/ng-desktop-docs/browser`.
-3. **GitHub Pages Continuous Deployment (`.github/workflows/docs-pages.yml`):**
-   - [ ] Automatically build and deploy `dist/ng-desktop-docs/browser` to `https://gaspar1992.github.io/ng-desktop-engine/` via `actions/upload-pages-artifact@v3` and `actions/deploy-pages@v4` on every push to `main`.
+1. **Pre-Phase 17 Retrospective Hardening & API Readiness (`PR #44`):**
+   - [x] Tightened Rust safety/docs across `src/lib.rs`, `packager`, `engine`, `platforms`, and `runtime` (zero `clippy` and `rustdoc` warnings) alongside `@ng-desktop/*` Fenwick virtualization hoists, Signal Forms, reactive `httpResource`, JSDoc coverage, and Pokédex theme consistency.
+2. **Angular 22 Interactive Docs Portal (`docs-site/` -> `dist/ng-desktop-docs`, `PR #45`):**
+   - [x] Built the `ng-desktop-docs` Angular 22 application (`--base-href /ng-desktop-engine/`) featuring an interactive 29-primitive explorer, live `.ngb` template compiler playground backed by `@ng-desktop/platform`, system-first dark/light mode, `Ctrl+K` quick-search dialog, architecture guides, and Vitest specs.
+3. **Automated TypeScript & Rust API Reference (`scripts/build-api-docs.mjs`, `PR #46`):**
+   - [x] Bundled `@ng-desktop/*` TypeScript API reference (`/api-ts/` across all 7 packages), `cargo doc --no-deps` Rust engine documentation (`/api-rust/`), `.nojekyll`, and `404.html` SPA routing fallback into `dist/ng-desktop-docs/browser`.
+4. **GitHub Pages Continuous Deployment (`.github/workflows/docs-pages.yml`):**
+   - [x] Configured continuous build and deployment of `dist/ng-desktop-docs/browser` to `https://gaspar1992.github.io/ng-desktop-engine/` via `actions/configure-pages@v5`, `upload-pages-artifact@v3`, and `deploy-pages@v4`, with CI verification in `.github/workflows/ci.yml`.

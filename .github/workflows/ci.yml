@@ -35,6 +35,9 @@ jobs:
       - name: Run Angular & TypeScript unit tests (Vitest)
         run: pnpm run test --watch=false
 
+      - name: Run Docs Portal & API Pipeline unit tests (Vitest)
+        run: pnpm run docs:test
+
       - name: Build Angular & Native Bundle (.ngb)
         run: pnpm run build
 
@@ -69,6 +72,16 @@ jobs:
 
       - name: Run unit and integration tests (Headless + Xvfb GTK4 Display)
         run: xvfb-run -a cargo test --verbose
+
+      - name: Build Docs Portal & TypeScript/Rust API Reference
+        run: |
+          pnpm run docs:site
+          test -s dist/ng-desktop-docs/browser/index.html
+          test -s dist/ng-desktop-docs/browser/404.html
+          test -f dist/ng-desktop-docs/browser/.nojekyll
+          test -s dist/ng-desktop-docs/browser/api-ts/index.html
+          test -s dist/ng-desktop-docs/browser/api-rust/index.html
+          test -s dist/ng-desktop-docs/browser/api-rust/ng_native_engine/index.html
 
       - name: Stage multi-OS distribution packages & build real Linux .deb installer
         run: |
