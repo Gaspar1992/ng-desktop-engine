@@ -38,18 +38,18 @@ bootstrapNativeApplication(App, {
     version: '0.6.0',
     kind: 'library',
     summary:
-      'Angular CLI `ng add` schematic, Ahead-of-Time `.ngb` binary compiler (AST + scoped CSS), HMR dev server, permission analyzer, and OS packager.',
+      'Angular CLI ng add schematic, Ahead-of-Time .ngb binary compiler (AST + scoped CSS), HMR dev server, permission analyzer, and OS packager.',
     exportsList: [
-      'ng add @ng-desktop/builders',
-      'ng-desktop dev / build / package',
-      'buildBundle',
-      'compileCssToNativeRules',
-      'analyzePermissions',
+      'compileBundle',
+      'parseStylesCss',
+      'analyzeProjectPermissions',
+      'analyzeSourcePermissions',
+      'resolveWorkspaceProject',
     ],
     installCmd: 'ng add @ng-desktop/builders',
     snippet: `ng add @ng-desktop/builders
-pnpm exec ng-desktop dev
-pnpm exec ng-desktop package --target deb`,
+pnpm exec ng-desktop build
+pnpm exec ng-desktop package --installer=deb`,
   },
   {
     id: 'forms',
@@ -57,17 +57,17 @@ pnpm exec ng-desktop package --target deb`,
     version: '0.6.0',
     kind: 'library',
     summary:
-      'First-class Angular Signal Forms (`[formField]`) integration plus reactive/template-driven `ControlValueAccessor` directives for all native inputs.',
+      'First-class Angular Signal Forms ([formField]) controls plus reactive/template-driven ControlValueAccessor directives for all native inputs.',
     exportsList: [
-      'NATIVE_FORM_CONTROL_DIRECTIVES',
-      'NativeSignalFieldDirective',
-      'provideNativeForms',
-      'NativeEntryValueAccessor',
-      'NativeSwitchValueAccessor',
+      'NATIVE_FORM_DIRECTIVES',
+      'NATIVE_SIGNAL_FORM_DIRECTIVES',
+      'NativeTextFieldControl',
+      'NativeBooleanFieldControl',
+      'NativeNumberFieldControl',
+      'NativeTextValueAccessor',
     ],
     installCmd: 'pnpm add @ng-desktop/forms',
-    snippet: `import { form, required } from '@angular/forms/signals';
-import { NATIVE_FORM_CONTROL_DIRECTIVES } from '@ng-desktop/forms';`,
+    snippet: `import { form, NATIVE_FORM_DIRECTIVES } from '@ng-desktop/forms';`,
   },
   {
     id: 'router',
@@ -75,7 +75,7 @@ import { NATIVE_FORM_CONTROL_DIRECTIVES } from '@ng-desktop/forms';`,
     version: '0.6.0',
     kind: 'library',
     summary:
-      'Memory-backed hash/location navigation (`provideNativeRouter`) paired with `NativeStackRouteReuseStrategy` preserving scroll and view state.',
+      'Memory-backed hash/location navigation (provideNativeRouter) paired with NativeStackRouteReuseStrategy preserving scroll and view state.',
     exportsList: ['provideNativeRouter', 'NativeStackRouteReuseStrategy', 'NativePlatformLocation'],
     installCmd: 'pnpm add @ng-desktop/router',
     snippet: `import { provideNativeRouter } from '@ng-desktop/router';
@@ -90,12 +90,13 @@ export const appConfig = {
     version: '0.6.0',
     kind: 'library',
     summary:
-      'Zero-CORS Rust `reqwest`/`rustls` HTTP client backend (`provideNativeHttp`), JSON interceptors, and Signal-first `createNativeHttpResource`.',
-    exportsList: ['provideNativeHttp', 'NativeHttpBackend', 'createNativeHttpResource'],
+      'Zero-CORS OS-native HTTP client backend powered by libsoup-3.0, WinHTTP, and NSURLSession (provideNativeHttpClient) plus Signal-first createNativeHttpResource.',
+    exportsList: ['provideNativeHttpClient', 'NativeHttpBackend', 'createNativeHttpResource'],
     installCmd: 'pnpm add @ng-desktop/http',
-    snippet: `readonly pokemon = createNativeHttpResource(
+    snippet: `import { createNativeHttpResource } from '@ng-desktop/http';
+
+readonly pokemon = createNativeHttpResource(
   () => \`/api/pokemon/\${this.id()}\`,
-  { defaultValue: null },
 );`,
   },
   {
@@ -107,14 +108,14 @@ export const appConfig = {
       'Capability-gated desktop APIs: sandboxed filesystem I/O, local SQLite, OS dialogs, system tray menus, clipboard, shortcuts, and drag-and-drop.',
     exportsList: [
       'NativeDesktopService',
-      'NativeFsService',
+      'NativeFileSystemService',
       'NativeSqliteService',
       'NativeComputeService',
       'NativeDropTargetDirective',
     ],
     installCmd: 'pnpm add @ng-desktop/desktop',
     snippet: `const desktop = inject(NativeDesktopService);
-const folder = await desktop.openDirectoryDialog('Select Export Target');`,
+const filePath = desktop.openFileDialog({ title: 'Select Snapshot' });`,
   },
   {
     id: 'server',
@@ -124,46 +125,48 @@ const folder = await desktop.openDirectoryDialog('Select Export Target');`,
     summary:
       'Local-first Nitro/h3-inspired in-process server routes backed directly by Rust SQLite, eliminating separate Node daemons in desktop apps.',
     exportsList: [
-      'provideNativeServerRoutes',
-      'defineServerHandler',
-      'ServerRouteEvent',
-      'SqliteServerAdapter',
+      'defineNativeEventHandler',
+      'NativeServerEvent',
+      'createNativeServerRouter',
+      'registerNativeServerApp',
     ],
     installCmd: 'pnpm add @ng-desktop/server',
-    snippet: `provideNativeServerRoutes([
-  { path: '/api/pokemon', handler: () => db.query('SELECT * FROM pokemon') },
-]);`,
+    snippet: `import { defineNativeEventHandler } from '@ng-desktop/server';
+
+export default defineNativeEventHandler((event) => {
+  return event.context.db.query('SELECT * FROM pokemon');
+});`,
   },
   {
-    id: 'engine-linux-x64',
-    name: '@ng-desktop/engine-linux-x64',
+    id: 'engine-linux-x64-gnu',
+    name: '@ng-desktop/engine-linux-x64-gnu',
     version: '0.6.0',
     kind: 'binary',
     summary: 'Prebuilt Linux x86_64 GTK4 + Libadwaita + QuickJS-NG / JavaScriptCore engine binary.',
     exportsList: ['bin/ng-native-engine (ELF x86_64)'],
     installCmd: 'Installed automatically as optionalDependency of @ng-desktop/builders',
-    snippet: `"optionalDependencies": { "@ng-desktop/engine-linux-x64": "0.6.0" }`,
+    snippet: `"optionalDependencies": { "@ng-desktop/engine-linux-x64-gnu": "0.6.0" }`,
   },
   {
-    id: 'engine-linux-arm64',
-    name: '@ng-desktop/engine-linux-arm64',
+    id: 'engine-linux-arm64-gnu',
+    name: '@ng-desktop/engine-linux-arm64-gnu',
     version: '0.6.0',
     kind: 'binary',
     summary: 'Prebuilt Linux aarch64 GTK4 + Libadwaita engine binary for ARM workstations & SBCs.',
     exportsList: ['bin/ng-native-engine (ELF aarch64)'],
     installCmd: 'Installed automatically as optionalDependency of @ng-desktop/builders',
-    snippet: `"optionalDependencies": { "@ng-desktop/engine-linux-arm64": "0.6.0" }`,
+    snippet: `"optionalDependencies": { "@ng-desktop/engine-linux-arm64-gnu": "0.6.0" }`,
   },
   {
-    id: 'engine-win32-x64',
-    name: '@ng-desktop/engine-win32-x64',
+    id: 'engine-win32-x64-msvc',
+    name: '@ng-desktop/engine-win32-x64-msvc',
     version: '0.6.0',
     kind: 'binary',
     summary:
-      'Prebuilt Windows 11 x86_64 WinUI 3 + QuickJS-NG engine executable with MSIX packaging.',
+      'Prebuilt Windows 11 x86_64 Win32/WinUI + QuickJS-NG engine executable with MSIX packaging.',
     exportsList: ['bin/ng-native-engine.exe (PE x86_64)'],
     installCmd: 'Installed automatically as optionalDependency of @ng-desktop/builders',
-    snippet: `"optionalDependencies": { "@ng-desktop/engine-win32-x64": "0.6.0" }`,
+    snippet: `"optionalDependencies": { "@ng-desktop/engine-win32-x64-msvc": "0.6.0" }`,
   },
   {
     id: 'engine-darwin-arm64',

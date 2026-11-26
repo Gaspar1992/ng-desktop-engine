@@ -70,5 +70,11 @@ export default [
       ...configs.templateRecommended[1].rules,
     },
   },
+  {
+    files: ['docs-site/**/*.html'],
+    rules: {
+      ...configs.templateAccessibility[1].rules,
+    },
+  },
   ...oxlint.buildFromOxlintConfigFile('./.oxlintrc.json'),
 ];

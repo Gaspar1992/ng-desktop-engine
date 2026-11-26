@@ -1,4 +1,4 @@
-import { Component, signal } from '@angular/core';
+import { Component, DestroyRef, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 
 @Component({
@@ -21,12 +21,15 @@ import { RouterLink } from '@angular/router';
           <li><strong>Node.js 24+</strong> &amp; Angular CLI 22+ (with pnpm or npm).</li>
           <li>
             <strong>OS Desktop Libraries (Linux runtime / local dev):</strong> GTK4 &amp; Libadwaita
-            development headers (Windows WinUI 3 and macOS AppKit use built-in OS SDKs).
+            development headers (Windows Win32/WinUI and macOS AppKit use built-in OS libraries).
           </li>
           <li>
             <strong>Prebuilt Engine Binaries:</strong> automatically installed via
-            <code>optionalDependencies</code> on x86_64/arm64 Linux, Windows x64, and macOS Apple
-            Silicon/Intel — zero Rust toolchain needed for normal JS builds.
+            <code>optionalDependencies</code> on Linux (<code>engine-linux-x64-gnu</code> /
+            <code>arm64-gnu</code>), Windows (<code>engine-win32-x64-msvc</code>), and macOS (<code
+              >engine-darwin-arm64</code
+            >
+            / <code>x64</code>) — zero Rust toolchain needed for normal Angular builds.
           </li>
         </ul>
       </section>
@@ -67,7 +70,7 @@ import { RouterLink } from '@angular/router';
 
       <section class="card step-card">
         <div class="card-head">
-          <h2>4. Run with HMR or Package OS Installers</h2>
+          <h2>4. Build, Run &amp; Package OS Installers</h2>
           <button type="button" class="btn btn-ghost" (click)="copyBlock('cli', cliCommands)">
             {{ copiedKey() === 'cli' ? 'Copied' : 'Copy' }}
           </button>
@@ -137,7 +140,9 @@ import { RouterLink } from '@angular/router';
   `,
 })
 export class GettingStartedPage {
+  private readonly destroyRef = inject(DestroyRef);
   readonly copiedKey = signal<string | null>(null);
+  private copyTimer: ReturnType<typeof setTimeout> | undefined;
 
   readonly scaffoldCmd = `ng new my-desktop-app --minimal
 cd my-desktop-app
@@ -146,7 +151,7 @@ ng add @ng-desktop/builders`;
   readonly bootstrapSnippet = `// src/main.ts
 import { bootstrapNativeApplication, provideNativePlatform } from '@ng-desktop/platform';
 import { provideNativeRouter } from '@ng-desktop/router';
-import { provideNativeHttp } from '@ng-desktop/http';
+import { provideNativeHttpClient } from '@ng-desktop/http';
 import { App } from './app/app';
 import { routes } from './app/app.routes';
 
@@ -154,31 +159,47 @@ bootstrapNativeApplication(App, {
   providers: [
     provideNativePlatform(),
     provideNativeRouter(routes),
-    provideNativeHttp(),
+    provideNativeHttpClient(),
   ],
 });`;
 
-  readonly cliCommands = `# Live desktop preview + template/CSS Hot Module Reload
-pnpm exec ng-desktop dev
+  readonly cliCommands = `# Build Angular app, .ngb bundle, and server routes
+ng build && pnpm exec ng-desktop build
 
 # Inspect sandbox capabilities inferred from app usage
 pnpm exec ng-desktop permissions
 
-# Build production .ngb bundle and generate native installers
-pnpm exec ng-desktop build
-pnpm exec ng-desktop package --target deb   # or appimage | flatpak | msix | dmg`;
+# Launch native window locally
+pnpm exec ng-desktop run
+
+# Package OS installers
+pnpm exec ng-desktop package --installer=deb   # or appimage | flatpak | msix | dmg`;
+
+  constructor() {
+    this.destroyRef.onDestroy(() => {
+      if (this.copyTimer !== undefined) {
+        clearTimeout(this.copyTimer);
+      }
+    });
+  }
 
   async copyBlock(key: string, text: string): Promise<void> {
-    try {
-      await globalThis.navigator?.clipboard?.writeText(text);
-    } catch {
-      // Ignore clipboard denials in headless environments.
+    if (!globalThis.navigator?.clipboard?.writeText) {
+      return;
     }
-    this.copiedKey.set(key);
-    setTimeout(() => {
-      if (this.copiedKey() === key) {
-        this.copiedKey.set(null);
+    try {
+      await globalThis.navigator.clipboard.writeText(text);
+      this.copiedKey.set(key);
+      if (this.copyTimer !== undefined) {
+        clearTimeout(this.copyTimer);
       }
-    }, 1800);
+      this.copyTimer = setTimeout(() => {
+        if (this.copiedKey() === key) {
+          this.copiedKey.set(null);
+        }
+      }, 1800);
+    } catch {
+      // Do not indicate success when clipboard write fails.
+    }
   }
 }

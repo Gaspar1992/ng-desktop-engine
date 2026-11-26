@@ -19,6 +19,8 @@
   --text-muted: light-dark(#4c5467, #9aa4b8);
   --accent: light-dark(#c80036, #ff4d79);
   --accent-strong: light-dark(#9f002b, #ff7a9b);
+  --btn-primary-bg: light-dark(#c80036, #b80036);
+  --btn-primary-bg-hover: light-dark(#9f002b, #94002b);
   --accent-soft: light-dark(rgba(200, 0, 54, 0.1), rgba(255, 77, 121, 0.16));
   --violet: light-dark(#5b21b6, #a78bfa);
   --violet-soft: light-dark(rgba(91, 33, 182, 0.1), rgba(167, 139, 250, 0.15));
@@ -165,14 +167,14 @@ pre {
 }
 
 .btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--btn-primary-bg);
+  border-color: var(--btn-primary-bg);
   color: #ffffff;
 }
 
 .btn-primary:hover {
-  background: var(--accent-strong);
-  border-color: var(--accent-strong);
+  background: var(--btn-primary-bg-hover);
+  border-color: var(--btn-primary-bg-hover);
   color: #ffffff;
 }
 

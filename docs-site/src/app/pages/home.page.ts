@@ -248,12 +248,15 @@ export class HomePage {
   });
 
   async copyInstallCommand(): Promise<void> {
+    if (!globalThis.navigator?.clipboard?.writeText) {
+      return;
+    }
     try {
-      await globalThis.navigator?.clipboard?.writeText('ng add @ng-desktop/builders');
+      await globalThis.navigator.clipboard.writeText('ng add @ng-desktop/builders');
       this.copiedInstall.set(true);
       setTimeout(() => this.copiedInstall.set(false), 1800);
     } catch {
-      this.copiedInstall.set(true);
+      // Do not indicate success when clipboard write fails.
     }
   }
 }

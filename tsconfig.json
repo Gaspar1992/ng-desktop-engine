@@ -37,6 +37,12 @@
     },
     {
       "path": "./tsconfig.spec.json"
+    },
+    {
+      "path": "./docs-site/tsconfig.app.json"
+    },
+    {
+      "path": "./docs-site/tsconfig.spec.json"
     }
   ]
 }

@@ -10,7 +10,7 @@ A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22
 
 ## 🎯 Architectural Principles
 
-1. **Zero WebView Overhead & Zero `CUSTOM_ELEMENTS_SCHEMA`:** Angular templates compile and execute against **29 native OS primitives + `<ng-anchor>`** (`AdwApplicationWindow`, `AdwDialog`, `GtkHeaderBar`, `AdwClamp`, `GtkBox`, `GtkGrid`, `GtkFlowBox`, `GtkPaned`, `GtkStack`, `GtkExpander`, `GtkScrolledWindow`, `GtkListBox`, `GtkPopover`, `GtkLabel`, `GtkPicture`, `GtkLevelBar`, `GtkProgressBar`, `GtkSpinner`, `GtkButton`, `GtkEntry`, `GtkSearchEntry`, `GtkPasswordEntry`, `GtkTextView`, `GtkSpinButton`, `GtkSwitch`, `GtkCheckButton`, `GtkScale`, `GtkDropDown`). Importing `NATIVE_UI_DIRECTIVES` from `@ng-desktop/platform` provides typed bindings for both `<ng-*>` widgets and standard HTML tags (`<div>`, `<button>`, `<span>`, `<table>`, `<dialog>`, `<menu>` via `HTML_TO_NATIVE_TAG`) without `CUSTOM_ELEMENTS_SCHEMA`.
+1. **Zero WebView Overhead & Zero `CUSTOM_ELEMENTS_SCHEMA`:** Angular templates compile and execute against **29 native OS primitives + `<ng-anchor>`** (`AdwApplicationWindow`, `AdwDialog`, `GtkHeaderBar`, `AdwClamp`, `GtkBox`, `GtkGrid`, `GtkFlowBox`, `GtkPaned`, `GtkStack`, `GtkExpander`, `GtkScrolledWindow`, `GtkListBox`, `GtkPopover`, `GtkSeparator`, `GtkLabel`, `GtkPicture`, `GtkLevelBar`, `GtkProgressBar`, `GtkSpinner`, `GtkButton`, `GtkEntry`, `GtkSearchEntry`, `GtkPasswordEntry`, `GtkTextView`, `GtkSpinButton`, `GtkSwitch`, `GtkCheckButton`, `GtkScale`, `GtkDropDown`). Importing `NATIVE_UI_DIRECTIVES` from `@ng-desktop/platform` provides typed bindings for both `<ng-*>` widgets and standard HTML tags (`<div>`, `<button>`, `<span>`, `<table>`, `<dialog>`, `<menu>` via `HTML_TO_NATIVE_TAG`) without `CUSTOM_ELEMENTS_SCHEMA`.
 2. **Rust-Grade Memory Safety Across the JS/Native Boundary:**
    - **Generational Arena (`Arena` + `NodeId`):** JavaScript never holds raw C/OS pointers. Every native widget lives inside a Rust generational arena (`index` + `generation`), preventing use-after-free bugs when components unmount.
    - **Runtime Borrow Checker (`BorrowState`):** Enforces Rust's aliasing rules (`Shared(usize)` vs `Exclusive`) at runtime across asynchronous UI events, blocking illegal node destruction while an event callback is actively borrowing a widget.
@@ -97,7 +97,9 @@ ng-desktop-engine/
 │   │   ├── mod.rs                # Non-blocking Unix Domain Socket HMR IPC Server & Client
 │   │   └── test_harness.rs       # In-process HMR & batch test harness
 │   ├── packager/
-│   │   └── mod.rs                # Multi-OS package staging (.deb, AppImage, Flatpak, WinUI AppxManifest, macOS .app)
+│   │   ├── mod.rs                # Multi-OS package staging (.deb, AppImage, Flatpak, WinUI AppxManifest, macOS .app)
+│   │   ├── builders.rs           # Native .deb, AppImage, Flatpak, MSIX, and .dmg installer compilers
+│   │   └── png.rs                # Dependency-free RGBA PNG encoder for app icons & installer assets
 │   ├── engine/                   # OS-agnostic core rendering engine (100% safe Rust)
 │   │   ├── mod.rs                # RenderEngine<B> scene graph & frame orchestrator
 │   │   ├── arena.rs              # Generational Arena + runtime BorrowState checker
@@ -112,6 +114,7 @@ ng-desktop-engine/
 │   │   └── widget_attrs.rs       # Layout & interactive form attribute mutators (SRP)
 │   ├── platforms/                # Concrete OS backend adapters (Bridge + Factory)
 │   │   ├── mod.rs                # PlatformBackend trait & AnyPlatformBackend factory
+│   │   ├── layout_solver.rs      # Shared cross-platform 1D Flexbox & 2D Grid layout solver
 │   │   ├── appkit_sys.rs         # Isolated Objective-C runtime FFI loader for macOS AppKit
 │   │   ├── gtk4_callbacks.rs     # Thread-safe GTK4 C signal trampolines & lazy EventMask controllers
 │   │   ├── gtk4_controls.rs      # Interactive GTK4 control mutators & signal connectors (SRP)
@@ -147,6 +150,7 @@ ng-desktop-engine/
 ├── docs/
 │   ├── GETTING_STARTED.md        # Step-by-step tutorial for external Angular 22+ & Nx apps
 │   └── ECOSYSTEM_COMPATIBILITY.md # Integration guide for NgRx, Angular Aria, CDK, Angular Material & Nx
+├── docs-site/                    # Official Angular 22 interactive documentation portal (ng-desktop-docs)
 ├── docker/
 │   ├── Dockerfile.ubuntu-gtk4    # Ubuntu 24.04 container image (GTK4 + Libadwaita + JSC + libsoup3 + SQLite3 + Xvfb)
 │   ├── Dockerfile.fedora-gtk4    # Fedora 41 container image (GTK4 + Libadwaita + WebKitGTK 6.0 + libsoup3 + SQLite3 + Xvfb)
@@ -155,6 +159,7 @@ ng-desktop-engine/
 │   └── docker-compose.kvm-os.yml # KVM-accelerated Windows 11 & macOS desktop VM containers (dockurr/windows & dockurr/macos)
 ├── scripts/
 │   ├── bootstrap-npm-packages.mjs # One-time npm Trusted Publishing package initializer
+│   ├── build-api-docs.mjs         # Unified TypeScript (/api-ts/) & Rust (/api-rust/) API reference generator
 │   ├── build-engine-local.mjs     # Local @ng-desktop/engine-* binary stager
 │   ├── build-engine-packages.mjs  # Stages @ng-desktop/engine-* platform binary packages
 │   ├── build-packages.mjs         # Angular Package Format (APF) compiler (dist/packages/*)
@@ -248,11 +253,13 @@ cargo run                # or: NG_NATIVE_BATCH=1 cargo run
 | `pnpm run format:all`                               | Format both TypeScript/Angular/Markdown (`oxfmt`) and Rust (`cargo fmt`) |
 | `pnpm run format:check`                             | Verify formatting with `oxfmt`                                           |
 | `pnpm run lint`                                     | Lint TypeScript & Angular templates via `oxlint` + `angular-eslint`      |
-| `pnpm run test --watch=false`                       | Run all 101 Vitest specs across 17 test files in a single pass           |
+| `pnpm run test --watch=false`                       | Run all 102 Vitest specs across 17 test files (`ng-linux-counter`)       |
+| `pnpm run docs:test`                                | Run Docs Portal & API pipeline Vitest specs (`ng-desktop-docs`)          |
+| `pnpm run docs:site`                                | Build Docs Portal + `/api-ts/` (285 symbols) + `/api-rust/` rustdoc      |
 | `pnpm run test:containers`                          | Run Xvfb + GTK4 + FFI test suite in Ubuntu 24.04 & Fedora 41 containers  |
 | `cargo fmt --all -- --check`                        | Verify Rust formatting                                                   |
 | `cargo clippy --all-targets -- -D warnings`         | Run strict Rust Clippy lints (pedantic + nursery, zero warnings)         |
-| `cargo test`                                        | Execute all 86 unit tests + 46 integration tests (8 suites) in Rust      |
+| `cargo test`                                        | Execute all 90 unit tests + 46 integration tests (8 suites) in Rust      |
 
 ---
 

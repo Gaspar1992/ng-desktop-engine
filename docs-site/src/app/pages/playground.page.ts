@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { compilePlaygroundToNgb } from '../core/ngb-playground-compiler';
 import { DocsThemeService } from '../core/theme.service';
 import { PLAYGROUND_PRESETS, type PlaygroundPreset } from '../data/playground-presets.data';
@@ -25,6 +25,7 @@ import { PlaygroundPreviewNodeComponent } from './playground-preview-node.compon
               type="button"
               class="btn"
               [class.btn-primary]="activePresetId() === preset.id"
+              [attr.aria-pressed]="activePresetId() === preset.id"
               (click)="loadPreset(preset)"
             >
               {{ preset.name }}
@@ -32,12 +33,22 @@ import { PlaygroundPreviewNodeComponent } from './playground-preview-node.compon
           }
         </div>
 
-        <div class="preview-controls">
+        <div class="preview-controls" role="group" aria-label="Simulated OS theme">
           <span>Simulated OS Theme:</span>
           <button
             type="button"
             class="btn"
-            [class.btn-primary]="previewTheme() === 'light'"
+            [class.btn-primary]="pinnedPreviewTheme() === null"
+            [attr.aria-pressed]="pinnedPreviewTheme() === null"
+            (click)="setPreviewTheme(null)"
+          >
+            Auto
+          </button>
+          <button
+            type="button"
+            class="btn"
+            [class.btn-primary]="pinnedPreviewTheme() === 'light'"
+            [attr.aria-pressed]="pinnedPreviewTheme() === 'light'"
             (click)="setPreviewTheme('light')"
           >
             Light
@@ -45,7 +56,8 @@ import { PlaygroundPreviewNodeComponent } from './playground-preview-node.compon
           <button
             type="button"
             class="btn"
-            [class.btn-primary]="previewTheme() === 'dark'"
+            [class.btn-primary]="pinnedPreviewTheme() === 'dark'"
+            [attr.aria-pressed]="pinnedPreviewTheme() === 'dark'"
             (click)="setPreviewTheme('dark')"
           >
             Dark
@@ -332,7 +344,7 @@ export class PlaygroundPage {
   readonly templateSource = signal<string>(this.initialPreset.template);
   readonly cssSource = signal<string>(this.initialPreset.css);
 
-  private readonly pinnedPreviewTheme = signal<'light' | 'dark' | null>(null);
+  readonly pinnedPreviewTheme = signal<'light' | 'dark' | null>(null);
 
   readonly previewTheme = computed<'light' | 'dark'>(
     () => this.pinnedPreviewTheme() ?? this.portalTheme.effectiveTheme(),
@@ -342,20 +354,13 @@ export class PlaygroundPage {
     compilePlaygroundToNgb(this.templateSource(), this.cssSource(), this.previewTheme()),
   );
 
-  constructor() {
-    effect(() => {
-      // Keep reading portalTheme so preview reacts automatically unless pinned locally.
-      this.portalTheme.effectiveTheme();
-    });
-  }
-
   loadPreset(preset: PlaygroundPreset): void {
     this.activePresetId.set(preset.id);
     this.templateSource.set(preset.template);
     this.cssSource.set(preset.css);
   }
 
-  setPreviewTheme(mode: 'light' | 'dark'): void {
+  setPreviewTheme(mode: 'light' | 'dark' | null): void {
     this.pinnedPreviewTheme.set(mode);
   }
 

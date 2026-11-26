@@ -1,8 +1,8 @@
 import {
   formatParsedStyleExtensions,
   type ParsedStyleRule,
-  resolveNativeTag,
   parseRuntimeStyles,
+  resolveNativeTag,
 } from '@ng-desktop/platform';
 
 export interface PlaygroundAttribute {
@@ -18,6 +18,9 @@ export interface PlaygroundPreviewStyle {
   readonly borderRadiusPx?: number;
   readonly fontSizePx?: number;
   readonly fontWeight?: number;
+  readonly minWidthPx?: number;
+  readonly minHeightPx?: number;
+  readonly orientation?: 'horizontal' | 'vertical';
   readonly opacity?: number;
 }
 
@@ -54,27 +57,25 @@ export interface PlaygroundCompilationResult {
   readonly instructionCount: number;
 }
 
-const VOID_TAGS = new Set([
-  'br',
-  'hr',
-  'img',
-  'input',
-  'meta',
-  'link',
-  'ng-header-bar',
+const HTML_VOID_TAGS = new Set(['br', 'hr', 'img', 'input', 'meta', 'link']);
+
+// Leaf native widgets accept closing tags for Angular template ergonomics (`<ng-label></ng-label>`),
+// but never hold nested child widgets (`ng-header-bar` is a container and is intentionally excluded).
+const LEAF_NATIVE_TAGS = new Set([
   'ng-separator',
   'ng-entry',
   'ng-password-entry',
   'ng-search-entry',
   'ng-spin-button',
   'ng-switch',
-  'ng-check-button',
   'ng-checkbox',
   'ng-check',
+  'gtk-check-button',
   'ng-slider',
   'ng-scale',
   'ng-select',
   'ng-dropdown',
+  'gtk-drop-down',
   'ng-level-bar',
   'ng-spinner',
   'ng-progress-bar',
@@ -94,8 +95,110 @@ interface MutableParsedNode {
   children: MutableParsedNode[];
 }
 
-const TAG_TOKEN_REGEX = /<!--[\s\S]*?-->|<(\/?)([a-zA-Z][\w-]*)([^<>]*?)(\/?)>/g;
+type TemplateToken =
+  | { kind: 'text'; value: string }
+  | {
+      kind: 'tag';
+      isClosing: boolean;
+      rawTag: string;
+      rawAttrs: string;
+      selfClosing: boolean;
+    };
+
 const ATTR_REGEX = /([^\s=/>"'`]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+
+function scanTemplateTokens(template: string): TemplateToken[] {
+  const tokens: TemplateToken[] = [];
+  let cursor = 0;
+  let textStart = 0;
+  const len = template.length;
+
+  const flushText = (end: number): void => {
+    if (end > textStart) {
+      tokens.push({ kind: 'text', value: template.slice(textStart, end) });
+    }
+  };
+
+  while (cursor < len) {
+    const ltIndex = template.indexOf('<', cursor);
+    if (ltIndex === -1) {
+      break;
+    }
+
+    if (template.startsWith('<!--', ltIndex)) {
+      flushText(ltIndex);
+      const commentEnd = template.indexOf('-->', ltIndex + 4);
+      cursor = commentEnd === -1 ? len : commentEnd + 3;
+      textStart = cursor;
+      continue;
+    }
+
+    const afterLt = ltIndex + 1;
+    const isClosing = template[afterLt] === '/';
+    const nameStart = isClosing ? afterLt + 1 : afterLt;
+    if (nameStart >= len || !/[a-zA-Z]/.test(template[nameStart] ?? '')) {
+      cursor = ltIndex + 1;
+      continue;
+    }
+
+    let nameEnd = nameStart;
+    while (nameEnd < len && /[a-zA-Z0-9_-]/.test(template[nameEnd] ?? '')) {
+      nameEnd += 1;
+    }
+
+    // Scan until an unquoted `>` so arrow functions like `(click)="n => n + 1"` stay intact.
+    let attrPos = nameEnd;
+    let quote: '"' | "'" | null = null;
+    while (attrPos < len) {
+      const ch = template[attrPos] ?? '';
+      if (quote) {
+        if (ch === '\\' && attrPos + 1 < len) {
+          attrPos += 2;
+          continue;
+        }
+        if (ch === quote) {
+          quote = null;
+        }
+      } else {
+        if (ch === '"' || ch === "'") {
+          quote = ch;
+        } else if (ch === '>') {
+          break;
+        }
+      }
+      attrPos += 1;
+    }
+
+    if (attrPos >= len) {
+      cursor = ltIndex + 1;
+      continue;
+    }
+
+    flushText(ltIndex);
+    const rawTag = template.slice(nameStart, nameEnd).toLowerCase();
+    let rawAttrs = template.slice(nameEnd, attrPos);
+    let selfClosing = false;
+    const trimmedRight = rawAttrs.trimEnd();
+    if (!isClosing && trimmedRight.endsWith('/')) {
+      selfClosing = true;
+      rawAttrs = trimmedRight.slice(0, -1);
+    }
+
+    tokens.push({
+      kind: 'tag',
+      isClosing,
+      rawTag,
+      rawAttrs,
+      selfClosing,
+    });
+
+    cursor = attrPos + 1;
+    textStart = cursor;
+  }
+
+  flushText(len);
+  return tokens;
+}
 
 function normalizeAttrName(raw: string): {
   kind: 'attr' | 'event' | 'class';
@@ -152,6 +255,10 @@ function resolvePreviewStyle(
   rules: readonly ParsedStyleRule[],
   theme: 'light' | 'dark',
 ): PlaygroundPreviewStyle {
+  if (classes.length === 0) {
+    return {};
+  }
+  const classSet = new Set(classes);
   let background: string | undefined;
   let color: string | undefined;
   let paddingPx: number | undefined;
@@ -159,29 +266,33 @@ function resolvePreviewStyle(
   let borderRadiusPx: number | undefined;
   let fontSizePx: number | undefined;
   let fontWeight: number | undefined;
+  let minWidthPx: number | undefined;
+  let minHeightPx: number | undefined;
+  let orientation: 'horizontal' | 'vertical' | undefined;
   let opacity: number | undefined;
 
   const applyRule = (rule: ParsedStyleRule): void => {
-    if (rule.background) background = rule.background;
-    if (rule.color) color = rule.color;
+    if (rule.background && rule.background !== 'none') background = rule.background;
+    if (rule.color && rule.color !== 'none') color = rule.color;
     if (rule.padding > 0) paddingPx = rule.padding;
     if (rule.spacing > 0) gapPx = rule.spacing;
     if (rule.borderRadius !== null) borderRadiusPx = rule.borderRadius;
     if (rule.fontSize !== null) fontSizePx = rule.fontSize;
     if (rule.fontWeight !== null) fontWeight = rule.fontWeight;
+    if (rule.minWidth !== null) minWidthPx = rule.minWidth;
+    if (rule.minHeight !== null) minHeightPx = rule.minHeight;
+    if (rule.orientation !== null) orientation = rule.orientation;
     if (rule.opacity !== null) opacity = rule.opacity;
   };
 
-  for (const cls of classes) {
-    for (const rule of rules) {
-      if (rule.className === cls && rule.pseudoClass === null && rule.mediaTheme === null) {
-        applyRule(rule);
-      }
+  for (const rule of rules) {
+    if (classSet.has(rule.className) && rule.pseudoClass === null && rule.mediaTheme === null) {
+      applyRule(rule);
     }
-    for (const rule of rules) {
-      if (rule.className === cls && rule.pseudoClass === null && rule.mediaTheme === theme) {
-        applyRule(rule);
-      }
+  }
+  for (const rule of rules) {
+    if (classSet.has(rule.className) && rule.pseudoClass === null && rule.mediaTheme === theme) {
+      applyRule(rule);
     }
   }
 
@@ -193,6 +304,9 @@ function resolvePreviewStyle(
     ...(borderRadiusPx !== undefined ? { borderRadiusPx } : {}),
     ...(fontSizePx !== undefined ? { fontSizePx } : {}),
     ...(fontWeight !== undefined ? { fontWeight } : {}),
+    ...(minWidthPx !== undefined ? { minWidthPx } : {}),
+    ...(minHeightPx !== undefined ? { minHeightPx } : {}),
+    ...(orientation !== undefined ? { orientation } : {}),
     ...(opacity !== undefined ? { opacity } : {}),
   };
 }
@@ -245,16 +359,19 @@ export function compilePlaygroundToNgb(
     ]
       .filter(Boolean)
       .join(' ');
+    const qualifiers = [
+      rule.pseudoClass ? `:${rule.pseudoClass}` : '',
+      rule.mediaTheme ? ` @media(${rule.mediaTheme})` : '',
+    ].join('');
     instructions.push({
       opcode: 'Style',
-      summary: `.${rule.className}${details ? ` { ${details} }` : ''}`,
+      summary: `.${rule.className}${qualifiers}${details ? ` { ${details} }` : ''}`,
     });
   }
 
   const roots: MutableParsedNode[] = [];
   const stack: MutableParsedNode[] = [];
   let nextId = 1;
-  let lastIndex = 0;
 
   const pushText = (raw: string): void => {
     const cleaned = raw.trim();
@@ -267,21 +384,13 @@ export function compilePlaygroundToNgb(
     }
   };
 
-  for (const match of template.matchAll(TAG_TOKEN_REGEX)) {
-    const tokenStart = match.index ?? 0;
-    if (tokenStart > lastIndex) {
-      pushText(template.slice(lastIndex, tokenStart));
-    }
-    lastIndex = tokenStart + match[0].length;
-
-    if (match[0].startsWith('<!--')) {
+  for (const token of scanTemplateTokens(template)) {
+    if (token.kind === 'text') {
+      pushText(token.value);
       continue;
     }
 
-    const isClosing = match[1] === '/';
-    const rawTag = (match[2] ?? '').toLowerCase();
-    const rawAttrs = match[3] ?? '';
-    const selfClosing = match[4] === '/';
+    const { isClosing, rawTag, rawAttrs, selfClosing } = token;
 
     if (isClosing) {
       for (let idx = stack.length - 1; idx >= 0; idx -= 1) {
@@ -301,6 +410,11 @@ export function compilePlaygroundToNgb(
         );
       }
       continue;
+    }
+
+    // Pop an unclosed leaf native widget if another element starts after it so siblings do not nest inside leaves.
+    while (stack.length > 0 && LEAF_NATIVE_TAGS.has(stack.at(-1)!.nativeTag)) {
+      stack.pop();
     }
 
     const { attributes, events, classes } = parseAttributes(rawAttrs);
@@ -351,21 +465,14 @@ export function compilePlaygroundToNgb(
       });
     }
 
-    if (!selfClosing && !VOID_TAGS.has(rawTag)) {
-      stack.push(node);
-    } else if (!selfClosing && VOID_TAGS.has(rawTag)) {
-      // Allow explicit closing tags for void native widgets without nesting children inside them.
+    if (!selfClosing && !HTML_VOID_TAGS.has(rawTag)) {
       stack.push(node);
     }
   }
 
-  if (lastIndex < template.length) {
-    pushText(template.slice(lastIndex));
-  }
-
   if (roots.length === 0 && template.trim().length > 0) {
     warnings.push(
-      'No native widget primitives detected. Try `<ng-window>`, `<ng-box>`, `<ng-label>`, `<ng-button>`, or standard HTML tags (`<div>`, `<p>`, `<button>`).',
+      'No native widget primitives detected. Try <ng-window>, <ng-box>, <ng-label>, <ng-button>, or standard HTML tags (<div>, <p>, <button>).',
     );
   }
 

@@ -45,6 +45,7 @@ import { PACKAGES_CATALOG, type PackageSpec } from '../data/packages-catalog.dat
               type="button"
               class="btn"
               [class.btn-primary]="kindFilter() === 'all'"
+              [attr.aria-pressed]="kindFilter() === 'all'"
               (click)="kindFilter.set('all')"
             >
               All ({{ allPackages.length }})
@@ -53,6 +54,7 @@ import { PACKAGES_CATALOG, type PackageSpec } from '../data/packages-catalog.dat
               type="button"
               class="btn"
               [class.btn-primary]="kindFilter() === 'library'"
+              [attr.aria-pressed]="kindFilter() === 'library'"
               (click)="kindFilter.set('library')"
             >
               Angular Libraries (7)
@@ -61,6 +63,7 @@ import { PACKAGES_CATALOG, type PackageSpec } from '../data/packages-catalog.dat
               type="button"
               class="btn"
               [class.btn-primary]="kindFilter() === 'binary'"
+              [attr.aria-pressed]="kindFilter() === 'binary'"
               (click)="kindFilter.set('binary')"
             >
               OS Binaries (5)

@@ -38,6 +38,7 @@ import {
             type="button"
             class="btn"
             [class.btn-primary]="activeCategory() === 'All'"
+            [attr.aria-pressed]="activeCategory() === 'All'"
             (click)="activeCategory.set('All')"
           >
             All ({{ allPrimitives.length }})
@@ -47,6 +48,7 @@ import {
               type="button"
               class="btn"
               [class.btn-primary]="activeCategory() === cat"
+              [attr.aria-pressed]="activeCategory() === cat"
               (click)="activeCategory.set(cat)"
             >
               {{ cat }}
@@ -373,16 +375,19 @@ export class WidgetsPage {
   }
 
   async copySnippet(spec: PrimitiveSpec): Promise<void> {
-    try {
-      await globalThis.navigator?.clipboard?.writeText(spec.snippet);
-    } catch {
-      // Ignore clipboard denials cleanly.
+    if (!globalThis.navigator?.clipboard?.writeText) {
+      return;
     }
-    this.copiedId.set(spec.id);
-    setTimeout(() => {
-      if (this.copiedId() === spec.id) {
-        this.copiedId.set(null);
-      }
-    }, 1800);
+    try {
+      await globalThis.navigator.clipboard.writeText(spec.snippet);
+      this.copiedId.set(spec.id);
+      setTimeout(() => {
+        if (this.copiedId() === spec.id) {
+          this.copiedId.set(null);
+        }
+      }, 1800);
+    } catch {
+      // Do not indicate success when clipboard write fails.
+    }
   }
 }

@@ -22,7 +22,7 @@ import type { PlaygroundPreviewNode } from '../core/ngb-playground-compiler';
         @if (primaryLabel(); as label) {
           <span class="node-label">{{ label }}</span>
         }
-        @for (cls of node().classes; track cls) {
+        @for (cls of node().classes; track $index) {
           <span class="node-class">.{{ cls }}</span>
         }
       </div>
