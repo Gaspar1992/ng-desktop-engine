@@ -339,14 +339,14 @@ pub fn generate_windows_appx_manifest_with_permissions(
         )
     };
     let rescap_ns = if perms.full_system_access {
-        "\n         xmlns:rescap=\"http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities\"\n         IgnorableNamespaces=\"uap rescap\""
+        "\n         xmlns:uap10=\"http://schemas.microsoft.com/appx/manifest/uap/windows10/10\"\n         xmlns:rescap=\"http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities\"\n         IgnorableNamespaces=\"uap uap10 rescap\""
     } else {
-        "\n         IgnorableNamespaces=\"uap\""
+        "\n         xmlns:uap10=\"http://schemas.microsoft.com/appx/manifest/uap/windows10/10\"\n         IgnorableNamespaces=\"uap uap10\""
     };
-    let entry_point = if perms.full_system_access {
-        "Windows.FullTrustApplication"
+    let app_runtime_attrs = if perms.full_system_access {
+        r#"EntryPoint="Windows.FullTrustApplication""#
     } else {
-        "NgDesktop.SandboxedApp"
+        r#"uap10:RuntimeBehavior="packagedClassicApp" uap10:TrustLevel="appContainer""#
     };
 
     format!(
@@ -366,7 +366,7 @@ pub fn generate_windows_appx_manifest_with_permissions(
     <Resource Language="en-us" />
   </Resources>
   <Applications>
-    <Application Id="App" Executable="{escaped_app_id}.exe" EntryPoint="{entry_point}">
+    <Application Id="App" Executable="{escaped_app_id}.exe" {app_runtime_attrs}>
       <uap:VisualElements DisplayName="{escaped_name}" Description="Angular 22 Native WinUI 3 Desktop App"
                           BackgroundColor="#1e1e1e" Square150x150Logo="Assets\Logo.png" Square44x44Logo="Assets\SmallLogo.png" />
     </Application>
@@ -576,6 +576,9 @@ mod tests {
         assert!(win_manifest.contains("Identity Name=\"NgNative.my-notes\""));
         assert!(win_manifest.contains("Version=\"0.4.0.0\""));
         assert!(win_manifest.contains("Executable=\"my-notes.exe\""));
+        assert!(win_manifest.contains("uap10:RuntimeBehavior=\"packagedClassicApp\""));
+        assert!(win_manifest.contains("uap10:TrustLevel=\"appContainer\""));
+        assert!(!win_manifest.contains("NgDesktop.SandboxedApp"));
         assert!(!win_manifest.contains("runFullTrust"));
         assert!(!win_manifest.contains("internetClient"));
 

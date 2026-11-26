@@ -10,7 +10,11 @@ impl Gtk4Sys {
         }
         if let Ok(c_css) = CString::new(css) {
             unsafe {
-                (self.gtk_css_provider_load_from_string)(self.css_provider, c_css.as_ptr());
+                if let Some(load_from_str) = self.gtk_css_provider_load_from_string {
+                    load_from_str(self.css_provider, c_css.as_ptr());
+                } else if let Some(load_from_data) = self.gtk_css_provider_load_from_data {
+                    load_from_data(self.css_provider, c_css.as_ptr(), -1);
+                }
             }
         }
     }

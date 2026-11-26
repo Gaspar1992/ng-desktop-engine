@@ -12,6 +12,7 @@ const SQLITE_ROW: c_int = 100;
 const SQLITE_DONE: c_int = 101;
 const SQLITE_INTEGER: c_int = 1;
 const SQLITE_FLOAT: c_int = 2;
+const SQLITE_BLOB: c_int = 4;
 const SQLITE_NULL: c_int = 5;
 const SQLITE_TRANSIENT: isize = -1;
 
@@ -90,38 +91,7 @@ pub fn parse_json_params(raw_array: &str) -> Result<Vec<SqlParam>, String> {
 }
 
 fn parse_json_param_string(input: &str) -> Result<(String, usize), String> {
-    let rest = input
-        .strip_prefix('"')
-        .ok_or_else(|| String::from("Expected opening quote in SQL string param"))?;
-    let mut out = String::new();
-    let mut chars = rest.char_indices();
-    while let Some((idx, ch)) = chars.next() {
-        match ch {
-            '"' => return Ok((out, idx + 2)),
-            '\\' => match chars.next() {
-                Some((_, '"')) => out.push('"'),
-                Some((_, '\\')) => out.push('\\'),
-                Some((_, '/')) => out.push('/'),
-                Some((_, 'n')) => out.push('\n'),
-                Some((_, 'r')) => out.push('\r'),
-                Some((_, 't')) => out.push('\t'),
-                Some((_, 'b')) => out.push('\x08'),
-                Some((_, 'f')) => out.push('\x0c'),
-                Some((_, 'u')) => {
-                    let hex: String = chars.by_ref().take(4).map(|(_, c)| c).collect();
-                    if let Ok(code) = u32::from_str_radix(&hex, 16)
-                        && let Some(decoded) = char::from_u32(code)
-                    {
-                        out.push(decoded);
-                    }
-                }
-                Some((_, other)) => out.push(other),
-                None => return Err(String::from("Unterminated escape in SQL param string")),
-            },
-            c => out.push(c),
-        }
-    }
-    Err(String::from("Unterminated string in SQL params array"))
+    super::json::parse_json_string_at(input)
 }
 
 type SqliteOpenFn = unsafe extern "C" fn(*const c_char, *mut *mut c_void) -> c_int;
@@ -140,6 +110,8 @@ type SqliteColTypeFn = unsafe extern "C" fn(*mut c_void, c_int) -> c_int;
 type SqliteColInt64Fn = unsafe extern "C" fn(*mut c_void, c_int) -> i64;
 type SqliteColDoubleFn = unsafe extern "C" fn(*mut c_void, c_int) -> c_double;
 type SqliteColTextFn = unsafe extern "C" fn(*mut c_void, c_int) -> *const u8;
+type SqliteColBlobFn = unsafe extern "C" fn(*mut c_void, c_int) -> *const c_void;
+type SqliteColBytesFn = unsafe extern "C" fn(*mut c_void, c_int) -> c_int;
 type SqliteBindNullFn = unsafe extern "C" fn(*mut c_void, c_int) -> c_int;
 type SqliteBindInt64Fn = unsafe extern "C" fn(*mut c_void, c_int, i64) -> c_int;
 type SqliteBindDoubleFn = unsafe extern "C" fn(*mut c_void, c_int, c_double) -> c_int;
@@ -159,6 +131,8 @@ struct SqliteFfi {
     sqlite3_column_int64: SqliteColInt64Fn,
     sqlite3_column_double: SqliteColDoubleFn,
     sqlite3_column_text: SqliteColTextFn,
+    sqlite3_column_blob: SqliteColBlobFn,
+    sqlite3_column_bytes: SqliteColBytesFn,
     sqlite3_bind_null: SqliteBindNullFn,
     sqlite3_bind_int64: SqliteBindInt64Fn,
     sqlite3_bind_double: SqliteBindDoubleFn,
@@ -190,36 +164,67 @@ impl SqliteFfi {
         None
     }
 
-    fn try_open(path: &str) -> Option<Self> {
+    fn try_open(path: &str) -> Result<Self, String> {
         unsafe {
-            let lib = Self::open_sqlite_lib()?;
-            let sqlite3_open: SqliteOpenFn = load_sym(lib, c"sqlite3_open")?;
-            let sqlite3_close: SqliteCloseFn = load_sym(lib, c"sqlite3_close")?;
-            let sqlite3_prepare_v2: SqlitePrepareFn = load_sym(lib, c"sqlite3_prepare_v2")?;
-            let sqlite3_step: SqliteStepFn = load_sym(lib, c"sqlite3_step")?;
-            let sqlite3_column_count: SqliteColCountFn = load_sym(lib, c"sqlite3_column_count")?;
-            let sqlite3_column_name: SqliteColNameFn = load_sym(lib, c"sqlite3_column_name")?;
-            let sqlite3_column_type: SqliteColTypeFn = load_sym(lib, c"sqlite3_column_type")?;
-            let sqlite3_column_int64: SqliteColInt64Fn = load_sym(lib, c"sqlite3_column_int64")?;
-            let sqlite3_column_double: SqliteColDoubleFn = load_sym(lib, c"sqlite3_column_double")?;
-            let sqlite3_column_text: SqliteColTextFn = load_sym(lib, c"sqlite3_column_text")?;
-            let sqlite3_bind_null: SqliteBindNullFn = load_sym(lib, c"sqlite3_bind_null")?;
-            let sqlite3_bind_int64: SqliteBindInt64Fn = load_sym(lib, c"sqlite3_bind_int64")?;
-            let sqlite3_bind_double: SqliteBindDoubleFn = load_sym(lib, c"sqlite3_bind_double")?;
-            let sqlite3_bind_text: SqliteBindTextFn = load_sym(lib, c"sqlite3_bind_text")?;
-            let sqlite3_finalize: SqliteFinalizeFn = load_sym(lib, c"sqlite3_finalize")?;
-            let sqlite3_errmsg: SqliteErrmsgFn = load_sym(lib, c"sqlite3_errmsg")?;
+            let lib = Self::open_sqlite_lib()
+                .ok_or_else(|| String::from("System SQLite3 shared library not found"))?;
+            let sqlite3_open: SqliteOpenFn = load_sym(lib, c"sqlite3_open")
+                .ok_or_else(|| String::from("Missing sqlite3_open symbol"))?;
+            let sqlite3_close: SqliteCloseFn = load_sym(lib, c"sqlite3_close")
+                .ok_or_else(|| String::from("Missing sqlite3_close symbol"))?;
+            let sqlite3_prepare_v2: SqlitePrepareFn = load_sym(lib, c"sqlite3_prepare_v2")
+                .ok_or_else(|| String::from("Missing sqlite3_prepare_v2 symbol"))?;
+            let sqlite3_step: SqliteStepFn = load_sym(lib, c"sqlite3_step")
+                .ok_or_else(|| String::from("Missing sqlite3_step symbol"))?;
+            let sqlite3_column_count: SqliteColCountFn = load_sym(lib, c"sqlite3_column_count")
+                .ok_or_else(|| String::from("Missing sqlite3_column_count symbol"))?;
+            let sqlite3_column_name: SqliteColNameFn = load_sym(lib, c"sqlite3_column_name")
+                .ok_or_else(|| String::from("Missing sqlite3_column_name symbol"))?;
+            let sqlite3_column_type: SqliteColTypeFn = load_sym(lib, c"sqlite3_column_type")
+                .ok_or_else(|| String::from("Missing sqlite3_column_type symbol"))?;
+            let sqlite3_column_int64: SqliteColInt64Fn = load_sym(lib, c"sqlite3_column_int64")
+                .ok_or_else(|| String::from("Missing sqlite3_column_int64 symbol"))?;
+            let sqlite3_column_double: SqliteColDoubleFn = load_sym(lib, c"sqlite3_column_double")
+                .ok_or_else(|| String::from("Missing sqlite3_column_double symbol"))?;
+            let sqlite3_column_text: SqliteColTextFn = load_sym(lib, c"sqlite3_column_text")
+                .ok_or_else(|| String::from("Missing sqlite3_column_text symbol"))?;
+            let sqlite3_column_blob: SqliteColBlobFn = load_sym(lib, c"sqlite3_column_blob")
+                .ok_or_else(|| String::from("Missing sqlite3_column_blob symbol"))?;
+            let sqlite3_column_bytes: SqliteColBytesFn = load_sym(lib, c"sqlite3_column_bytes")
+                .ok_or_else(|| String::from("Missing sqlite3_column_bytes symbol"))?;
+            let sqlite3_bind_null: SqliteBindNullFn = load_sym(lib, c"sqlite3_bind_null")
+                .ok_or_else(|| String::from("Missing sqlite3_bind_null symbol"))?;
+            let sqlite3_bind_int64: SqliteBindInt64Fn = load_sym(lib, c"sqlite3_bind_int64")
+                .ok_or_else(|| String::from("Missing sqlite3_bind_int64 symbol"))?;
+            let sqlite3_bind_double: SqliteBindDoubleFn = load_sym(lib, c"sqlite3_bind_double")
+                .ok_or_else(|| String::from("Missing sqlite3_bind_double symbol"))?;
+            let sqlite3_bind_text: SqliteBindTextFn = load_sym(lib, c"sqlite3_bind_text")
+                .ok_or_else(|| String::from("Missing sqlite3_bind_text symbol"))?;
+            let sqlite3_finalize: SqliteFinalizeFn = load_sym(lib, c"sqlite3_finalize")
+                .ok_or_else(|| String::from("Missing sqlite3_finalize symbol"))?;
+            let sqlite3_errmsg: SqliteErrmsgFn = load_sym(lib, c"sqlite3_errmsg")
+                .ok_or_else(|| String::from("Missing sqlite3_errmsg symbol"))?;
 
-            let c_path = CString::new(path).ok()?;
+            let c_path =
+                CString::new(path).map_err(|e| format!("Invalid SQLite path '{path}': {e}"))?;
             let mut db: *mut c_void = ptr::null_mut();
             let rc = sqlite3_open(c_path.as_ptr(), &raw mut db);
             if rc != SQLITE_OK || db.is_null() {
-                if !db.is_null() {
+                let err_msg = if db.is_null() {
+                    format!("sqlite3_open failed with code {rc}")
+                } else {
+                    let msg_ptr = sqlite3_errmsg(db);
+                    let msg = if msg_ptr.is_null() {
+                        format!("sqlite3_open failed with code {rc}")
+                    } else {
+                        CStr::from_ptr(msg_ptr).to_string_lossy().into_owned()
+                    };
                     sqlite3_close(db);
-                }
-                return None;
+                    msg
+                };
+                return Err(err_msg);
             }
-            Some(Self {
+            Ok(Self {
                 db,
                 sqlite3_close,
                 sqlite3_prepare_v2,
@@ -230,6 +235,8 @@ impl SqliteFfi {
                 sqlite3_column_int64,
                 sqlite3_column_double,
                 sqlite3_column_text,
+                sqlite3_column_blob,
+                sqlite3_column_bytes,
                 sqlite3_bind_null,
                 sqlite3_bind_int64,
                 sqlite3_bind_double,
@@ -438,11 +445,25 @@ impl SqliteFfi {
                         out.push_str("null");
                     }
                 }
+                SQLITE_BLOB => {
+                    let blob_ptr = (self.sqlite3_column_blob)(stmt, col);
+                    let byte_len =
+                        usize::try_from((self.sqlite3_column_bytes)(stmt, col).max(0)).unwrap_or(0);
+                    out.push('"');
+                    if !blob_ptr.is_null() && byte_len > 0 {
+                        let bytes = std::slice::from_raw_parts(blob_ptr.cast::<u8>(), byte_len);
+                        out.push_str(&encode_base64(bytes));
+                    }
+                    out.push('"');
+                }
                 _ => {
                     let text_ptr = (self.sqlite3_column_text)(stmt, col);
+                    let byte_len =
+                        usize::try_from((self.sqlite3_column_bytes)(stmt, col).max(0)).unwrap_or(0);
                     out.push('"');
-                    if !text_ptr.is_null() {
-                        let text = CStr::from_ptr(text_ptr.cast::<c_char>()).to_string_lossy();
+                    if !text_ptr.is_null() && byte_len > 0 {
+                        let bytes = std::slice::from_raw_parts(text_ptr, byte_len);
+                        let text = String::from_utf8_lossy(bytes);
                         out.push_str(&escape_json(&text));
                     }
                     out.push('"');
@@ -534,6 +555,30 @@ unsafe fn load_sym<F: Copy>(handle: *mut c_void, sym: &CStr) -> Option<F> {
     unsafe { DynLib::from_ptr(handle).sym(sym) }
 }
 
+fn encode_base64(bytes: &[u8]) -> String {
+    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = usize::from(chunk[0]);
+        let b1 = usize::from(*chunk.get(1).unwrap_or(&0));
+        let b2 = usize::from(*chunk.get(2).unwrap_or(&0));
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        out.push(char::from(TABLE[(triple >> 18) & 0x3F]));
+        out.push(char::from(TABLE[(triple >> 12) & 0x3F]));
+        out.push(if chunk.len() > 1 {
+            char::from(TABLE[(triple >> 6) & 0x3F])
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            char::from(TABLE[triple & 0x3F])
+        } else {
+            '='
+        });
+    }
+    out
+}
+
 /// Cross-platform OS dynamic library target for `NativeSqliteDatabase`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OsSqliteBackend {
@@ -570,7 +615,7 @@ impl OsSqliteBackend {
 pub struct NativeSqliteDatabase {
     backend: OsSqliteBackend,
     ffi: Option<SqliteFfi>,
-    fallback_tables: HashMap<String, Vec<HashMap<String, String>>>,
+    open_error: Option<String>,
 }
 
 impl Default for NativeSqliteDatabase {
@@ -585,18 +630,24 @@ impl NativeSqliteDatabase {
     }
 
     pub fn open_path(path: &str) -> Self {
-        let ffi = SqliteFfi::try_open(path);
-        if let Some(ref handle) = ffi {
-            let _ = handle.execute_params("PRAGMA busy_timeout=5000;", &[]);
-            if path.trim() != ":memory:" {
-                let _ = handle
-                    .execute_params("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;", &[]);
+        match SqliteFfi::try_open(path) {
+            Ok(handle) => {
+                let _ = handle.execute_params("PRAGMA busy_timeout=5000;", &[]);
+                if path.trim() != ":memory:" {
+                    let _ = handle
+                        .execute_params("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;", &[]);
+                }
+                Self {
+                    backend: OsSqliteBackend::current(),
+                    ffi: Some(handle),
+                    open_error: None,
+                }
             }
-        }
-        Self {
-            backend: OsSqliteBackend::current(),
-            ffi,
-            fallback_tables: HashMap::new(),
+            Err(err) => Self {
+                backend: OsSqliteBackend::current(),
+                ffi: None,
+                open_error: Some(err),
+            },
         }
     }
 
@@ -608,99 +659,33 @@ impl NativeSqliteDatabase {
         self.ffi.is_some()
     }
 
+    pub fn open_error(&self) -> Option<&str> {
+        self.open_error.as_deref()
+    }
+
+    fn unavailable_error(&self) -> String {
+        self.open_error
+            .clone()
+            .unwrap_or_else(|| String::from("Native SQLite3 handle is unavailable"))
+    }
+
     pub fn execute(&mut self, sql: &str) -> Result<(), String> {
         self.execute_params(sql, &[])
     }
 
     /// Executes a SQL statement with bound `SqlParam` values (`?` placeholders).
     pub fn execute_params(&mut self, sql: &str, params: &[SqlParam]) -> Result<(), String> {
-        if let Some(ref ffi) = self.ffi {
-            return ffi.execute_params(sql, params);
-        }
-        // Minimal fallback for environments lacking a system SQLite shared library
-        for raw_stmt in sql.split(';') {
-            let stmt = raw_stmt.trim();
-            if stmt.is_empty() {
-                continue;
-            }
-            let upper = stmt.to_ascii_uppercase();
-            if upper.starts_with("CREATE TABLE")
-                && let Some(tbl) = stmt.split_whitespace().find(|tok| {
-                    !matches!(
-                        tok.to_ascii_uppercase().as_str(),
-                        "CREATE" | "TABLE" | "IF" | "NOT" | "EXISTS"
-                    )
-                })
-            {
-                let name = tbl.split('(').next().unwrap_or(tbl).trim().to_string();
-                self.fallback_tables.entry(name).or_default();
-            } else if (upper.starts_with("INSERT INTO")
-                || upper.starts_with("INSERT OR REPLACE INTO"))
-                && let Some((head, vals_part)) = stmt.split_once('(')
-            {
-                let replace = upper.starts_with("INSERT OR REPLACE");
-                let table_name = head.split_whitespace().last().unwrap_or("default").trim();
-                let (cols_raw, rest_after_cols) =
-                    vals_part.split_once(')').unwrap_or((vals_part, ""));
-                let vals_inner = rest_after_cols
-                    .split_once('(')
-                    .and_then(|(_, v)| v.rsplit_once(')').map(|(inner, _)| inner))
-                    .unwrap_or("");
-                let mut row = HashMap::new();
-                let mut param_idx = 0usize;
-                for (idx, (col, val)) in cols_raw.split(',').zip(vals_inner.split(',')).enumerate()
-                {
-                    let key = col.trim();
-                    let raw_val = val.trim();
-                    let resolved_val = if raw_val == "?" {
-                        let out = match params.get(param_idx) {
-                            Some(SqlParam::Integer(n)) => n.to_string(),
-                            Some(SqlParam::Real(f)) => f.to_string(),
-                            Some(SqlParam::Text(s)) => s.clone(),
-                            Some(SqlParam::Null) | None => String::new(),
-                        };
-                        param_idx += 1;
-                        out
-                    } else {
-                        raw_val.trim_matches('\'').trim_matches('"').to_string()
-                    };
-                    let col_name = if key.is_empty() {
-                        format!("col_{idx}")
-                    } else {
-                        key.to_string()
-                    };
-                    row.insert(col_name, resolved_val);
-                }
-                if !row.is_empty() {
-                    let rows = self
-                        .fallback_tables
-                        .entry(table_name.to_string())
-                        .or_default();
-                    if replace
-                        && let Some(id_val) = row.get("id")
-                        && let Some(existing) =
-                            rows.iter_mut().find(|r| r.get("id") == Some(id_val))
-                    {
-                        *existing = row;
-                    } else {
-                        rows.push(row);
-                    }
-                }
-            }
-        }
-        Ok(())
+        let Some(ref ffi) = self.ffi else {
+            return Err(self.unavailable_error());
+        };
+        ffi.execute_params(sql, params)
     }
 
     pub fn query(&self, sql: &str) -> Result<Vec<HashMap<String, String>>, String> {
-        if let Some(ref ffi) = self.ffi {
-            return ffi.query(sql);
-        }
-        Ok(self
-            .fallback_tables
-            .values()
-            .next()
-            .cloned()
-            .unwrap_or_default())
+        let Some(ref ffi) = self.ffi else {
+            return Err(self.unavailable_error());
+        };
+        ffi.query(sql)
     }
 
     pub fn query_json(&self, sql: &str) -> Result<String, String> {
@@ -709,42 +694,10 @@ impl NativeSqliteDatabase {
 
     /// Queries SQL with bound `SqlParam` values and streams natively-typed JSON rows.
     pub fn query_json_params(&self, sql: &str, params: &[SqlParam]) -> Result<String, String> {
-        if let Some(ref ffi) = self.ffi {
-            return ffi.query_json_params(sql, params);
-        }
-        let mut rows = self.query(sql)?;
-        if let Some(where_pos) = sql.to_ascii_uppercase().find("WHERE ")
-            && let Some(cond) = sql[where_pos + 6..].split_whitespace().next()
-        {
-            let col_name = cond.trim().trim_end_matches('=');
-            if let Some(param) = params.first() {
-                let target = match param {
-                    SqlParam::Integer(n) => n.to_string(),
-                    SqlParam::Real(f) => f.to_string(),
-                    SqlParam::Text(s) => s.clone(),
-                    SqlParam::Null => String::new(),
-                };
-                rows.retain(|r| r.get(col_name) == Some(&target));
-            }
-        }
-        let encoded_rows: Vec<String> = rows
-            .into_iter()
-            .map(|row| {
-                let mut entries: Vec<(String, String)> = row.into_iter().collect();
-                entries.sort_by(|a, b| a.0.cmp(&b.0));
-                let fields: Vec<String> = entries
-                    .into_iter()
-                    .map(|(k, v)| {
-                        v.parse::<i64>().map_or_else(
-                            |_| format!("\"{}\":\"{}\"", escape_json(&k), escape_json(&v)),
-                            |num| format!("\"{}\":{num}", escape_json(&k)),
-                        )
-                    })
-                    .collect();
-                format!("{{{}}}", fields.join(","))
-            })
-            .collect();
-        Ok(format!("[{}]", encoded_rows.join(",")))
+        let Some(ref ffi) = self.ffi else {
+            return Err(self.unavailable_error());
+        };
+        ffi.query_json_params(sql, params)
     }
 }
 
@@ -755,6 +708,10 @@ mod tests {
     #[test]
     fn executes_crud_and_serializes_rows_with_native_sqlite() {
         let mut db = NativeSqliteDatabase::new_in_memory();
+        if !db.is_native_loaded() {
+            assert!(db.open_error().is_some());
+            return;
+        }
         db.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT NOT NULL, note TEXT);")
             .unwrap();
         db.execute(
@@ -766,32 +723,34 @@ mod tests {
         let rows = db
             .query("SELECT id, name, note FROM items ORDER BY id ASC;")
             .unwrap();
-        if db.is_native_loaded() {
-            assert_eq!(rows.len(), 2);
-            assert_eq!(rows[0].get("id").map(String::as_str), Some("1"));
-            assert_eq!(rows[0].get("name").map(String::as_str), Some("Anchor"));
-            assert_eq!(rows[1].get("name").map(String::as_str), Some("Widget"));
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].get("id").map(String::as_str), Some("1"));
+        assert_eq!(rows[0].get("name").map(String::as_str), Some("Anchor"));
+        assert_eq!(rows[1].get("name").map(String::as_str), Some("Widget"));
 
-            db.execute("UPDATE items SET note = 'Primary' WHERE id = 25;")
-                .unwrap();
-            db.execute("DELETE FROM items WHERE id = 1;").unwrap();
+        db.execute("UPDATE items SET note = 'Primary' WHERE id = 25;")
+            .unwrap();
+        db.execute("DELETE FROM items WHERE id = 1;").unwrap();
 
-            let json = db
-                .query_json("SELECT id, name, note FROM items ORDER BY id ASC;")
-                .unwrap();
-            assert_eq!(json, r#"[{"id":25,"name":"Widget","note":"Primary"}]"#);
+        let json = db
+            .query_json("SELECT id, name, note FROM items ORDER BY id ASC;")
+            .unwrap();
+        assert_eq!(json, r#"[{"id":25,"name":"Widget","note":"Primary"}]"#);
 
-            let timeout_rows = db.query("PRAGMA busy_timeout;").unwrap();
-            assert_eq!(
-                timeout_rows[0].get("timeout").map(String::as_str),
-                Some("5000")
-            );
-        }
+        let timeout_rows = db.query("PRAGMA busy_timeout;").unwrap();
+        assert_eq!(
+            timeout_rows[0].get("timeout").map(String::as_str),
+            Some("5000")
+        );
     }
 
     #[test]
     fn binds_parameterized_queries_and_emits_typed_json_rows() {
         let mut db = NativeSqliteDatabase::new_in_memory();
+        if !db.is_native_loaded() {
+            assert!(db.open_error().is_some());
+            return;
+        }
         db.execute(
             "CREATE TABLE records (id INTEGER PRIMARY KEY, score REAL, label TEXT, extra TEXT);",
         )
@@ -808,18 +767,46 @@ mod tests {
         )
         .unwrap();
 
-        if db.is_native_loaded() {
-            let lookup = super::parse_json_params("[42]").unwrap();
-            let json = db
-                .query_json_params(
-                    "SELECT id, score, label, extra FROM records WHERE id = ?;",
-                    &lookup,
-                )
-                .unwrap();
-            assert_eq!(
-                json,
-                r#"[{"extra":null,"id":42,"label":"O'Reilly'; DROP TABLE records; --","score":9.5}]"#
-            );
+        let lookup = super::parse_json_params("[42]").unwrap();
+        let json = db
+            .query_json_params(
+                "SELECT id, score, label, extra FROM records WHERE id = ?;",
+                &lookup,
+            )
+            .unwrap();
+        assert_eq!(
+            json,
+            r#"[{"extra":null,"id":42,"label":"O'Reilly'; DROP TABLE records; --","score":9.5}]"#
+        );
+    }
+
+    #[test]
+    fn decodes_utf16_surrogates_preserves_blobs_with_nuls_and_fails_loudly_on_open_error() {
+        let parsed = super::parse_json_params(r#"["Pokédex \uD83D\uDE80"]"#).unwrap();
+        assert_eq!(
+            parsed,
+            vec![super::SqlParam::Text(String::from("Pokédex 🚀"))]
+        );
+
+        let mut bad_db =
+            NativeSqliteDatabase::open_path("/nonexistent/ng_native_missing_dir/test.db");
+        assert!(!bad_db.is_native_loaded());
+        assert!(bad_db.open_error().is_some());
+        assert!(bad_db.execute("SELECT 1;").is_err());
+        assert!(bad_db.query("SELECT 1;").is_err());
+        assert!(bad_db.query_json("SELECT 1;").is_err());
+
+        let mut db = NativeSqliteDatabase::new_in_memory();
+        if !db.is_native_loaded() {
+            return;
         }
+        db.execute("CREATE TABLE blobs (id INTEGER PRIMARY KEY, payload BLOB);")
+            .unwrap();
+        db.execute("INSERT INTO blobs (id, payload) VALUES (1, X'410042');")
+            .unwrap();
+        let json = db
+            .query_json("SELECT id, payload FROM blobs WHERE id = 1;")
+            .unwrap();
+        assert_eq!(json, r#"[{"id":1,"payload":"QQBC"}]"#);
     }
 }

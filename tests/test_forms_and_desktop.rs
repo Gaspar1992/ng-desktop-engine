@@ -303,6 +303,38 @@ fn nivel3_compute_pool_xdg_fs_watcher_and_native_drop_target() {
 }
 
 #[test]
+fn blocks_file_drop_event_when_filesystem_drop_permission_is_denied() {
+    let denied_cfg = ng_native_engine::config::AngularNativeConfig::default_standalone("drop-deny");
+    let mut denied_engine = RenderEngine::new(HeadlessBackend::new());
+    let mut denied_rt = JsRuntime::from_config(&denied_cfg).unwrap();
+    let deny_bundle = r#"
+        __NG_NATIVE__.createElement("win", "ng-window");
+        __NG_NATIVE__.createElement("dropZone", "ng-box");
+        __NG_NATIVE__.createElement("lbl", "ng-label");
+        __NG_NATIVE__.setText("lbl", "Safe");
+        __NG_NATIVE__.appendChild("dropZone", "lbl");
+        __NG_NATIVE__.appendChild("win", "dropZone");
+        __NG_NATIVE__.listen("dropZone", "file-drop", function(evt) {
+            __NG_NATIVE__.setText("lbl", `Leaked:${evt.value}`);
+        });
+    "#;
+    denied_rt.eval_js(&mut denied_engine, deny_bundle).unwrap();
+    let deny_win = denied_rt.resolve_var("win").unwrap();
+    let deny_zone = denied_rt.resolve_var("dropZone").unwrap();
+    denied_rt
+        .trigger_node_event_with_payload(
+            &mut denied_engine,
+            deny_zone,
+            "file-drop",
+            &EventPayload::Text(String::from("/etc/shadow")),
+        )
+        .unwrap();
+    let deny_preview = denied_engine.render_window_preview(deny_win).unwrap();
+    assert!(deny_preview.contains("Safe"), "{deny_preview}");
+    assert!(!deny_preview.contains("/etc/shadow"), "{deny_preview}");
+}
+
+#[test]
 fn gtk4_text_view_changed_event_emits_real_buffer_text() {
     use ng_native_engine::platforms::GtkLinuxBackend;
 

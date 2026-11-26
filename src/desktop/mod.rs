@@ -9,6 +9,7 @@ pub mod compute_pool;
 pub mod fs_watcher;
 pub mod http_codec;
 pub mod http_native;
+pub mod json;
 mod libsoup_sys;
 pub mod os_portals;
 pub mod sqlite_sys;

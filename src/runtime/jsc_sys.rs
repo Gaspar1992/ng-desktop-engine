@@ -30,9 +30,12 @@ pub(super) fn dispatch_host_bridge_call(
 ) -> String {
     match kind {
         JscCallbackKind::Http => {
-            if let Some(bridge) = host_slot.lock().ok().and_then(|g| g.clone())
-                && !bridge.allows_network()
-            {
+            let allowed = host_slot
+                .lock()
+                .ok()
+                .and_then(|g| g.clone())
+                .is_some_and(|bridge| bridge.allows_network());
+            if !allowed {
                 return String::from(
                     r#"{"status":403,"statusText":"Forbidden","body":"Permission denied: network"}"#,
                 );
@@ -767,6 +770,19 @@ mod tests {
         );
         assert!(denied.contains("403"), "{denied}");
         assert!(denied.contains("Permission denied: network"), "{denied}");
+
+        let empty_host: HostBridgeSlot = Arc::new(Mutex::new(None));
+        let unattached_denied = dispatch_host_bridge_call(
+            JscCallbackKind::Http,
+            r#"{"method":"GET","url":"https://capi.ng-native.test/blocked"}"#,
+            &http_slot,
+            &empty_host,
+        );
+        assert!(unattached_denied.contains("403"), "{unattached_denied}");
+        assert!(
+            unattached_denied.contains("Permission denied: network"),
+            "{unattached_denied}"
+        );
 
         let allowed_desktop = DesktopServices::with_app_config(
             "capi-net-allowed",

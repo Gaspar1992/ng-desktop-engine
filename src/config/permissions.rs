@@ -1,3 +1,5 @@
+use crate::desktop::json::{JsonValue, parse_json};
+
 /// Granular OS capability manifest for an Angular Desktop Engine application.
 ///
 /// Generated statically at build time from TypeScript AST imports (`permissions.manifest.json`)
@@ -129,85 +131,90 @@ impl AppPermissions {
         }
     }
 
-    /// Parses permissions from a manifest, `angular.json`, `project.json`, or runtime config string.
+    /// Parses permissions from a pre-parsed [`JsonValue`] (`permissions` block, `capabilities` block, or flat object).
     #[must_use]
-    pub fn from_json_str(content: &str) -> Self {
+    pub(crate) fn from_json_value(value: &JsonValue) -> Self {
         let mut perms = Self::minimal();
+        let perm_block = value.get_object("permissions").unwrap_or(value);
+        let cap_obj = perm_block.get_object("capabilities").unwrap_or(perm_block);
 
-        let outer_slice = extract_json_object_slice(content, "permissions").or_else(|| {
-            if extract_json_object_slice(content, "capabilities").is_some()
-                || has_any_permission_key(content)
-            {
-                Some(content)
-            } else {
-                None
-            }
-        });
-
-        let Some(perm_block) = outer_slice else {
-            return perms;
-        };
-
-        let cap_slice = extract_json_object_slice(perm_block, "capabilities").unwrap_or(perm_block);
-
-        if let Some(val) = extract_json_bool(cap_slice, "network") {
+        if let Some(val) = cap_obj.get_bool("network") {
             perms.network = val;
         }
-        if let Some(val) = extract_json_bool(cap_slice, "sqlite") {
+        if let Some(val) = cap_obj.get_bool("sqlite") {
             perms.sqlite = val;
         }
-        if let Some(val) = extract_json_bool(cap_slice, "clipboard") {
+        if let Some(val) = cap_obj.get_bool("clipboard") {
             perms.clipboard = val;
         }
-        if let Some(val) = extract_json_bool(cap_slice, "notifications") {
+        if let Some(val) = cap_obj.get_bool("notifications") {
             perms.notifications = val;
         }
-        if let Some(val) = extract_json_bool(cap_slice, "computeThreads")
-            .or_else(|| extract_json_bool(cap_slice, "compute_threads"))
+        if let Some(val) = cap_obj
+            .get_bool("computeThreads")
+            .or_else(|| cap_obj.get_bool("compute_threads"))
         {
             perms.compute_threads = val;
         }
-        if let Some(val) = extract_json_bool(cap_slice, "fullSystemAccess")
-            .or_else(|| extract_json_bool(cap_slice, "full_system_access"))
+        if let Some(val) = cap_obj
+            .get_bool("fullSystemAccess")
+            .or_else(|| cap_obj.get_bool("full_system_access"))
         {
             perms.full_system_access = val;
         }
 
-        if let Some(fs_slice) = extract_json_object_slice(cap_slice, "filesystem") {
-            if let Some(val) = extract_json_bool(fs_slice, "xdg") {
+        if let Some(fs_obj) = cap_obj.get_object("filesystem") {
+            if let Some(val) = fs_obj.get_bool("xdg") {
                 perms.filesystem_xdg = val;
             }
-            if let Some(val) = extract_json_bool(fs_slice, "dialogs") {
+            if let Some(val) = fs_obj.get_bool("dialogs") {
                 perms.filesystem_dialogs = val;
             }
-            if let Some(val) = extract_json_bool(fs_slice, "drop") {
+            if let Some(val) = fs_obj.get_bool("drop") {
                 perms.filesystem_drop = val;
             }
         }
-        if let Some(val) = extract_json_bool(cap_slice, "filesystemXdg")
-            .or_else(|| extract_json_bool(cap_slice, "filesystem_xdg"))
+        if let Some(val) = cap_obj
+            .get_bool("filesystemXdg")
+            .or_else(|| cap_obj.get_bool("filesystem_xdg"))
         {
             perms.filesystem_xdg = val;
         }
-        if let Some(val) = extract_json_bool(cap_slice, "filesystemDialogs")
-            .or_else(|| extract_json_bool(cap_slice, "filesystem_dialogs"))
+        if let Some(val) = cap_obj
+            .get_bool("filesystemDialogs")
+            .or_else(|| cap_obj.get_bool("filesystem_dialogs"))
         {
             perms.filesystem_dialogs = val;
         }
-        if let Some(val) = extract_json_bool(cap_slice, "filesystemDrop")
-            .or_else(|| extract_json_bool(cap_slice, "filesystem_drop"))
+        if let Some(val) = cap_obj
+            .get_bool("filesystemDrop")
+            .or_else(|| cap_obj.get_bool("filesystem_drop"))
         {
             perms.filesystem_drop = val;
         }
 
-        for token in extract_json_string_array(perm_block, "allow") {
-            perms.apply_token(&token, true);
+        if let Some(allow_items) = perm_block.get_array("allow") {
+            for item in allow_items {
+                if let Some(token) = item.as_str() {
+                    perms.apply_token(token, true);
+                }
+            }
         }
-        for token in extract_json_string_array(perm_block, "deny") {
-            perms.apply_token(&token, false);
+        if let Some(deny_items) = perm_block.get_array("deny") {
+            for item in deny_items {
+                if let Some(token) = item.as_str() {
+                    perms.apply_token(token, false);
+                }
+            }
         }
 
         perms
+    }
+
+    /// Parses permissions from a manifest, `angular.json`, `project.json`, or runtime config string.
+    #[must_use]
+    pub fn from_json_str(content: &str) -> Self {
+        parse_json(content).map_or_else(|_| Self::minimal(), |val| Self::from_json_value(&val))
     }
 
     /// Serializes this permission manifest as formatted JSON (`permissions.manifest.json` schema).
@@ -243,113 +250,6 @@ impl AppPermissions {
             self.full_system_access
         )
     }
-}
-
-fn has_any_permission_key(content: &str) -> bool {
-    [
-        "\"network\"",
-        "\"sqlite\"",
-        "\"filesystem\"",
-        "\"filesystemXdg\"",
-        "\"filesystem_xdg\"",
-        "\"filesystemDialogs\"",
-        "\"filesystem_dialogs\"",
-        "\"filesystemDrop\"",
-        "\"filesystem_drop\"",
-        "\"clipboard\"",
-        "\"notifications\"",
-        "\"computeThreads\"",
-        "\"compute_threads\"",
-        "\"fullSystemAccess\"",
-        "\"full_system_access\"",
-    ]
-    .iter()
-    .any(|key| content.contains(key))
-}
-
-fn find_json_key_value_start<'a>(json: &'a str, key: &str) -> Option<&'a str> {
-    let pattern = format!("\"{key}\"");
-    let mut offset = 0;
-    while let Some(rel_idx) = json[offset..].find(&pattern) {
-        let key_end = offset + rel_idx + pattern.len();
-        let after_key = json[key_end..].trim_start();
-        if let Some(after_colon) = after_key.strip_prefix(':') {
-            return Some(after_colon.trim_start());
-        }
-        offset = key_end;
-    }
-    None
-}
-
-fn extract_json_bool(json: &str, key: &str) -> Option<bool> {
-    let after_colon = find_json_key_value_start(json, key)?;
-    if after_colon.starts_with("true") {
-        Some(true)
-    } else if after_colon.starts_with("false") {
-        Some(false)
-    } else {
-        None
-    }
-}
-
-fn extract_json_object_slice<'a>(json: &'a str, key: &str) -> Option<&'a str> {
-    let after_colon = find_json_key_value_start(json, key)?;
-    if !after_colon.starts_with('{') {
-        return None;
-    }
-    let mut depth = 0_usize;
-    let mut in_string = false;
-    let mut escaped = false;
-    for (idx, ch) in after_colon.char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        if ch == '\\' && in_string {
-            escaped = true;
-            continue;
-        }
-        if ch == '"' {
-            in_string = !in_string;
-            continue;
-        }
-        if in_string {
-            continue;
-        }
-        if ch == '{' {
-            depth += 1;
-        } else if ch == '}' {
-            depth = depth.saturating_sub(1);
-            if depth == 0 {
-                return Some(&after_colon[..=idx]);
-            }
-        }
-    }
-    None
-}
-
-fn extract_json_string_array(json: &str, key: &str) -> Vec<String> {
-    let Some(after_colon) = find_json_key_value_start(json, key) else {
-        return Vec::new();
-    };
-    let Some(rest) = after_colon.strip_prefix('[') else {
-        return Vec::new();
-    };
-    let Some(end_bracket) = rest.find(']') else {
-        return Vec::new();
-    };
-    let inside = &rest[..end_bracket];
-    let mut items = Vec::new();
-    let mut current = inside;
-    while let Some(open_q) = current.find('"') {
-        let after_open = &current[open_q + 1..];
-        let Some(close_q) = after_open.find('"') else {
-            break;
-        };
-        items.push(after_open[..close_q].to_string());
-        current = &after_open[close_q + 1..];
-    }
-    items
 }
 
 #[cfg(test)]
@@ -419,5 +319,23 @@ mod tests {
         let json = r#"{ "projects": { "demo": { "sourceRoot": "src" } } }"#;
         let perms = AppPermissions::from_json_str(json);
         assert_eq!(perms, AppPermissions::minimal());
+    }
+
+    #[test]
+    fn ignores_permission_like_substrings_inside_unrelated_string_values() {
+        let json = r#"{
+            "description": "Docs example: {\"network\": true, \"fullSystemAccess\": true}",
+            "note": "\"sqlite\": true",
+            "permissions": {
+                "capabilities": {
+                    "clipboard": true
+                }
+            }
+        }"#;
+        let perms = AppPermissions::from_json_str(json);
+        assert!(perms.clipboard);
+        assert!(!perms.network);
+        assert!(!perms.sqlite);
+        assert!(!perms.full_system_access);
     }
 }

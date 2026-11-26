@@ -465,6 +465,13 @@ fn run_test_ipc_mode(
     }
 }
 
+fn env_flag_enabled(name: &str) -> bool {
+    env::var(name).is_ok_and(|raw| {
+        let trimmed = raw.trim();
+        trimmed == "1" || trimmed.eq_ignore_ascii_case("true")
+    })
+}
+
 fn has_test_ipc_stdio_flag(args: &[String]) -> bool {
     for arg in args {
         if arg == "--test-ipc" || arg == "--test-ipc=stdio" {
@@ -541,10 +548,17 @@ fn main() {
     println!("\n--- Rendered Window Preview ---");
     println!("{}", engine.render_window_preview(win_id).unwrap());
 
+    let hmr_enabled = args.iter().any(|a| a == "--hmr") || env_flag_enabled("NG_DESKTOP_HMR");
+    let hmr_eval_enabled =
+        args.iter().any(|a| a == "--hmr-eval") || env_flag_enabled("NG_DESKTOP_HMR_EVAL");
     let hmr_socket = format!("{}/hmr.sock", cfg.output_path);
-    let hmr_server = HmrIpcServer::bind(&hmr_socket).ok();
+    let hmr_server = if hmr_enabled {
+        HmrIpcServer::bind_dev(&hmr_socket, hmr_eval_enabled).ok()
+    } else {
+        None
+    };
     if hmr_server.is_some() {
-        println!("[HMR IPC] Socket server active -> '{hmr_socket}'");
+        println!("[HMR IPC] Authenticated dev socket server active -> '{hmr_socket}'");
     }
 
     if engine.backend().is_native_display_active() && env::var("NG_NATIVE_BATCH").is_err() {

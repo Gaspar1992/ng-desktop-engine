@@ -32,7 +32,12 @@ pub type GtkListBoxRowCallback = unsafe extern "C" fn(*mut c_void, *mut c_void, 
 /// Dynamically loaded `GTK4` / `GLib` / `GObject` / `GIO` function table for Linux.
 /// Isolates all C FFI symbol loading (`dlopen` / `dlsym`) from widget operations.
 pub struct Gtk4Sys {
-    pub(super) gtk_css_provider_load_from_string: unsafe extern "C" fn(*mut c_void, *const c_char),
+    pub(super) gtk_css_provider_load_from_string:
+        Option<unsafe extern "C" fn(*mut c_void, *const c_char)>,
+    pub(super) gtk_css_provider_load_from_data:
+        Option<unsafe extern "C" fn(*mut c_void, *const c_char, isize)>,
+    pub(super) gtk_style_context_remove_provider_for_display:
+        Option<unsafe extern "C" fn(*mut c_void, *mut c_void)>,
     pub(super) gtk_icon_theme_add_search_path: unsafe extern "C" fn(*mut c_void, *const c_char),
     pub(super) gtk_window_new: unsafe extern "C" fn() -> *mut c_void,
     pub(super) gtk_window_set_title: unsafe extern "C" fn(*mut c_void, *const c_char),
@@ -229,6 +234,7 @@ pub struct Gtk4Sys {
     pub(super) g_object_ref_sink: unsafe extern "C" fn(*mut c_void) -> *mut c_void,
     pub(super) g_object_unref: unsafe extern "C" fn(*mut c_void),
     pub(super) g_list_model_get_n_items: unsafe extern "C" fn(*mut c_void) -> c_uint,
+    pub(super) display: *mut c_void,
     pub(super) css_provider: *mut c_void,
     pub(super) icon_theme: *mut c_void,
 }
@@ -237,10 +243,16 @@ impl Drop for Gtk4Sys {
     fn drop(&mut self) {
         if !self.css_provider.is_null() {
             unsafe {
+                if !self.display.is_null()
+                    && let Some(remove_fn) = self.gtk_style_context_remove_provider_for_display
+                {
+                    remove_fn(self.display, self.css_provider);
+                }
                 (self.g_object_unref)(self.css_provider);
             }
             self.css_provider = std::ptr::null_mut();
         }
+        self.display = std::ptr::null_mut();
     }
 }
 
@@ -284,7 +296,18 @@ impl Gtk4Sys {
                 return None;
             }
 
-            let (css_provider, icon_theme) = Self::init_display_resources(gtk_lib)?;
+            let (display, css_provider, icon_theme) = Self::init_display_resources(gtk_lib)?;
+            let gtk_css_provider_load_from_string =
+                Self::load_fn(gtk_lib, c"gtk_css_provider_load_from_string");
+            let gtk_css_provider_load_from_data =
+                Self::load_fn(gtk_lib, c"gtk_css_provider_load_from_data");
+            if gtk_css_provider_load_from_string.is_none()
+                && gtk_css_provider_load_from_data.is_none()
+            {
+                return None;
+            }
+            let gtk_style_context_remove_provider_for_display =
+                Self::load_fn(gtk_lib, c"gtk_style_context_remove_provider_for_display");
             let adw_window_title_new =
                 adw_lib.and_then(|lib| Self::load_fn(lib, c"adw_window_title_new"));
             let adw_clamp_new = adw_lib.and_then(|lib| Self::load_fn(lib, c"adw_clamp_new"));
@@ -301,10 +324,9 @@ impl Gtk4Sys {
             super::gtk4_callbacks::set_list_box_row_index_fn(gtk_list_box_row_get_index);
 
             Some(Self {
-                gtk_css_provider_load_from_string: Self::load_fn(
-                    gtk_lib,
-                    c"gtk_css_provider_load_from_string",
-                )?,
+                gtk_css_provider_load_from_string,
+                gtk_css_provider_load_from_data,
+                gtk_style_context_remove_provider_for_display,
                 gtk_icon_theme_add_search_path: Self::load_fn(
                     gtk_lib,
                     c"gtk_icon_theme_add_search_path",
@@ -637,6 +659,7 @@ impl Gtk4Sys {
                 g_object_ref_sink: Self::load_fn(gobject_lib, c"g_object_ref_sink")?,
                 g_object_unref: Self::load_fn(gobject_lib, c"g_object_unref")?,
                 g_list_model_get_n_items: Self::load_fn(gio_lib, c"g_list_model_get_n_items")?,
+                display,
                 css_provider,
                 icon_theme,
             })
@@ -656,7 +679,9 @@ impl Gtk4Sys {
     }
 
     #[cfg(target_os = "linux")]
-    unsafe fn init_display_resources(gtk_lib: *mut c_void) -> Option<(*mut c_void, *mut c_void)> {
+    unsafe fn init_display_resources(
+        gtk_lib: *mut c_void,
+    ) -> Option<(*mut c_void, *mut c_void, *mut c_void)> {
         unsafe {
             let gdk_display_get_default: unsafe extern "C" fn() -> *mut c_void =
                 Self::load_fn(gtk_lib, c"gdk_display_get_default")?;
@@ -684,7 +709,7 @@ impl Gtk4Sys {
                 }
                 gtk_icon_theme_get_for_display(display)
             };
-            Some((css_provider, icon_theme))
+            Some((display, css_provider, icon_theme))
         }
     }
 

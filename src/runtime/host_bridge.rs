@@ -259,6 +259,11 @@ impl HostBridge {
         self.has_permission(self.permissions.network)
     }
 
+    #[must_use]
+    pub(crate) const fn allows_filesystem_drop(&self) -> bool {
+        self.has_permission(self.permissions.filesystem_drop)
+    }
+
     fn push_completion(
         queue: &Arc<Mutex<Vec<HostAsyncCompletion>>>,
         callback_id: u64,
@@ -380,9 +385,33 @@ impl HostBridge {
     }
 
     fn handle_download_image_async(&self, req_json: &str) -> String {
+        let callback_id = extract_json_u64(req_json, "callbackId");
+        if !self.has_permission(self.permissions.network) {
+            if let Some(cb) = callback_id {
+                Self::push_completion(
+                    &self.async_completions,
+                    cb,
+                    String::from(r#"{"ok":false,"path":"","error":"Permission denied: network"}"#),
+                );
+                return String::from(
+                    r#"{"ok":false,"cached":false,"queued":true,"denied":true,"error":"Permission denied: network"}"#,
+                );
+            }
+            return String::from(
+                r#"{"ok":false,"cached":false,"denied":true,"error":"Permission denied: network"}"#,
+            );
+        }
+
         let url = extract_json_string(req_json, "url")
             .or_else(|| extract_json_string(req_json, "src"))
             .unwrap_or_default();
+        let trimmed = url.trim();
+        if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
+            return String::from(
+                r#"{"ok":false,"cached":false,"path":"","error":"Blocked unsafe image URL scheme"}"#,
+            );
+        }
+
         let width = extract_json_u64(req_json, "width").and_then(|v| u32::try_from(v).ok());
         let resolved = self
             .system_env
@@ -397,20 +426,12 @@ impl HostBridge {
             );
         }
 
-        let Some(callback_id) = extract_json_u64(req_json, "callbackId") else {
+        let Some(callback_id) = callback_id else {
             return format!(
                 r#"{{"ok":false,"cached":false,"path":"{}","error":"Missing callbackId"}}"#,
                 escape_json(&clean_path)
             );
         };
-        if !self.has_permission(self.permissions.network) {
-            Self::push_completion(
-                &self.async_completions,
-                callback_id,
-                r#"{"ok":false,"path":"","error":"Permission denied: network"}"#.to_string(),
-            );
-            return String::from(r#"{"ok":false,"cached":false,"queued":true,"denied":true}"#);
-        }
 
         let (max_conn, timeout_ms) = self.http_engine.lock().map_or((24_u16, 15_000_u32), |eng| {
             let cfg = eng.config();
@@ -518,10 +539,14 @@ impl HostBridge {
             let _ = fs::create_dir_all(parent);
         }
         let resolved_str = resolved.to_string_lossy().into_owned();
+        let opened = NativeSqliteDatabase::open_path(&resolved_str);
+        if let Some(err) = opened.open_error() {
+            return Self::err_json(err);
+        }
         let Ok(mut db) = self.sqlite.lock() else {
             return Self::err_json("SQLite mutex poisoned");
         };
-        *db = NativeSqliteDatabase::open_path(&resolved_str);
+        *db = opened;
         format!(r#"{{"ok":true,"path":"{}"}}"#, escape_json(&resolved_str))
     }
 
@@ -1036,19 +1061,22 @@ mod tests {
     #[test]
     fn host_bridge_enforces_network_permission_and_hits_image_cache() {
         let app_id = format!("ng-host-bridge-net-{}", process::id());
-        let desktop = DesktopServices::with_app_config(&app_id, AppPermissions::minimal());
-        let bridge = HostBridge::new(&desktop);
+        let denied_desktop = DesktopServices::with_app_config(&app_id, AppPermissions::minimal());
+        let denied_bridge = HostBridge::new(&denied_desktop);
 
-        let denied = bridge.handle_service_call(
+        let denied = denied_bridge.handle_service_call(
             r#"{"action":"httpAsync","callbackId":7,"method":"GET","url":"https://example.test/api"}"#,
         );
         assert!(denied.contains(r#""denied":true"#));
-        let completions = bridge.drain_async_completions();
+        let completions = denied_bridge.drain_async_completions();
         assert_eq!(completions.len(), 1);
         assert_eq!(completions[0].callback_id, 7);
         assert!(completions[0].payload_json.contains(r#""status":403"#));
 
         let url = format!("https://cdn.example.test/avatar-{}.png", process::id());
+        let env_desktop =
+            DesktopServices::with_app_config(&app_id, AppPermissions::allow_all_sandboxed());
+        let bridge = HostBridge::new(&env_desktop);
         let resolve_req = format!(r#"{{"action":"systemEnv","src":"{url}","width":64}}"#);
         let env_res = bridge.handle_service_call(&resolve_req);
         let img_with_query =
@@ -1059,6 +1087,22 @@ mod tests {
             fs::create_dir_all(parent).expect("create test cache parent dir");
         }
         fs::write(&cache_file, b"PNG_BYTES").expect("seed cached image");
+
+        // Even when cached on disk, minimal() must deny downloadImageAsync before probing disk.
+        let denied_img_payload =
+            format!(r#"{{"action":"downloadImageAsync","callbackId":9,"url":"{url}","width":64}}"#);
+        let denied_img_reply = denied_bridge.handle_service_call(&denied_img_payload);
+        assert!(
+            denied_img_reply.contains(r#""denied":true"#),
+            "{denied_img_reply}"
+        );
+        let img_completions = denied_bridge.drain_async_completions();
+        assert_eq!(img_completions.len(), 1);
+        assert!(
+            img_completions[0]
+                .payload_json
+                .contains("Permission denied")
+        );
 
         let download_payload =
             format!(r#"{{"action":"downloadImageAsync","callbackId":8,"url":"{url}","width":64}}"#);

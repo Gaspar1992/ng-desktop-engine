@@ -112,14 +112,53 @@ fn async_host_services_timers_and_permissions_work_end_to_end() {
 
 #[test]
 fn host_service_permission_denial_and_image_cache_hit() {
-    // Verify permission denial (`403`) + cached `downloadImageAsync` on minimal permissions.
+    // Verify permission denial (`403` and `downloadImageAsync`) on minimal permissions,
+    // and verify local disk cache hits when network permission is enabled.
     let denied_app_id = format!("ng-ivy-runtime-denied-{}", process::id());
     let Some(mut denied_rt) = jsc_runtime(&denied_app_id, AppPermissions::minimal()) else {
         return;
     };
     let mut denied_engine = RenderEngine::new(HeadlessBackend::new());
     let img_url = format!("https://cdn.example.test/cached-{}.png", process::id());
-    let env_json = denied_rt
+
+    let denied_script = format!(
+        r#"
+        __NG_NATIVE__.createElement("win", "ng-window");
+        __NG_NATIVE__.createElement("status_lbl", "ng-label");
+        __NG_NATIVE__.appendChild("win", "status_lbl");
+        Promise.all([
+          __NG_NATIVE__.httpRequestAsync("GET", "https://example.test/blocked"),
+          __NG_NATIVE__.downloadImageAsync("{img_url}")
+        ]).then(([httpRes, imgRes]) => {{
+          __NG_NATIVE__.setText("status_lbl", `imgOk=${{imgRes.ok}};status=${{httpRes.status}}`);
+        }});
+    "#
+    );
+    denied_rt
+        .eval_js(&mut denied_engine, &denied_script)
+        .unwrap();
+    let denied_win = denied_rt.resolve_primary_window().unwrap();
+    for _ in 0..20 {
+        let _ = denied_rt.tick(&mut denied_engine).unwrap();
+        let p = denied_engine.render_window_preview(denied_win).unwrap();
+        if p.contains("imgOk=false;status=403") {
+            break;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    let denied_preview = denied_engine.render_window_preview(denied_win).unwrap();
+    assert!(
+        denied_preview.contains("imgOk=false;status=403"),
+        "denied_preview:\n{denied_preview}"
+    );
+
+    let cached_app_id = format!("ng-ivy-runtime-cache-{}", process::id());
+    let Some(mut cached_rt) = jsc_runtime(&cached_app_id, AppPermissions::allow_all_sandboxed())
+    else {
+        return;
+    };
+    let mut cached_engine = RenderEngine::new(HeadlessBackend::new());
+    let env_json = cached_rt
         .host_bridge()
         .handle_service_call(&format!(r#"{{"action":"systemEnv","src":"{img_url}"}}"#));
     let resolved_path = env_json
@@ -133,35 +172,32 @@ fn host_service_permission_denial_and_image_cache_hit() {
     }
     fs::write(&local_img, b"PNG_CACHE_HIT").unwrap();
 
-    let denied_script = format!(
+    let cache_script = format!(
         r#"
         __NG_NATIVE__.createElement("win", "ng-window");
         __NG_NATIVE__.createElement("status_lbl", "ng-label");
         __NG_NATIVE__.appendChild("win", "status_lbl");
-        Promise.all([
-          __NG_NATIVE__.httpRequestAsync("GET", "https://example.test/blocked"),
-          __NG_NATIVE__.downloadImageAsync("{img_url}")
-        ]).then(([httpRes, imgRes]) => {{
-          __NG_NATIVE__.setText("status_lbl", `cached=${{imgRes.cached}};status=${{httpRes.status}}`);
+        __NG_NATIVE__.downloadImageAsync("{img_url}").then((imgRes) => {{
+          __NG_NATIVE__.setText("status_lbl", `cached=${{imgRes.cached}}`);
         }});
     "#
     );
-    denied_rt
-        .eval_js(&mut denied_engine, &denied_script)
+    cached_rt
+        .eval_js(&mut cached_engine, &cache_script)
         .unwrap();
-    let denied_win = denied_rt.resolve_primary_window().unwrap();
+    let cached_win = cached_rt.resolve_primary_window().unwrap();
     for _ in 0..20 {
-        let _ = denied_rt.tick(&mut denied_engine).unwrap();
-        let p = denied_engine.render_window_preview(denied_win).unwrap();
-        if p.contains("cached=true;status=403") {
+        let _ = cached_rt.tick(&mut cached_engine).unwrap();
+        let p = cached_engine.render_window_preview(cached_win).unwrap();
+        if p.contains("cached=true") {
             break;
         }
         thread::sleep(Duration::from_millis(5));
     }
-    let denied_preview = denied_engine.render_window_preview(denied_win).unwrap();
+    let cached_preview = cached_engine.render_window_preview(cached_win).unwrap();
     assert!(
-        denied_preview.contains("cached=true;status=403"),
-        "denied_preview:\n{denied_preview}"
+        cached_preview.contains("cached=true"),
+        "cached_preview:\n{cached_preview}"
     );
 
     let _ = fs::remove_file(&local_img);
