@@ -1,4 +1,5 @@
 # Multi-Container Testing Image: macOS (Apple Silicon aarch64-apple-darwin & Intel x86_64-apple-darwin) Cross-Target Verification
+# Note: Linux containers cannot execute Mach-O macOS binaries; real macOS runtime + E2E verification executes on GitHub Actions `macos-latest`.
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \

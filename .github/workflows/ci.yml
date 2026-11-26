@@ -32,11 +32,8 @@ jobs:
       - name: Lint Angular & TypeScript (Oxlint + Angular ESLint)
         run: pnpm run lint
 
-      - name: Run Angular & TypeScript unit tests (Vitest)
-        run: pnpm run test --watch=false
-
-      - name: Run Docs Portal & API Pipeline unit tests (Vitest)
-        run: pnpm run docs:test
+      - name: Run Angular & Docs Portal Vitest suites with V8 coverage thresholds
+        run: pnpm run test:coverage
 
       - name: Build Angular & Native Bundle (.ngb)
         run: pnpm run build
@@ -62,7 +59,7 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy, rustfmt
+          components: clippy, rustfmt, llvm-tools-preview
 
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
@@ -70,8 +67,20 @@ jobs:
       - name: Run Clippy linter
         run: cargo clippy --all-targets -- -D warnings
 
-      - name: Run unit and integration tests (Headless + Xvfb GTK4 Display)
+      - name: Run unit, integration & strict E2E tests (Headless + Xvfb GTK4 Display)
+        env:
+          NG_E2E_REQUIRE_FULL: '1'
         run: xvfb-run -a cargo test --verbose
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Enforce Rust line coverage threshold (cargo-llvm-cov)
+        env:
+          NG_E2E_REQUIRE_FULL: '1'
+        run: xvfb-run -a cargo llvm-cov --summary-only --fail-under-lines 60
 
       - name: Build Docs Portal & TypeScript/Rust API Reference
         run: |
@@ -116,10 +125,10 @@ jobs:
           node-version: '24'
           cache: 'pnpm'
 
-      - name: Install dependencies & compile native .ngb bundle
+      - name: Install dependencies & compile full Angular + native .ngb bundle
         run: |
           pnpm install --frozen-lockfile
-          pnpm run build:native
+          pnpm run build
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -129,7 +138,9 @@ jobs:
       - name: Run Clippy linter (${{ matrix.label }})
         run: cargo clippy --all-targets -- -D warnings
 
-      - name: Run Rust unit & integration tests (${{ matrix.label }})
+      - name: Run Rust unit, integration & strict E2E tests (${{ matrix.label }})
+        env:
+          NG_E2E_REQUIRE_FULL: '1'
         run: cargo test --verbose
 
       - name: Stage distribution packages (${{ matrix.label }})

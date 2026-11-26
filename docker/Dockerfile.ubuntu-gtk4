@@ -1,4 +1,4 @@
-# Multi-Container Testing Image: Ubuntu 24.04 LTS (GTK4 + Libadwaita + JavaScriptCore 6.0 + libsoup3 + SQLite3 + Xvfb)
+# Multi-Container Testing Image: Ubuntu 24.04 LTS (GTK 4.14 + Libadwaita + JavaScriptCore 6.0 + libsoup3 + SQLite3 + Xvfb + Node 24)
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     git \
+    gnupg \
     libadwaita-1-0 \
     libgtk-4-1 \
     libjavascriptcoregtk-6.0-1 \
@@ -17,6 +18,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     xvfb \
     xauth \
+    && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g pnpm@12.9.1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust stable
@@ -26,4 +30,4 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 WORKDIR /workspace
 COPY . .
 
-CMD ["xvfb-run", "-a", "cargo", "test", "--verbose"]
+CMD ["sh", "-c", "pnpm install --frozen-lockfile && pnpm run test:coverage && pnpm run build && NG_E2E_REQUIRE_FULL=1 xvfb-run -a cargo test --verbose"]

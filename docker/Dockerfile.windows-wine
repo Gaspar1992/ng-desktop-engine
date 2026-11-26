@@ -1,10 +1,11 @@
-# Multi-Container Testing Image: Windows x86_64 Cross-Compilation (MinGW-w64) + Wine64 Execution
+# Multi-Container Testing Image: Windows x86_64 Cross-Compilation (MinGW-w64) + Wine64 Full-Stack Execution
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_TERM_COLOR=always \
     CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc \
     CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUNNER=wine64 \
+    WINEPREFIX=/root/.wine \
     WINEDEBUG=-all
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -13,10 +14,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     gcc-mingw-w64-x86-64 \
     git \
+    gnupg \
     wine64 \
     xvfb \
     xauth \
+    && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g pnpm@12.9.1 \
     && rm -rf /var/lib/apt/lists/*
+
+RUN xvfb-run -a wineboot --init || true
 
 # Install Rust stable + Windows GNU target
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --component clippy,rustfmt \
@@ -26,4 +33,4 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 WORKDIR /workspace
 COPY . .
 
-CMD ["sh", "-c", "cargo clippy --target x86_64-pc-windows-gnu --all-targets -- -D warnings && xvfb-run -a cargo test --target x86_64-pc-windows-gnu --verbose"]
+CMD ["sh", "-c", "pnpm install --frozen-lockfile && pnpm run build && cargo clippy --target x86_64-pc-windows-gnu --all-targets -- -D warnings && NG_E2E_REQUIRE_FULL=1 xvfb-run -a cargo test --target x86_64-pc-windows-gnu --verbose"]

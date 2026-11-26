@@ -1,0 +1,12 @@
+target/
+node_modules/
+dist/
+coverage/
+out-tsc/
+odd/
+.angular/
+.git/
+*.deb
+*.msix
+*.dmg
+*.tgz
