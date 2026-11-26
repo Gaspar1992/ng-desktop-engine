@@ -152,4 +152,50 @@ describe('PokedexService', () => {
     await removeFav;
     expect(service.isFavorite(1)).toBe(false);
   });
+
+  it('queues loadMore when triggered while an earlier page request is in flight', async () => {
+    const page1Promise = service.loadCatalogPage(true);
+    const req1 = httpMock.expectOne('/api/pokemon?q=&offset=0&limit=12&favoritesOnly=false');
+    // User reaches bottom while page 1 is still loading (e.g. fast scroll / reset race)
+    service.hasMore.set(true);
+    await service.loadMore();
+
+    req1.flush({
+      total: 24,
+      offset: 0,
+      limit: 12,
+      hasMore: true,
+      favoriteIds: [],
+      items: [
+        {
+          id: 1,
+          name: 'bulbasaur',
+          displayName: 'Bulbasaur',
+          number: 'N.º 0001',
+          spriteUrl: 'https://cdn.example.test/1.png',
+        },
+      ],
+    });
+    await page1Promise;
+
+    const req2 = httpMock.expectOne('/api/pokemon?q=&offset=1&limit=12&favoritesOnly=false');
+    req2.flush({
+      total: 24,
+      offset: 1,
+      limit: 12,
+      hasMore: false,
+      favoriteIds: [],
+      items: [
+        {
+          id: 2,
+          name: 'ivysaur',
+          displayName: 'Ivysaur',
+          number: 'N.º 0002',
+          spriteUrl: 'https://cdn.example.test/2.png',
+        },
+      ],
+    });
+    await Promise.resolve();
+    expect(service.catalogItems().map((p) => p.id)).toEqual([1, 2]);
+  });
 });

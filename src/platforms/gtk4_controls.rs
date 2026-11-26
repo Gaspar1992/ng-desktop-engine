@@ -320,8 +320,9 @@ impl Gtk4Sys {
             } else {
                 1.0
             };
+            let (client_width, _) = self.widget_size(scroll);
             Some(format!(
-                r#"{{"scrollTop":{top:.1},"scrollHeight":{height:.1},"clientHeight":{client:.1},"atTop":{at_top},"atBottom":{at_bottom},"progress":{progress:.4}}}"#
+                r#"{{"scrollTop":{top:.1},"scrollHeight":{height:.1},"clientHeight":{client:.1},"clientWidth":{client_width},"atTop":{at_top},"atBottom":{at_bottom},"progress":{progress:.4}}}"#
             ))
         }
     }
