@@ -7,6 +7,7 @@ import { PACKAGES_CATALOG } from './data/packages-catalog.data';
 import { PLAYGROUND_PRESETS } from './data/playground-presets.data';
 import { PRIMITIVES_CATALOG } from './data/primitives-catalog.data';
 import { SearchDialogComponent } from './layout/search-dialog.component';
+import { DocsNavbarComponent } from './layout/docs-navbar.component';
 import { ArchitecturePage } from './pages/architecture.page';
 import { GettingStartedPage } from './pages/getting-started.page';
 import { HomePage } from './pages/home.page';
@@ -198,6 +199,7 @@ describe('ng-desktop-docs portal', () => {
     TestBed.configureTestingModule({
       imports: [
         HomePage,
+        DocsNavbarComponent,
         SearchDialogComponent,
         ArchitecturePage,
         PackagesPage,
@@ -205,6 +207,12 @@ describe('ng-desktop-docs portal', () => {
       ],
       providers: [provideRouter([])],
     });
+
+    const navbarFixture = TestBed.createComponent(DocsNavbarComponent);
+    navbarFixture.detectChanges();
+    const brandIcon = navbarFixture.nativeElement.querySelector('.brand-badge svg.brand-icon');
+    expect(brandIcon).not.toBeNull();
+    expect(brandIcon?.innerHTML).toContain('M32 4 8 13l3.6 31.2L32 60l20.4-15.8L56 13 32 4Z');
 
     const homeFixture = TestBed.createComponent(HomePage);
     homeFixture.detectChanges();

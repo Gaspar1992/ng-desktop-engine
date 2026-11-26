@@ -395,4 +395,46 @@ mod tests {
         spin.set_attribute("value", "250");
         assert!(matches!(spin, WidgetKind::SpinButton { value: 200, .. }));
     }
+
+    #[test]
+    fn parses_layout_toggle_and_popover_attributes_with_fallbacks() {
+        let mut bx = WidgetKind::from_tag("ng-box").unwrap();
+        bx.set_attribute("orientation", "horizontal");
+        bx.set_attribute("spacing", "14px");
+        bx.set_attribute("spacing", "not-a-number");
+        assert!(matches!(
+            bx,
+            WidgetKind::Box {
+                vertical: false,
+                spacing: 14,
+                ..
+            }
+        ));
+
+        let mut spinner = WidgetKind::from_tag("ng-spinner").unwrap();
+        spinner.set_attribute("spinning", "true");
+        assert!(matches!(spinner, WidgetKind::Spinner { active: true }));
+        spinner.set_attribute("visible", "false");
+        assert!(matches!(spinner, WidgetKind::Spinner { active: false }));
+
+        let mut popover = WidgetKind::from_tag("ng-popover").unwrap();
+        popover.set_attribute("open", "true");
+        popover.set_attribute("position", "bottom");
+        popover.set_attribute("autohide", "false");
+        popover.set_attribute("has-arrow", "false");
+        assert!(matches!(
+            popover,
+            WidgetKind::Popover {
+                open: true,
+                autohide: false,
+                has_arrow: false,
+                ..
+            }
+        ));
+
+        let mut hdr = WidgetKind::from_tag("ng-header-bar").unwrap();
+        hdr.set_attribute("title", "AppTitle");
+        hdr.set_attribute("subtitle", "AppSub");
+        assert_eq!(hdr.primary_text(), Some("AppTitle"));
+    }
 }

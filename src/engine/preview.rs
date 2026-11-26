@@ -579,3 +579,94 @@ impl<B: PlatformBackend> RenderEngine<B> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::engine::RenderEngine;
+    use crate::platforms::HeadlessBackend;
+
+    #[test]
+    fn renders_preview_snapshot_and_queries_across_all_widget_variants() {
+        let mut engine = RenderEngine::new(HeadlessBackend::new());
+        let win = engine.create_element("ng-window").unwrap();
+        engine.set_text(win, "All Widgets Preview").unwrap();
+        let hdr = engine.create_element("ng-header-bar").unwrap();
+        engine.set_attribute(hdr, "title", "Preview").unwrap();
+        engine.set_attribute(hdr, "subtitle", "Sub").unwrap();
+        engine.append_child(win, hdr).unwrap();
+
+        let root_box = engine.create_element("ng-box").unwrap();
+        engine.append_child(win, root_box).unwrap();
+
+        for tag in [
+            "ng-grid",
+            "ng-flow",
+            "ng-paned",
+            "ng-stack",
+            "ng-clamp",
+            "ng-scroll",
+            "ng-separator",
+            "ng-label",
+            "ng-button",
+            "ng-entry",
+            "ng-password-entry",
+            "ng-search-entry",
+            "ng-text-view",
+            "ng-switch",
+            "ng-checkbox",
+            "ng-slider",
+            "ng-spin-button",
+            "ng-select",
+            "ng-image",
+            "ng-level-bar",
+            "ng-progress-bar",
+            "ng-spinner",
+            "ng-expander",
+            "ng-list",
+            "ng-popover",
+            "ng-anchor",
+        ] {
+            let child = engine.create_element(tag).unwrap();
+            engine.set_attribute(child, "id", tag).unwrap();
+            let _ = engine.set_text(child, tag);
+            engine.append_child(root_box, child).unwrap();
+        }
+
+        let hidden_lbl = engine.create_element("ng-label").unwrap();
+        engine.set_text(hidden_lbl, "HiddenText").unwrap();
+        engine
+            .set_attribute(hidden_lbl, "visible", "false")
+            .unwrap();
+        engine.append_child(root_box, hidden_lbl).unwrap();
+
+        let dialog = engine.create_element("ng-dialog").unwrap();
+        engine.set_attribute(dialog, "open", "true").unwrap();
+        engine.set_attribute(dialog, "sensitive", "false").unwrap();
+        engine.append_child(root_box, dialog).unwrap();
+
+        let preview = engine.render_window_preview(win).unwrap();
+        assert!(
+            preview.contains("All Widgets Preview"),
+            "preview:\n{preview}"
+        );
+        assert!(
+            preview.contains("[HeaderBar: Preview — Sub]"),
+            "preview:\n{preview}"
+        );
+        assert!(preview.contains("[Spinner:"), "preview:\n{preview}");
+        assert!(preview.contains("[ ng-button ]"), "preview:\n{preview}");
+        assert!(
+            preview.contains("[Expander ▶ ng-expander]"),
+            "preview:\n{preview}"
+        );
+
+        let snap = engine.snapshot_tree_json(win).unwrap();
+        assert!(snap.contains(r#""tag":"ng-window""#));
+        assert!(snap.contains(r#""visible":false"#));
+
+        let queried = engine
+            .query_nodes_json(win, Some("ng-button"), Some("ng-button"), Some("ng-button"))
+            .unwrap();
+        assert!(queried.contains(r#""id":"ng-button""#));
+    }
+}

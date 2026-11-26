@@ -820,4 +820,27 @@ mod tests {
         assert!(light_css.contains(".surface {"));
         assert!(light_css.contains("background: #ffffff;"));
     }
+
+    #[test]
+    fn renders_focus_disabled_opacity_and_media_max_width_rules() {
+        let rule = StyleRule {
+            class_name: String::from("field"),
+            pseudo_class: Some(String::from("focus")),
+            background: Some(String::from("#0f172a")),
+            foreground: Some(String::from("#38bdf8")),
+            border_radius: Some(8),
+            padding: 10,
+            opacity: Some(95),
+            transition_ms: Some(150),
+            media_max_width: Some(640),
+            ..StyleRule::default()
+        };
+        let css = render_gtk_css_rule(&rule);
+        assert!(css.starts_with(".field:focus {"));
+        assert!(css.contains("background: #0f172a;"));
+        assert!(css.contains("color: #38bdf8;"));
+        assert!(css.contains("border-radius: 8px;"));
+        assert!(css.contains("padding: 10px;"));
+        assert!(css.contains("opacity: 0.95;"));
+    }
 }

@@ -84,7 +84,7 @@ jobs:
       - name: Enforce Rust line coverage threshold (cargo-llvm-cov)
         env:
           NG_E2E_REQUIRE_FULL: '1'
-        run: xvfb-run -a cargo llvm-cov --summary-only --fail-under-lines 60
+        run: xvfb-run -a cargo llvm-cov --summary-only --fail-under-lines 75
 
       - name: Build Docs Portal & TypeScript/Rust API Reference
         run: |
