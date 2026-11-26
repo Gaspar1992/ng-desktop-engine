@@ -19,6 +19,9 @@ codegen-units = 1
 panic = "abort"
 strip = "symbols"
 
+[profile.dev.package.rquickjs-sys]
+opt-level = 2
+
 [lib]
 name = "ng_native_engine"
 path = "src/lib.rs"
