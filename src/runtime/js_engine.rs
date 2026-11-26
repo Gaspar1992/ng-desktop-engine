@@ -114,11 +114,7 @@ pub(super) fn format_completions_js(completions: &[HostAsyncCompletion]) -> Stri
     format!("[{}]", items.join(","))
 }
 
-fn jsc_eval_and_drain_with_microtasks(jsc: &JscSys, call: &str) -> Result<String, EngineError> {
-    let primary = jsc.eval(call).map_err(EngineError::ScriptSyntaxError)?;
-    let followup = jsc
-        .eval("globalThis.__NG_NATIVE__.__drainQueue()")
-        .map_err(EngineError::ScriptSyntaxError)?;
+pub(super) fn combine_eval_and_drain(primary: &str, followup: &str) -> String {
     let mut combined = String::new();
     for chunk in [primary.trim(), followup.trim()] {
         if !chunk.is_empty() && chunk != "undefined" {
@@ -128,7 +124,15 @@ fn jsc_eval_and_drain_with_microtasks(jsc: &JscSys, call: &str) -> Result<String
             combined.push_str(chunk);
         }
     }
-    Ok(combined)
+    combined
+}
+
+fn jsc_eval_and_drain_with_microtasks(jsc: &JscSys, call: &str) -> Result<String, EngineError> {
+    let primary = jsc.eval(call).map_err(EngineError::ScriptSyntaxError)?;
+    let followup = jsc
+        .eval("globalThis.__NG_NATIVE__.__drainQueue()")
+        .map_err(EngineError::ScriptSyntaxError)?;
+    Ok(combine_eval_and_drain(&primary, &followup))
 }
 
 impl JsEngineBackend for JscEngine {

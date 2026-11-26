@@ -5,12 +5,11 @@ use super::PlatformBackend;
 use super::appkit_sys::{
     AppKitHandle, AppKitSys, NsPoint, NsRect, NsSize, can_activate_live_appkit,
 };
+use super::layout_solver::LayoutRect;
 #[cfg(target_os = "macos")]
 use super::layout_solver::compute_parent_relative_bounds;
-use super::layout_solver::{LayoutRect, solve_scene_layout};
+use super::retained_backend::{RetainedNativeDriver, RetainedSceneBackend};
 use super::scene_state::{NativeSceneNode, NativeSceneState};
-#[cfg(target_os = "macos")]
-use crate::engine::coalesce_frame_events;
 use crate::engine::{EventMask, NativeEvent, NodeId, RenderCommand};
 #[cfg(target_os = "macos")]
 use crate::ffi_dl::DynLib;
@@ -481,32 +480,114 @@ impl AppKitFfiDriver {
     }
 }
 
-/// Concrete macOS AppKit (Cocoa) platform adapter.
-pub struct MacOsAppKitBackend {
-    pub flushed_frames: u64,
-    state: NativeSceneState,
-    layout_rects: HashMap<NodeId, LayoutRect>,
-    layout_dirty: std::cell::Cell<bool>,
-    ffi_driver: AppKitFfiDriver,
-}
-
-impl Drop for MacOsAppKitBackend {
-    fn drop(&mut self) {
+impl RetainedNativeDriver for AppKitFfiDriver {
+    fn is_native_display_active(&self) -> bool {
         #[cfg(target_os = "macos")]
-        if self.ffi_driver.live_active
-            && let Some(sys) = &self.ffi_driver.live_sys
         {
-            for id in self.ffi_driver.live_toplevels.drain() {
-                if let Some(h) = self.ffi_driver.live_handles.remove(&id) {
+            self.live_active
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            false
+        }
+    }
+
+    fn is_ffi_loaded(&self) -> bool {
+        self.ffi_loaded
+    }
+
+    fn open_window_count(&self) -> u32 {
+        Self::open_window_count(self)
+    }
+
+    fn live_handle_count(&self) -> usize {
+        #[cfg(target_os = "macos")]
+        {
+            self.live_handles.len()
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            0
+        }
+    }
+
+    fn root_default_sizes(&self) -> Vec<(NodeId, i32, i32)> {
+        self.bindings
+            .iter()
+            .filter_map(|(&id, binding)| match binding.objc_class {
+                "NSWindow" => Some((id, 1020, 720)),
+                "NSPanel" => Some((id, 460, 280)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn register_node(&mut self, id: NodeId, mapped_tag: &'static str) {
+        Self::register_node(self, id, mapped_tag);
+    }
+
+    fn update_event_mask(&mut self, id: NodeId, mask: EventMask) {
+        Self::update_event_mask(self, id, mask);
+    }
+
+    fn unregister_node(&mut self, id: NodeId) {
+        Self::unregister_node(self, id);
+    }
+
+    fn pump_live_events(&self) -> Vec<NativeEvent> {
+        #[cfg(target_os = "macos")]
+        if self.live_active
+            && let Some(sys) = &self.live_sys
+        {
+            return sys.pump_events();
+        }
+        Vec::new()
+    }
+
+    fn apply_live_command(&mut self, cmd: &RenderCommand, _state: &NativeSceneState) {
+        #[cfg(target_os = "macos")]
+        Self::apply_live_command(self, cmd);
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = cmd;
+        }
+    }
+
+    fn apply_live_layout(
+        &self,
+        state: &NativeSceneState,
+        layout_rects: &HashMap<NodeId, LayoutRect>,
+    ) {
+        #[cfg(target_os = "macos")]
+        Self::apply_live_layout(self, state, layout_rects);
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (state, layout_rects);
+        }
+    }
+
+    fn shutdown(&mut self) {
+        #[cfg(target_os = "macos")]
+        if self.live_active
+            && let Some(sys) = &self.live_sys
+        {
+            for id in self.live_toplevels.drain() {
+                if let Some(h) = self.live_handles.remove(&id) {
                     sys.close_window(h);
                     sys.release(h);
                 }
             }
-            for (_, h) in self.ffi_driver.live_handles.drain() {
+            for (_, h) in self.live_handles.drain() {
                 sys.release(h);
             }
         }
     }
+}
+
+/// Concrete macOS AppKit (Cocoa) platform adapter.
+pub struct MacOsAppKitBackend {
+    pub flushed_frames: u64,
+    inner: RetainedSceneBackend<AppKitFfiDriver>,
 }
 
 impl Default for MacOsAppKitBackend {
@@ -519,52 +600,33 @@ impl MacOsAppKitBackend {
     pub fn new() -> Self {
         Self {
             flushed_frames: 0,
-            state: NativeSceneState::default(),
-            layout_rects: HashMap::new(),
-            layout_dirty: std::cell::Cell::new(false),
-            ffi_driver: AppKitFfiDriver::new(false),
+            inner: RetainedSceneBackend::new(AppKitFfiDriver::new(false)),
         }
     }
 
     pub fn new_headless() -> Self {
         Self {
             flushed_frames: 0,
-            state: NativeSceneState::default(),
-            layout_rects: HashMap::new(),
-            layout_dirty: std::cell::Cell::new(false),
-            ffi_driver: AppKitFfiDriver::new(true),
+            inner: RetainedSceneBackend::new(AppKitFfiDriver::new(true)),
         }
     }
 
     #[must_use]
-    pub const fn is_native_display_active(&self) -> bool {
-        #[cfg(target_os = "macos")]
-        {
-            self.ffi_driver.live_active
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            false
-        }
+    pub fn is_native_display_active(&self) -> bool {
+        self.inner.driver.is_native_display_active()
     }
 
     #[must_use]
     pub fn live_handle_count(&self) -> usize {
-        #[cfg(target_os = "macos")]
-        {
-            self.ffi_driver.live_handles.len()
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            0
-        }
+        self.inner.driver.live_handle_count()
     }
 
     #[must_use]
     pub fn probe_objc_string_roundtrip(&self, sample: &str) -> Option<String> {
         #[cfg(target_os = "macos")]
         {
-            self.ffi_driver
+            self.inner
+                .driver
                 .live_sys
                 .as_ref()
                 .and_then(|sys| sys.probe_nsstring_roundtrip(sample))
@@ -577,127 +639,87 @@ impl MacOsAppKitBackend {
     }
 
     pub const fn is_ffi_loaded(&self) -> bool {
-        self.ffi_driver.ffi_loaded
+        self.inner.driver.ffi_loaded
     }
 
     pub fn resolved_class_count(&self) -> usize {
-        self.ffi_driver.resolved_classes.len()
+        self.inner.driver.resolved_classes.len()
     }
 
     pub fn resolved_selector_count(&self) -> usize {
-        self.ffi_driver.resolved_selectors.len()
+        self.inner.driver.resolved_selectors.len()
     }
 
     pub fn open_window_count(&self) -> u32 {
-        self.ffi_driver.open_window_count()
+        self.inner.driver.open_window_count()
     }
 
     #[must_use]
     pub fn toplevel_count(&self) -> usize {
-        self.state.toplevel_count()
+        self.inner.state.toplevel_count()
     }
 
     pub fn get_view_binding(&self, id: NodeId) -> Option<&AppKitWidgetBinding> {
-        self.ffi_driver.bindings.get(&id)
+        self.inner.driver.bindings.get(&id)
     }
 
     pub const fn scene_state(&self) -> &NativeSceneState {
-        &self.state
+        &self.inner.state
     }
 
     pub fn view_count(&self) -> usize {
-        self.state.node_count()
+        self.inner.state.node_count()
     }
 
     pub fn get_view(&self, id: NodeId) -> Option<&NativeSceneNode> {
-        self.state.get_node(id)
+        self.inner.state.get_node(id)
     }
 
     #[must_use]
     pub fn get_layout_rect(&self, id: NodeId) -> Option<LayoutRect> {
-        self.layout_rects.get(&id).copied()
-    }
-
-    fn recompute_layout(&mut self) {
-        self.layout_rects.clear();
-        let roots: Vec<(NodeId, i32, i32)> = self
-            .ffi_driver
-            .bindings
-            .iter()
-            .filter_map(|(&id, binding)| match binding.objc_class {
-                "NSWindow" => Some((id, 1020, 720)),
-                "NSPanel" => Some((id, 460, 280)),
-                _ => None,
-            })
-            .collect();
-        for (root_id, default_w, default_h) in roots {
-            let (win_w, win_h) = self.state.window_size_or(root_id, default_w, default_h);
-            let solved = solve_scene_layout(&self.state, root_id, win_w, win_h);
-            self.layout_rects.extend(solved);
-        }
+        self.inner.layout_rects.get(&id).copied()
     }
 
     pub fn queue_native_event(&self, event: NativeEvent) {
-        self.state.push_event(event);
+        self.inner.state.push_event(event);
     }
 
     pub fn step_native_events(&self) -> Vec<NativeEvent> {
-        #[cfg(target_os = "macos")]
-        if self.ffi_driver.live_active
-            && let Some(sys) = &self.ffi_driver.live_sys
-        {
-            let mut merged = sys.pump_events();
-            merged.retain(|ev| self.state.get_node(ev.node).is_some());
-            merged.extend(self.state.drain_events());
-            let coalesced = coalesce_frame_events(merged);
-            self.state.record_window_resize_events(&coalesced);
-            if coalesced.iter().any(|ev| ev.event_name == "resize") {
-                self.layout_dirty.set(true);
-            }
-            return coalesced;
-        }
-        let events = self.state.drain_events();
-        self.state.record_window_resize_events(&events);
-        if events.iter().any(|ev| ev.event_name == "resize") {
-            self.layout_dirty.set(true);
-        }
-        events
+        self.inner.step_native_events()
     }
 
     fn map_appkit_tag(tag: &str) -> &'static str {
-        match tag {
-            "ng-window" | "adw-window" => "NSWindow",
-            "ng-dialog" | "gtk-dialog" | "adw-dialog" => "NSPanel",
-            "ng-header-bar" | "adw-header-bar" | "gtk-header-bar" => "NSToolbar",
-            "ng-scroll" | "gtk-scrolled-window" => "NSScrollView",
-            "ng-box" | "gtk-box" => "NSStackView",
-            "ng-grid" | "gtk-grid" => "NSGridView",
-            "ng-separator" | "gtk-separator" => "NSBoxSeparator",
-            "ng-label" | "gtk-label" => "NSTextField",
-            "ng-button" | "gtk-button" => "NSButton",
-            "ng-entry" | "gtk-entry" => "NSTextFieldEditable",
-            "ng-switch" | "gtk-switch" => "NSSwitch",
-            "ng-checkbox" | "ng-check" | "gtk-check-button" => "NSButtonCheckbox",
-            "ng-slider" | "ng-scale" | "gtk-scale" => "NSSlider",
-            "ng-select" | "ng-dropdown" | "gtk-drop-down" => "NSPopUpButton",
-            "ng-image" | "gtk-picture" | "ng-picture" => "NSImageView",
-            "ng-level-bar" | "gtk-level-bar" => "NSLevelIndicator",
-            "ng-spinner" | "gtk-spinner" | "ng-progress-bar" | "gtk-progress-bar" => {
-                "NSProgressIndicator"
-            }
-            "ng-flow" | "ng-flow-box" | "gtk-flow-box" => "NSCollectionView",
-            "ng-paned" | "gtk-paned" => "NSSplitView",
-            "ng-stack" | "gtk-stack" | "adw-navigation-view" => "NSTabView",
-            "ng-expander" | "gtk-expander" => "NSDisclosureButton",
-            "ng-text-view" | "gtk-text-view" => "NSTextView",
-            "ng-password-entry" | "gtk-password-entry" => "NSSecureTextField",
-            "ng-search-entry" | "gtk-search-entry" => "NSSearchField",
-            "ng-spin-button" | "gtk-spin-button" => "NSStepper",
-            "ng-clamp" | "adw-clamp" => "NSBox",
-            "ng-list" | "ng-table" | "gtk-list-box" | "gtk-list-view" => "NSTableView",
-            "ng-popover" | "gtk-popover" | "ng-menu" => "NSPopover",
-            "ng-anchor" | "#comment" => "NSAnchorComment",
-            _ => "NSView",
+        match super::WidgetTag::from_tag(tag) {
+            super::WidgetTag::Window => "NSWindow",
+            super::WidgetTag::Dialog => "NSPanel",
+            super::WidgetTag::HeaderBar => "NSToolbar",
+            super::WidgetTag::Scroll => "NSScrollView",
+            super::WidgetTag::Box => "NSStackView",
+            super::WidgetTag::Grid => "NSGridView",
+            super::WidgetTag::Separator => "NSBoxSeparator",
+            super::WidgetTag::Label => "NSTextField",
+            super::WidgetTag::Button => "NSButton",
+            super::WidgetTag::Entry => "NSTextFieldEditable",
+            super::WidgetTag::Switch => "NSSwitch",
+            super::WidgetTag::CheckButton => "NSButtonCheckbox",
+            super::WidgetTag::Slider => "NSSlider",
+            super::WidgetTag::DropDown => "NSPopUpButton",
+            super::WidgetTag::Image => "NSImageView",
+            super::WidgetTag::LevelBar => "NSLevelIndicator",
+            super::WidgetTag::Spinner | super::WidgetTag::ProgressBar => "NSProgressIndicator",
+            super::WidgetTag::FlowBox => "NSCollectionView",
+            super::WidgetTag::Paned => "NSSplitView",
+            super::WidgetTag::Stack => "NSTabView",
+            super::WidgetTag::Expander => "NSDisclosureButton",
+            super::WidgetTag::TextView => "NSTextView",
+            super::WidgetTag::PasswordEntry => "NSSecureTextField",
+            super::WidgetTag::SearchEntry => "NSSearchField",
+            super::WidgetTag::SpinButton => "NSStepper",
+            super::WidgetTag::Clamp => "NSBox",
+            super::WidgetTag::ListView => "NSTableView",
+            super::WidgetTag::Popover => "NSPopover",
+            super::WidgetTag::Anchor => "NSAnchorComment",
+            super::WidgetTag::Unknown => "NSView",
         }
     }
 }
@@ -712,48 +734,28 @@ impl PlatformBackend for MacOsAppKitBackend {
     }
 
     fn flush_commands(&mut self, commands: &[RenderCommand]) {
-        let layout_dirty = self.layout_dirty.replace(false);
-        if commands.is_empty() && !layout_dirty {
-            return;
-        }
-        if !commands.is_empty() {
-            self.flushed_frames += 1;
-            super::trace_flush_commands(
-                self.backend_name(),
-                self.flushed_frames,
-                commands,
-                Self::map_appkit_tag,
-            );
-            for cmd in commands {
-                self.state
-                    .apply_command(cmd, "NSAnchorComment", Self::map_appkit_tag);
-                match cmd {
-                    RenderCommand::CreateWidget { id, tag } => {
-                        self.ffi_driver
-                            .register_node(*id, Self::map_appkit_tag(tag));
-                    }
-                    RenderCommand::SetAttribute { node, key, value } if key == "event-mask" => {
-                        self.ffi_driver
-                            .update_event_mask(*node, EventMask::parse_attr(value));
-                    }
-                    RenderCommand::SetAttribute { node, key, value }
-                        if key == "prevent-close" && NativeSceneState::parse_truthy_attr(value) =>
-                    {
-                        self.ffi_driver
-                            .update_event_mask(*node, EventMask::CLOSE_REQUEST);
-                    }
-                    RenderCommand::DestroyWidget { id } => {
-                        self.ffi_driver.unregister_node(*id);
-                    }
-                    _ => {}
-                }
-                #[cfg(target_os = "macos")]
-                self.ffi_driver.apply_live_command(cmd);
-            }
-        }
-        self.recompute_layout();
-        #[cfg(target_os = "macos")]
-        self.ffi_driver
-            .apply_live_layout(&self.state, &self.layout_rects);
+        self.inner.flush_commands(
+            "macOS AppKit (Cocoa)",
+            commands,
+            "NSAnchorComment",
+            Self::map_appkit_tag,
+        );
+        self.flushed_frames = self.inner.flushed_frames;
+    }
+
+    fn is_native_display_active(&self) -> bool {
+        Self::is_native_display_active(self)
+    }
+
+    fn open_window_count(&self) -> u32 {
+        self.inner.open_window_count()
+    }
+
+    fn is_ffi_driver_loaded(&self) -> bool {
+        self.inner.is_ffi_loaded()
+    }
+
+    fn step_native_events(&self, _may_block: bool) -> Vec<NativeEvent> {
+        Self::step_native_events(self)
     }
 }

@@ -8,8 +8,7 @@ use crate::desktop::http_codec::escape_json;
 use crate::desktop::{DesktopServices, NativeHttpEngine};
 
 use super::host_bridge::{HostAsyncCompletion, HostBridge, ServerResolveSlot};
-use super::js_engine::{JsEngineBackend, QuickJsEngine};
-use super::jsc_sys::JscSys;
+use super::js_engine::{AnyJsEngine, JsEngineBackend, JscEngine};
 
 const NG_NATIVE_SERVER_BOOTSTRAP_JS: &str = r"
 (() => {
@@ -288,36 +287,8 @@ pub fn is_local_api_url(url: &str) -> bool {
         || path.starts_with("/api#")
 }
 
-enum WorkerJsVm {
-    Jsc(JscSys),
-    QuickJs(Box<QuickJsEngine>),
-}
-
-impl WorkerJsVm {
-    fn new() -> Self {
-        JscSys::try_load().map_or_else(|| Self::QuickJs(Box::default()), Self::Jsc)
-    }
-
-    fn set_http_engine(&mut self, engine: Arc<Mutex<NativeHttpEngine>>) {
-        match self {
-            Self::Jsc(jsc) => jsc.set_http_engine(engine),
-            Self::QuickJs(qjs) => qjs.attach_http_engine(engine),
-        }
-    }
-
-    fn set_host_bridge(&mut self, bridge: Arc<HostBridge>) {
-        match self {
-            Self::Jsc(jsc) => jsc.set_host_bridge(bridge),
-            Self::QuickJs(qjs) => qjs.attach_host_bridge(bridge),
-        }
-    }
-
-    fn eval(&mut self, code: &str) -> Result<String, String> {
-        match self {
-            Self::Jsc(jsc) => jsc.eval(code),
-            Self::QuickJs(qjs) => qjs.eval_script(code).map_err(|e| format!("{e:?}")),
-        }
-    }
+fn eval_worker_js(vm: &mut AnyJsEngine, code: &str) -> Result<String, String> {
+    vm.eval_script(code).map_err(|e| format!("{e:?}"))
 }
 
 /// Dedicated background thread hosting an isolated JS backend runtime (`JavaScriptCore` or `QuickJS-NG` fallback)
@@ -425,22 +396,23 @@ impl NativeServerWorker {
             let _ = worker_bridge.handle_service_call(r#"{"action":"sqliteOpen","path":"app.db"}"#);
         }
 
-        let mut vm = WorkerJsVm::new();
-        vm.set_http_engine(worker_desktop.shared_http_engine());
-        vm.set_host_bridge(Arc::clone(&worker_bridge));
+        let mut vm = AnyJsEngine::Jsc(JscEngine::new());
+        vm.attach_http_engine(worker_desktop.shared_http_engine());
+        vm.attach_host_bridge(Arc::clone(&worker_bridge));
 
         let escaped_app_id = boot.app_id.replace('\\', "\\\\").replace('\'', "\\'");
-        if let Err(err) = vm.eval(&format!(
-            "globalThis.__NG_NATIVE_APP_ID__ = '{escaped_app_id}';"
-        )) {
+        if let Err(err) = eval_worker_js(
+            &mut vm,
+            &format!("globalThis.__NG_NATIVE_APP_ID__ = '{escaped_app_id}';"),
+        ) {
             let _ = ready_tx.send(Err(err));
             return;
         }
-        if let Err(err) = vm.eval(NG_NATIVE_SERVER_BOOTSTRAP_JS) {
+        if let Err(err) = eval_worker_js(&mut vm, NG_NATIVE_SERVER_BOOTSTRAP_JS) {
             let _ = ready_tx.send(Err(err));
             return;
         }
-        if let Err(err) = vm.eval(&boot.initial_bundle) {
+        if let Err(err) = eval_worker_js(&mut vm, &boot.initial_bundle) {
             let _ = ready_tx.send(Err(err));
             return;
         }
@@ -450,7 +422,7 @@ impl NativeServerWorker {
     }
 
     fn process_commands(
-        vm: &mut WorkerJsVm,
+        vm: &mut AnyJsEngine,
         resolve_slot: &ServerResolveSlot,
         rx: &Receiver<WorkerCommand>,
     ) {
@@ -474,7 +446,7 @@ impl NativeServerWorker {
                     }
                 }
                 WorkerCommand::Reload { bundle_js, reply } => {
-                    let res = vm.eval(&bundle_js).map(|_| ());
+                    let res = eval_worker_js(vm, &bundle_js).map(|_| ());
                     let _ = reply.send(res);
                 }
                 WorkerCommand::Shutdown => break,
@@ -491,7 +463,7 @@ impl NativeServerWorker {
     }
 
     fn execute_dispatch(
-        vm: &mut WorkerJsVm,
+        vm: &mut AnyJsEngine,
         resolve_slot: &ServerResolveSlot,
         request_id: u64,
         req_json: &str,
@@ -501,7 +473,7 @@ impl NativeServerWorker {
         }
         let dispatch_script =
             format!("globalThis.__NG_NATIVE_SERVER_DISPATCH__({request_id}, {req_json});");
-        if let Err(err) = vm.eval(&dispatch_script) {
+        if let Err(err) = eval_worker_js(vm, &dispatch_script) {
             return format!(
                 r#"{{"status":500,"statusText":"Server Dispatch Error","body":"{}","headers":{{"content-type":"application/json"}},"transport":"native-server","callKind":"json","cached":false}}"#,
                 escape_json(&format!(r#"{{"error":"{}"}}"#, escape_json(&err)))
@@ -518,8 +490,7 @@ impl NativeServerWorker {
             if remaining.is_zero() {
                 break;
             }
-            let delay_ms = vm
-                .eval("globalThis.__nextServerTimerDelayMs()")
+            let delay_ms = eval_worker_js(vm, "globalThis.__nextServerTimerDelayMs()")
                 .ok()
                 .and_then(|s| s.trim().parse::<i64>().ok())
                 .unwrap_or(-1);
@@ -531,7 +502,7 @@ impl NativeServerWorker {
                     break;
                 }
                 idle_pumps += 1;
-                let _ = vm.eval("Promise.resolve(); globalThis.__tickServerTimers();");
+                let _ = eval_worker_js(vm, "Promise.resolve(); globalThis.__tickServerTimers();");
                 if let Some(payload) = Self::take_resolved_payload(resolve_slot, request_id) {
                     return payload;
                 }
@@ -567,7 +538,7 @@ impl NativeServerWorker {
                     return payload;
                 }
             }
-            let _ = vm.eval("globalThis.__tickServerTimers()");
+            let _ = eval_worker_js(vm, "globalThis.__tickServerTimers()");
             if let Some(payload) = Self::take_resolved_payload(resolve_slot, request_id) {
                 return payload;
             }
@@ -594,6 +565,7 @@ impl Drop for NativeServerWorker {
 
 #[cfg(test)]
 mod tests {
+    use super::super::js_engine::QuickJsEngine;
     use super::*;
 
     #[test]
@@ -603,11 +575,12 @@ mod tests {
         let resolve_slot: ServerResolveSlot = Arc::new((Mutex::new(None), Condvar::new()));
         bridge.attach_server_resolve(Arc::clone(&resolve_slot));
 
-        let mut vm = WorkerJsVm::QuickJs(Box::default());
-        vm.set_http_engine(desktop.shared_http_engine());
-        vm.set_host_bridge(bridge);
-        vm.eval(NG_NATIVE_SERVER_BOOTSTRAP_JS).unwrap();
-        vm.eval(
+        let mut vm = AnyJsEngine::QuickJs(QuickJsEngine::new());
+        vm.attach_http_engine(desktop.shared_http_engine());
+        vm.attach_host_bridge(bridge);
+        eval_worker_js(&mut vm, NG_NATIVE_SERVER_BOOTSTRAP_JS).unwrap();
+        eval_worker_js(
+            &mut vm,
             r"globalThis.__NG_NATIVE_SERVER_ROUTER__ = {
                 async handle(req) {
                     const nested = await Promise.resolve({ ok: true, url: req.url, runtime: 'quickjs' });

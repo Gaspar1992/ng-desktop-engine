@@ -1,14 +1,13 @@
 #![allow(unsafe_code)]
 
 use super::PlatformBackend;
+use super::layout_solver::LayoutRect;
 #[cfg(target_os = "windows")]
 use super::layout_solver::compute_parent_relative_bounds;
-use super::layout_solver::{LayoutRect, solve_scene_layout};
+use super::retained_backend::{RetainedNativeDriver, RetainedSceneBackend};
 use super::scene_state::{NativeSceneNode, NativeSceneState};
 #[cfg(target_os = "windows")]
 use super::win32_sys::{Win32Handle, Win32Sys, is_headless_env};
-#[cfg(target_os = "windows")]
-use crate::engine::coalesce_frame_events;
 use crate::engine::{EventMask, NativeEvent, NodeId, RenderCommand};
 #[cfg(target_os = "windows")]
 use crate::ffi_dl::DynLib;
@@ -396,30 +395,110 @@ impl WinUiFfiDriver {
     }
 }
 
-/// Concrete Windows WinUI 3 (`Microsoft.UI.Xaml`) + Win32 `user32.dll` platform adapter.
-pub struct WinUiBackend {
-    pub flushed_frames: u64,
-    state: NativeSceneState,
-    layout_rects: HashMap<NodeId, LayoutRect>,
-    layout_dirty: std::cell::Cell<bool>,
-    ffi_driver: WinUiFfiDriver,
-}
-
-impl Drop for WinUiBackend {
-    fn drop(&mut self) {
+impl RetainedNativeDriver for WinUiFfiDriver {
+    fn is_native_display_active(&self) -> bool {
         #[cfg(target_os = "windows")]
         {
-            let toplevels: Vec<NodeId> = self.ffi_driver.live_toplevels.drain().collect();
+            self.win32.is_some()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            false
+        }
+    }
+
+    fn is_ffi_loaded(&self) -> bool {
+        self.ffi_loaded
+    }
+
+    fn open_window_count(&self) -> u32 {
+        Self::open_window_count(self)
+    }
+
+    fn live_handle_count(&self) -> usize {
+        #[cfg(target_os = "windows")]
+        {
+            self.live_handles.len()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            0
+        }
+    }
+
+    fn root_default_sizes(&self) -> Vec<(NodeId, i32, i32)> {
+        self.bindings
+            .iter()
+            .filter_map(|(&id, binding)| match binding.win32_class {
+                "Window" => Some((id, 1020, 720)),
+                "Dialog" => Some((id, 460, 280)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn register_node(&mut self, id: NodeId, mapped_tag: &'static str) {
+        Self::register_node(self, id, mapped_tag);
+    }
+
+    fn update_event_mask(&mut self, id: NodeId, mask: EventMask) {
+        Self::update_event_mask(self, id, mask);
+    }
+
+    fn unregister_node(&mut self, id: NodeId) {
+        Self::unregister_node(self, id);
+    }
+
+    fn pump_live_events(&self) -> Vec<NativeEvent> {
+        #[cfg(target_os = "windows")]
+        if let Some(win32) = &self.win32 {
+            return win32.pump_messages();
+        }
+        Vec::new()
+    }
+
+    fn apply_live_command(&mut self, cmd: &RenderCommand, state: &NativeSceneState) {
+        #[cfg(target_os = "windows")]
+        Self::apply_live_command(self, cmd, state);
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = (cmd, state);
+        }
+    }
+
+    fn apply_live_layout(
+        &self,
+        state: &NativeSceneState,
+        layout_rects: &HashMap<NodeId, LayoutRect>,
+    ) {
+        #[cfg(target_os = "windows")]
+        Self::apply_live_layout(self, state, layout_rects);
+        #[cfg(not(target_os = "windows"))]
+        {
+            let _ = (state, layout_rects);
+        }
+    }
+
+    fn shutdown(&mut self) {
+        #[cfg(target_os = "windows")]
+        {
+            let toplevels: Vec<NodeId> = self.live_toplevels.drain().collect();
             for id in toplevels {
-                if let Some(handle) = self.ffi_driver.live_handles.remove(&id)
-                    && let Some(win32) = &self.ffi_driver.win32
+                if let Some(handle) = self.live_handles.remove(&id)
+                    && let Some(win32) = &self.win32
                 {
                     win32.destroy_window(handle);
                 }
             }
-            self.ffi_driver.live_handles.clear();
+            self.live_handles.clear();
         }
     }
+}
+
+/// Concrete Windows WinUI 3 (`Microsoft.UI.Xaml`) + Win32 `user32.dll` platform adapter.
+pub struct WinUiBackend {
+    pub flushed_frames: u64,
+    inner: RetainedSceneBackend<WinUiFfiDriver>,
 }
 
 impl Default for WinUiBackend {
@@ -432,173 +511,107 @@ impl WinUiBackend {
     pub fn new() -> Self {
         Self {
             flushed_frames: 0,
-            state: NativeSceneState::default(),
-            layout_rects: HashMap::new(),
-            layout_dirty: std::cell::Cell::new(false),
-            ffi_driver: WinUiFfiDriver::new(false),
+            inner: RetainedSceneBackend::new(WinUiFfiDriver::new(false)),
         }
     }
 
     pub fn new_headless() -> Self {
         Self {
             flushed_frames: 0,
-            state: NativeSceneState::default(),
-            layout_rects: HashMap::new(),
-            layout_dirty: std::cell::Cell::new(false),
-            ffi_driver: WinUiFfiDriver::new(true),
+            inner: RetainedSceneBackend::new(WinUiFfiDriver::new(true)),
         }
     }
 
     #[must_use]
-    pub const fn is_native_display_active(&self) -> bool {
-        #[cfg(target_os = "windows")]
-        {
-            self.ffi_driver.win32.is_some()
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            false
-        }
+    pub fn is_native_display_active(&self) -> bool {
+        self.inner.driver.is_native_display_active()
     }
 
     #[must_use]
     pub fn live_handle_count(&self) -> usize {
-        #[cfg(target_os = "windows")]
-        {
-            self.ffi_driver.live_handles.len()
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            0
-        }
+        self.inner.driver.live_handle_count()
     }
 
     pub const fn is_ffi_loaded(&self) -> bool {
-        self.ffi_driver.ffi_loaded
+        self.inner.driver.ffi_loaded
     }
 
     pub fn resolved_symbol_count(&self) -> usize {
-        self.ffi_driver.resolved_symbols.len()
+        self.inner.driver.resolved_symbols.len()
     }
 
     pub fn open_window_count(&self) -> u32 {
-        self.ffi_driver.open_window_count()
+        self.inner.driver.open_window_count()
     }
 
     #[must_use]
     pub fn toplevel_count(&self) -> usize {
-        self.state.toplevel_count()
+        self.inner.state.toplevel_count()
     }
 
     pub fn get_control_binding(&self, id: NodeId) -> Option<&WinUiControlBinding> {
-        self.ffi_driver.bindings.get(&id)
+        self.inner.driver.bindings.get(&id)
     }
 
     pub const fn scene_state(&self) -> &NativeSceneState {
-        &self.state
+        &self.inner.state
     }
 
     pub fn control_count(&self) -> usize {
-        self.state.node_count()
+        self.inner.state.node_count()
     }
 
     pub fn get_control(&self, id: NodeId) -> Option<&NativeSceneNode> {
-        self.state.get_node(id)
+        self.inner.state.get_node(id)
     }
 
     #[must_use]
     pub fn get_layout_rect(&self, id: NodeId) -> Option<LayoutRect> {
-        self.layout_rects.get(&id).copied()
-    }
-
-    fn recompute_layout(&mut self) {
-        self.layout_rects.clear();
-        let roots: Vec<(NodeId, i32, i32)> = self
-            .ffi_driver
-            .bindings
-            .iter()
-            .filter_map(|(&id, binding)| match binding.win32_class {
-                "Window" => Some((id, 1020, 720)),
-                "Dialog" => Some((id, 460, 280)),
-                _ => None,
-            })
-            .collect();
-        for (root_id, default_w, default_h) in roots {
-            let (win_w, win_h) = self.state.window_size_or(root_id, default_w, default_h);
-            let solved = solve_scene_layout(&self.state, root_id, win_w, win_h);
-            self.layout_rects.extend(solved);
-        }
+        self.inner.layout_rects.get(&id).copied()
     }
 
     pub fn queue_native_event(&self, event: NativeEvent) {
-        self.state.push_event(event);
+        self.inner.state.push_event(event);
     }
 
     pub fn step_native_events(&self) -> Vec<NativeEvent> {
-        #[cfg(target_os = "windows")]
-        if let Some(win32) = &self.ffi_driver.win32 {
-            let mut merged = win32.pump_messages();
-            merged.retain(|ev| self.state.get_node(ev.node).is_some());
-            merged.extend(self.state.drain_events());
-            let coalesced = coalesce_frame_events(merged);
-            self.state.record_window_resize_events(&coalesced);
-            if coalesced.iter().any(|ev| ev.event_name == "resize") {
-                self.layout_dirty.set(true);
-            }
-            return coalesced;
-        }
-        let events = self.state.drain_events();
-        self.state.record_window_resize_events(&events);
-        if events.iter().any(|ev| ev.event_name == "resize") {
-            self.layout_dirty.set(true);
-        }
-        events
+        self.inner.step_native_events()
     }
 
     fn map_winui_tag(tag: &str) -> &'static str {
-        match tag {
-            "ng-window" | "adw-window" => "Microsoft.UI.Xaml.Window",
-            "ng-dialog" | "gtk-dialog" | "adw-dialog" => "Microsoft.UI.Xaml.Controls.ContentDialog",
-            "ng-header-bar" | "adw-header-bar" | "gtk-header-bar" => {
-                "Microsoft.UI.Xaml.Controls.TitleBar"
-            }
-            "ng-scroll" | "gtk-scrolled-window" => "Microsoft.UI.Xaml.Controls.ScrollViewer",
-            "ng-box" | "gtk-box" => "Microsoft.UI.Xaml.Controls.StackPanel",
-            "ng-grid" | "gtk-grid" | "ng-clamp" | "adw-clamp" => "Microsoft.UI.Xaml.Controls.Grid",
-            "ng-separator" | "gtk-separator" => "Microsoft.UI.Xaml.Controls.AppBarSeparator",
-            "ng-label" | "gtk-label" => "Microsoft.UI.Xaml.Controls.TextBlock",
-            "ng-button" | "gtk-button" => "Microsoft.UI.Xaml.Controls.Button",
-            "ng-entry" | "gtk-entry" => "Microsoft.UI.Xaml.Controls.TextBox",
-            "ng-switch" | "gtk-switch" => "Microsoft.UI.Xaml.Controls.ToggleSwitch",
-            "ng-checkbox" | "ng-check" | "gtk-check-button" => {
-                "Microsoft.UI.Xaml.Controls.CheckBox"
-            }
-            "ng-slider" | "ng-scale" | "gtk-scale" => "Microsoft.UI.Xaml.Controls.Slider",
-            "ng-select" | "ng-dropdown" | "gtk-drop-down" => "Microsoft.UI.Xaml.Controls.ComboBox",
-            "ng-image" | "gtk-picture" | "ng-picture" => "Microsoft.UI.Xaml.Controls.Image",
+        match super::WidgetTag::from_tag(tag) {
+            super::WidgetTag::Window => "Microsoft.UI.Xaml.Window",
+            super::WidgetTag::Dialog => "Microsoft.UI.Xaml.Controls.ContentDialog",
+            super::WidgetTag::HeaderBar => "Microsoft.UI.Xaml.Controls.TitleBar",
+            super::WidgetTag::Scroll => "Microsoft.UI.Xaml.Controls.ScrollViewer",
+            super::WidgetTag::Box => "Microsoft.UI.Xaml.Controls.StackPanel",
+            super::WidgetTag::Grid | super::WidgetTag::Clamp => "Microsoft.UI.Xaml.Controls.Grid",
+            super::WidgetTag::Separator => "Microsoft.UI.Xaml.Controls.AppBarSeparator",
+            super::WidgetTag::Label => "Microsoft.UI.Xaml.Controls.TextBlock",
+            super::WidgetTag::Button => "Microsoft.UI.Xaml.Controls.Button",
+            super::WidgetTag::Entry => "Microsoft.UI.Xaml.Controls.TextBox",
+            super::WidgetTag::Switch => "Microsoft.UI.Xaml.Controls.ToggleSwitch",
+            super::WidgetTag::CheckButton => "Microsoft.UI.Xaml.Controls.CheckBox",
+            super::WidgetTag::Slider => "Microsoft.UI.Xaml.Controls.Slider",
+            super::WidgetTag::DropDown => "Microsoft.UI.Xaml.Controls.ComboBox",
+            super::WidgetTag::Image => "Microsoft.UI.Xaml.Controls.Image",
             // WinUI has no read-only meter control: both map to ProgressBar.
-            "ng-level-bar" | "gtk-level-bar" | "ng-progress-bar" | "gtk-progress-bar" => {
+            super::WidgetTag::LevelBar | super::WidgetTag::ProgressBar => {
                 "Microsoft.UI.Xaml.Controls.ProgressBar"
             }
-            "ng-spinner" | "gtk-spinner" => "Microsoft.UI.Xaml.Controls.ProgressRing",
-            "ng-flow" | "ng-flow-box" | "gtk-flow-box" => {
-                "Microsoft.UI.Xaml.Controls.ItemsRepeater"
-            }
-            "ng-paned" | "gtk-paned" => "Microsoft.UI.Xaml.Controls.SplitView",
-            "ng-stack" | "gtk-stack" | "adw-navigation-view" => {
-                "Microsoft.UI.Xaml.Controls.NavigationView"
-            }
-            "ng-expander" | "gtk-expander" => "Microsoft.UI.Xaml.Controls.Expander",
-            "ng-text-view" | "gtk-text-view" => "Microsoft.UI.Xaml.Controls.RichEditBox",
-            "ng-password-entry" | "gtk-password-entry" => "Microsoft.UI.Xaml.Controls.PasswordBox",
-            "ng-search-entry" | "gtk-search-entry" => "Microsoft.UI.Xaml.Controls.AutoSuggestBox",
-            "ng-spin-button" | "gtk-spin-button" => "Microsoft.UI.Xaml.Controls.NumberBox",
-            "ng-list" | "ng-table" | "gtk-list-box" | "gtk-list-view" => {
-                "Microsoft.UI.Xaml.Controls.ListView"
-            }
-            "ng-popover" | "gtk-popover" | "ng-menu" => "Microsoft.UI.Xaml.Controls.Flyout",
-            "ng-anchor" | "#comment" => "Microsoft.UI.Xaml.AnchorComment",
-            _ => "Microsoft.UI.Xaml.UIElement",
+            super::WidgetTag::Spinner => "Microsoft.UI.Xaml.Controls.ProgressRing",
+            super::WidgetTag::FlowBox => "Microsoft.UI.Xaml.Controls.ItemsRepeater",
+            super::WidgetTag::Paned => "Microsoft.UI.Xaml.Controls.SplitView",
+            super::WidgetTag::Stack => "Microsoft.UI.Xaml.Controls.NavigationView",
+            super::WidgetTag::Expander => "Microsoft.UI.Xaml.Controls.Expander",
+            super::WidgetTag::TextView => "Microsoft.UI.Xaml.Controls.RichEditBox",
+            super::WidgetTag::PasswordEntry => "Microsoft.UI.Xaml.Controls.PasswordBox",
+            super::WidgetTag::SearchEntry => "Microsoft.UI.Xaml.Controls.AutoSuggestBox",
+            super::WidgetTag::SpinButton => "Microsoft.UI.Xaml.Controls.NumberBox",
+            super::WidgetTag::ListView => "Microsoft.UI.Xaml.Controls.ListView",
+            super::WidgetTag::Popover => "Microsoft.UI.Xaml.Controls.Flyout",
+            super::WidgetTag::Anchor => "Microsoft.UI.Xaml.AnchorComment",
+            super::WidgetTag::Unknown => "Microsoft.UI.Xaml.UIElement",
         }
     }
 }
@@ -613,50 +626,28 @@ impl PlatformBackend for WinUiBackend {
     }
 
     fn flush_commands(&mut self, commands: &[RenderCommand]) {
-        let layout_dirty = self.layout_dirty.replace(false);
-        if commands.is_empty() && !layout_dirty {
-            return;
-        }
-        if !commands.is_empty() {
-            self.flushed_frames += 1;
-            super::trace_flush_commands(
-                self.backend_name(),
-                self.flushed_frames,
-                commands,
-                Self::map_winui_tag,
-            );
-            for cmd in commands {
-                self.state.apply_command(
-                    cmd,
-                    "Microsoft.UI.Xaml.AnchorComment",
-                    Self::map_winui_tag,
-                );
-                match cmd {
-                    RenderCommand::CreateWidget { id, tag } => {
-                        self.ffi_driver.register_node(*id, Self::map_winui_tag(tag));
-                    }
-                    RenderCommand::SetAttribute { node, key, value } if key == "event-mask" => {
-                        self.ffi_driver
-                            .update_event_mask(*node, EventMask::parse_attr(value));
-                    }
-                    RenderCommand::SetAttribute { node, key, value }
-                        if key == "prevent-close" && NativeSceneState::parse_truthy_attr(value) =>
-                    {
-                        self.ffi_driver
-                            .update_event_mask(*node, EventMask::CLOSE_REQUEST);
-                    }
-                    RenderCommand::DestroyWidget { id } => {
-                        self.ffi_driver.unregister_node(*id);
-                    }
-                    _ => {}
-                }
-                #[cfg(target_os = "windows")]
-                self.ffi_driver.apply_live_command(cmd, &self.state);
-            }
-        }
-        self.recompute_layout();
-        #[cfg(target_os = "windows")]
-        self.ffi_driver
-            .apply_live_layout(&self.state, &self.layout_rects);
+        self.inner.flush_commands(
+            "Windows WinUI 3",
+            commands,
+            "Microsoft.UI.Xaml.AnchorComment",
+            Self::map_winui_tag,
+        );
+        self.flushed_frames = self.inner.flushed_frames;
+    }
+
+    fn is_native_display_active(&self) -> bool {
+        Self::is_native_display_active(self)
+    }
+
+    fn open_window_count(&self) -> u32 {
+        self.inner.open_window_count()
+    }
+
+    fn is_ffi_driver_loaded(&self) -> bool {
+        self.inner.is_ffi_loaded()
+    }
+
+    fn step_native_events(&self, _may_block: bool) -> Vec<NativeEvent> {
+        Self::step_native_events(self)
     }
 }
