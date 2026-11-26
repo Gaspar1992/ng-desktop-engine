@@ -154,6 +154,35 @@ type ObjcRegisterClassPairFn = unsafe extern "C" fn(*mut c_void);
 #[cfg(target_os = "macos")]
 type ClassAddMethodFn =
     unsafe extern "C" fn(*mut c_void, *mut c_void, *const c_void, *const c_char) -> u8;
+#[cfg(target_os = "macos")]
+type ObjcAutoreleasePoolPushFn = unsafe extern "C" fn() -> *mut c_void;
+#[cfg(target_os = "macos")]
+type ObjcAutoreleasePoolPopFn = unsafe extern "C" fn(*mut c_void);
+
+#[cfg(target_os = "macos")]
+struct AutoreleasePoolGuard {
+    pool: *mut c_void,
+    pop: Option<ObjcAutoreleasePoolPopFn>,
+}
+
+#[cfg(target_os = "macos")]
+impl AutoreleasePoolGuard {
+    fn new(push: Option<ObjcAutoreleasePoolPushFn>, pop: Option<ObjcAutoreleasePoolPopFn>) -> Self {
+        let pool = push.map_or(std::ptr::null_mut(), |f| unsafe { f() });
+        Self { pool, pop }
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl Drop for AutoreleasePoolGuard {
+    fn drop(&mut self) {
+        if !self.pool.is_null()
+            && let Some(pop_fn) = self.pop
+        {
+            unsafe { pop_fn(self.pool) };
+        }
+    }
+}
 
 #[cfg(target_os = "macos")]
 #[derive(Debug, Clone)]
@@ -170,7 +199,11 @@ struct AppKitNodeRecord {
 #[derive(Clone, Copy)]
 struct AppKitObjcDispatch {
     objc_msg_send: *mut c_void,
+    #[cfg(target_arch = "x86_64")]
+    objc_msg_send_stret: Option<*mut c_void>,
     sel_object: *mut c_void,
+    sel_frame: *mut c_void,
+    sel_content_view: *mut c_void,
     sel_string_value: *mut c_void,
     sel_string: *mut c_void,
     sel_utf8_string: *mut c_void,
@@ -374,6 +407,39 @@ unsafe extern "C" fn ng_appkit_window_should_close(
 }
 
 #[cfg(target_os = "macos")]
+unsafe fn query_ns_rect(dispatch: &AppKitObjcDispatch, target: *mut c_void) -> NsRect {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if let Some(stret) = dispatch.objc_msg_send_stret {
+            let mut out = NsRect {
+                origin: NsPoint { x: 0.0, y: 0.0 },
+                size: NsSize {
+                    width: 0.0,
+                    height: 0.0,
+                },
+            };
+            let f: unsafe extern "C" fn(*mut NsRect, *mut c_void, *mut c_void) =
+                unsafe { std::mem::transmute_copy::<*mut c_void, _>(&stret) };
+            unsafe { f(&raw mut out, target, dispatch.sel_frame) };
+            return out;
+        }
+        NsRect {
+            origin: NsPoint { x: 0.0, y: 0.0 },
+            size: NsSize {
+                width: 0.0,
+                height: 0.0,
+            },
+        }
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        let f: unsafe extern "C" fn(*mut c_void, *mut c_void) -> NsRect =
+            unsafe { std::mem::transmute_copy::<*mut c_void, _>(&dispatch.objc_msg_send) };
+        unsafe { f(target, dispatch.sel_frame) }
+    }
+}
+
+#[cfg(target_os = "macos")]
 unsafe extern "C" fn ng_appkit_window_did_resize(
     _self_obj: *mut c_void,
     _sel: *mut c_void,
@@ -388,9 +454,37 @@ unsafe extern "C" fn ng_appkit_window_did_resize(
     let msg_ptr0: unsafe extern "C" fn(*mut c_void, *mut c_void) -> *mut c_void =
         unsafe { std::mem::transmute_copy::<*mut c_void, _>(&dispatch.objc_msg_send) };
     let win = unsafe { msg_ptr0(notification, dispatch.sel_object) };
-    let Some(rec) = node_snapshot(win as usize) else {
+    let Some(mut rec) = node_snapshot(win as usize) else {
         return;
     };
+    let content_view = unsafe { msg_ptr0(win, dispatch.sel_content_view) };
+    let target = if content_view.is_null() {
+        win
+    } else {
+        content_view
+    };
+    if !target.is_null() {
+        let rect = unsafe { query_ns_rect(dispatch, target) };
+        if rect.size.width.is_finite()
+            && rect.size.height.is_finite()
+            && rect.size.width > 0.0
+            && rect.size.height > 0.0
+        {
+            #[allow(clippy::cast_possible_truncation)]
+            let live_size = (
+                rect.size.width.round() as i32,
+                rect.size.height.round() as i32,
+            );
+            rec.last_size = live_size;
+            if let Some(entry) = node_map()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get_mut(&(win as usize))
+            {
+                entry.last_size = live_size;
+            }
+        }
+    }
     if let Some(ev) = translate_appkit_delegate_event(
         rec.node,
         rec.objc_class,
@@ -412,6 +506,8 @@ pub(super) struct AppKitSys {
     objc_get_class: ObjcGetClassFn,
     sel_register_name: SelRegisterNameFn,
     objc_msg_send: *mut c_void,
+    autorelease_push: Option<ObjcAutoreleasePoolPushFn>,
+    autorelease_pop: Option<ObjcAutoreleasePoolPopFn>,
     default_runloop_mode: *mut c_void,
     delegate_target: *mut c_void,
 }
@@ -427,13 +523,23 @@ impl AppKitSys {
         let objc_get_class: ObjcGetClassFn = unsafe { objc.sym(c"objc_getClass") }?;
         let sel_register_name: SelRegisterNameFn = unsafe { objc.sym(c"sel_registerName") }?;
         let objc_msg_send: *mut c_void = unsafe { objc.sym(c"objc_msgSend") }?;
+        #[cfg(target_arch = "x86_64")]
+        let objc_msg_send_stret: Option<*mut c_void> = unsafe { objc.sym(c"objc_msgSend_stret") };
+        let autorelease_push: Option<ObjcAutoreleasePoolPushFn> =
+            unsafe { objc.sym(c"objc_autoreleasePoolPush") };
+        let autorelease_pop: Option<ObjcAutoreleasePoolPopFn> =
+            unsafe { objc.sym(c"objc_autoreleasePoolPop") };
         let mode_sym: Option<*const *mut c_void> = unsafe { appkit.sym(c"NSDefaultRunLoopMode") };
         let default_runloop_mode = mode_sym.map_or(std::ptr::null_mut(), |ptr| unsafe { *ptr });
 
         let _ = APPKIT_DISPATCH.get_or_init(|| unsafe {
             AppKitObjcDispatch {
                 objc_msg_send,
+                #[cfg(target_arch = "x86_64")]
+                objc_msg_send_stret,
                 sel_object: sel_register_name(c"object".as_ptr()),
+                sel_frame: sel_register_name(c"frame".as_ptr()),
+                sel_content_view: sel_register_name(c"contentView".as_ptr()),
                 sel_string_value: sel_register_name(c"stringValue".as_ptr()),
                 sel_string: sel_register_name(c"string".as_ptr()),
                 sel_utf8_string: sel_register_name(c"UTF8String".as_ptr()),
@@ -451,6 +557,8 @@ impl AppKitSys {
             objc_get_class,
             sel_register_name,
             objc_msg_send,
+            autorelease_push,
+            autorelease_pop,
             default_runloop_mode,
             delegate_target,
         })
@@ -595,6 +703,7 @@ impl AppKitSys {
     }
 
     pub(super) fn probe_nsstring_roundtrip(&self, text: &str) -> Option<String> {
+        let _pool = AutoreleasePoolGuard::new(self.autorelease_push, self.autorelease_pop);
         let ns_str = self.make_nsstring(text);
         if ns_str.is_null() {
             return None;
@@ -671,6 +780,12 @@ impl AppKitSys {
             if !self.delegate_target.is_null() {
                 self.send_void1(win, c"setDelegate:", self.delegate_target);
             }
+            if crate::platforms::GpuRendererPreference::from_env().prefers_hardware_acceleration() {
+                let content_view = self.send_ptr0(win, c"contentView");
+                if !content_view.is_null() {
+                    self.send_void_bool(content_view, c"setWantsLayer:", true);
+                }
+            }
         }
         let handle = AppKitHandle(win as usize);
         node_map()
@@ -697,11 +812,14 @@ impl AppKitSys {
         objc_class: &'static str,
         rect: NsRect,
     ) -> Option<AppKitHandle> {
+        if objc_class == "NSAnchorComment" {
+            return None;
+        }
         let runtime_cls = match objc_class {
             "NSTextFieldEditable" => "NSTextField",
             "NSButtonCheckbox" | "NSDisclosureButton" => "NSButton",
             "NSBoxSeparator" => "NSBox",
-            "NSPopover" => "NSView",
+            "NSToolbar" | "NSPopover" => "NSView",
             other => other,
         };
         let c_cls = CString::new(runtime_cls).ok()?;
@@ -715,6 +833,23 @@ impl AppKitSys {
         let view = unsafe { init_frame(alloc, self.sel(c"initWithFrame:"), rect) };
         if view.is_null() {
             return None;
+        }
+        match objc_class {
+            "NSTextField" => unsafe {
+                self.send_void_bool(view, c"setEditable:", false);
+                self.send_void_bool(view, c"setBezeled:", false);
+                self.send_void_bool(view, c"setDrawsBackground:", false);
+            },
+            "NSTextFieldEditable" => unsafe {
+                self.send_void_bool(view, c"setEditable:", true);
+                self.send_void_bool(view, c"setBezeled:", true);
+            },
+            "NSButtonCheckbox" => {
+                let set_btn_type: unsafe extern "C" fn(*mut c_void, *mut c_void, isize) =
+                    unsafe { std::mem::transmute_copy::<*mut c_void, _>(&self.objc_msg_send) };
+                unsafe { set_btn_type(view, self.sel(c"setButtonType:"), 3) };
+            }
+            _ => {}
         }
         if !self.delegate_target.is_null() {
             if matches!(
@@ -878,6 +1013,7 @@ impl AppKitSys {
     }
 
     pub(super) fn pump_events(&self) -> Vec<NativeEvent> {
+        let _pool = AutoreleasePoolGuard::new(self.autorelease_push, self.autorelease_pop);
         let shared = self.ensure_shared_application();
         if !shared.is_null() {
             let mode = if self.default_runloop_mode.is_null() {

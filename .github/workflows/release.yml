@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release tag version to build and publish (e.g. v0.4.0)'
+        description: 'Release tag version to build and publish (e.g. v0.7.0)'
         required: true
-        default: 'v0.4.0'
+        default: 'v0.7.0'
 
 permissions:
   contents: write
@@ -18,6 +18,7 @@ jobs:
   build-frontend-and-packages:
     name: Build Pokédex Bundle & @ng-desktop/* APF Packages
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -75,6 +76,7 @@ jobs:
     name: Build ${{ matrix.target }} (Engine + Installers + @ng-desktop/engine-*)
     needs: build-frontend-and-packages
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -146,6 +148,9 @@ jobs:
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
 
       - name: Build release engine binary
         run: cargo build --release --locked
@@ -395,6 +400,9 @@ jobs:
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
       - name: Authenticate with crates.io via OIDC Trusted Publishing
         if: ${{ vars.CRATES_TRUSTED_PUBLISHING == 'true' }}
         id: crates_auth
@@ -419,5 +427,5 @@ jobs:
             fi
           else
             echo "vars.CRATES_TRUSTED_PUBLISHING != 'true'; verifying crate package cleanly."
-            cargo publish --dry-run --allow-dirty
+            cargo publish --dry-run --locked
           fi

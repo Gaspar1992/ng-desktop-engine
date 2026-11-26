@@ -114,6 +114,23 @@ pub(super) fn format_completions_js(completions: &[HostAsyncCompletion]) -> Stri
     format!("[{}]", items.join(","))
 }
 
+fn jsc_eval_and_drain_with_microtasks(jsc: &JscSys, call: &str) -> Result<String, EngineError> {
+    let primary = jsc.eval(call).map_err(EngineError::ScriptSyntaxError)?;
+    let followup = jsc
+        .eval("globalThis.__NG_NATIVE__.__drainQueue()")
+        .map_err(EngineError::ScriptSyntaxError)?;
+    let mut combined = String::new();
+    for chunk in [primary.trim(), followup.trim()] {
+        if !chunk.is_empty() && chunk != "undefined" {
+            if !combined.is_empty() {
+                combined.push('\n');
+            }
+            combined.push_str(chunk);
+        }
+    }
+    Ok(combined)
+}
+
 impl JsEngineBackend for JscEngine {
     fn engine_name(&self) -> &str {
         if self.jsc.is_some() {
@@ -190,7 +207,7 @@ impl JsEngineBackend for JscEngine {
             let call = format!(
                 "globalThis.__NG_NATIVE__.__dispatchAndDrain({node_var:?}, {event_name:?}, {payload_js})"
             );
-            jsc.eval(&call).map_err(EngineError::ScriptSyntaxError)
+            jsc_eval_and_drain_with_microtasks(jsc, &call)
         } else if let Some(fallback) = &mut self.fallback {
             fallback.dispatch_and_drain(node_var, event_name, payload)
         } else {
@@ -210,7 +227,7 @@ impl JsEngineBackend for JscEngine {
                 let completions_js = format_completions_js(completions);
                 format!("globalThis.__NG_NATIVE__.__tickAndDrain({now_ms}, {completions_js})")
             };
-            jsc.eval(&call).map_err(EngineError::ScriptSyntaxError)
+            jsc_eval_and_drain_with_microtasks(jsc, &call)
         } else if let Some(fallback) = &mut self.fallback {
             fallback.tick_and_drain(now_ms, completions)
         } else {
@@ -392,5 +409,26 @@ mod tests {
                 .unwrap();
             assert_eq!(after_destroy.trim(), "");
         }
+    }
+
+    #[test]
+    fn jsc_drains_promise_microtasks_within_the_same_dispatch_tick() {
+        let mut jsc = JscEngine::new();
+        let script = r#"
+            __NG_NATIVE__.createElement("lbl", "ng-label");
+            __NG_NATIVE__.createElement("btn", "ng-button");
+            __NG_NATIVE__.listen("btn", "clicked", () => {
+                Promise.resolve("jsc-microtask").then((msg) => {
+                    __NG_NATIVE__.setText("lbl", `Ready:${msg}`);
+                });
+            });
+        "#;
+        jsc.eval_script(script).unwrap();
+        let _ = jsc.drain_native_commands().unwrap();
+
+        let after_click = jsc
+            .dispatch_and_drain("btn", "clicked", &EventPayload::None)
+            .unwrap();
+        assert_eq!(after_click.trim(), "text lbl Ready:jsc-microtask");
     }
 }

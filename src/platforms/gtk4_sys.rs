@@ -284,6 +284,12 @@ impl Gtk4Sys {
                 adw_lib.and_then(|lib| Self::load_fn::<unsafe extern "C" fn()>(lib, c"adw_init"));
             // Libadwaita's `adw_init` aborts if called concurrently/twice on the same display.
             let toolkit_ready = *TOOLKIT_INIT_OK.get_or_init(|| {
+                if std::env::var_os("GSK_RENDERER").is_none()
+                    && let Some(gsk) =
+                        crate::platforms::GpuRendererPreference::from_env().gsk_renderer_value()
+                {
+                    std::env::set_var("GSK_RENDERER", gsk);
+                }
                 if gtk_init_check() == 0 {
                     return false;
                 }
