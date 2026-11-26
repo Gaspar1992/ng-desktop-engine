@@ -3,4 +3,5 @@
 /out-tsc
 /.angular
 /odd
+/coverage
 node_modules/

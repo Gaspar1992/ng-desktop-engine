@@ -87,7 +87,14 @@
           "builder": "@angular/build:unit-test",
           "options": {
             "tsConfig": "tsconfig.spec.json",
-            "include": ["**/*.spec.ts", "../../../packages/**/*.spec.ts"]
+            "include": ["**/*.spec.ts", "../../../packages/**/*.spec.ts"],
+            "coverageReporters": ["text-summary", "lcov", "json-summary"],
+            "coverageThresholds": {
+              "statements": 75,
+              "branches": 62,
+              "functions": 72,
+              "lines": 75
+            }
           }
         }
       }
@@ -155,7 +162,15 @@
           "builder": "@angular/build:unit-test",
           "options": {
             "tsConfig": "docs-site/tsconfig.spec.json",
-            "include": ["**/*.spec.ts"]
+            "include": ["**/*.spec.ts"],
+            "coverageInclude": ["docs-site/src/**/*.ts"],
+            "coverageReporters": ["text-summary", "lcov", "json-summary"],
+            "coverageThresholds": {
+              "statements": 78,
+              "branches": 63,
+              "functions": 44,
+              "lines": 76
+            }
           }
         }
       }

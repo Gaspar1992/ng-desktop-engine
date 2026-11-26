@@ -26,7 +26,7 @@ impl Default for QuickJsEngine {
 impl QuickJsEngine {
     pub fn new() -> Self {
         let runtime = Runtime::new().expect("Failed to initialize QuickJS-NG runtime");
-        runtime.set_max_stack_size(8 * 1024 * 1024);
+        runtime.set_max_stack_size(4 * 1024 * 1024);
         let context = Context::full(&runtime).expect("Failed to initialize QuickJS-NG context");
         let http_slot: HttpEngineSlot =
             Arc::new(Mutex::new(Arc::new(Mutex::new(NativeHttpEngine::new()))));
@@ -253,5 +253,22 @@ mod tests {
             .dispatch_and_drain("btn", "clicked", &EventPayload::None)
             .unwrap();
         assert_eq!(after_click.trim(), "text lbl microtask-ready:Pokémon 🚀");
+    }
+
+    #[test]
+    fn quickjs_catches_deep_recursion_before_os_stack_overflow() {
+        let handle = std::thread::Builder::new()
+            .name(String::from("qjs-stack-guard-test"))
+            .stack_size(8 * 1024 * 1024)
+            .spawn(|| {
+                let mut qjs = QuickJsEngine::new();
+                let res = qjs.eval_script("function boom(){return boom()+1;} boom();");
+                assert!(
+                    matches!(res, Err(EngineError::ScriptSyntaxError(_))),
+                    "Expected caught QuickJS stack error, got: {res:?}"
+                );
+            })
+            .expect("spawn stack guard test thread");
+        handle.join().expect("stack guard thread must not panic");
     }
 }

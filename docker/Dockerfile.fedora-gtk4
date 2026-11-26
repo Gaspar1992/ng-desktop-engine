@@ -1,25 +1,31 @@
-# Multi-Container Testing Image: Fedora 41 (GTK4 + Libadwaita + WebKitGTK 6.0 JSC + libsoup3 + SQLite3 + Xvfb)
+# Multi-Container Testing Image: Fedora 41 (GTK4 4.16+ + Libadwaita + WebKitGTK 6.0 JSC + libsoup3 + SQLite3 + Xvfb + Node 24)
 FROM fedora:41
 
 ENV CARGO_TERM_COLOR=always
 
 RUN dnf install -y \
-    cargo \
-    clippy \
+    ca-certificates \
+    curl \
     gcc \
+    gcc-c++ \
     git \
+    glibc-devel \
     gtk4 \
     libadwaita \
     libsoup3 \
-    rust \
-    rustfmt \
     sqlite-libs \
     webkitgtk6.0 \
     xorg-x11-server-Xvfb \
     xorg-x11-xauth \
+    && curl -fsSL https://rpm.nodesource.com/setup_24.x | bash - \
+    && dnf install -y nodejs \
+    && npm install -g pnpm@12.9.1 \
     && dnf clean all
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --component clippy,rustfmt
+ENV PATH="/root/.cargo/bin:${PATH}"
 
 WORKDIR /workspace
 COPY . .
 
-CMD ["xvfb-run", "-a", "cargo", "test", "--verbose"]
+CMD ["sh", "-c", "pnpm install --frozen-lockfile && pnpm run build && NG_E2E_REQUIRE_FULL=1 xvfb-run -a cargo test --verbose"]

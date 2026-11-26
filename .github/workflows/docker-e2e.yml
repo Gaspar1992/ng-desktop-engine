@@ -1,0 +1,62 @@
+name: Docker Multi-OS E2E
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'packages/**'
+      - 'examples/counter-app/**'
+      - 'docker/**'
+      - 'scripts/test-containers.sh'
+      - '.github/workflows/docker-e2e.yml'
+      - 'Cargo.toml'
+      - 'package.json'
+  schedule:
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+jobs:
+  docker-matrix:
+    name: Docker (${{ matrix.label }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Ubuntu 24.04 GTK 4.14
+            target: ubuntu
+            dockerfile: docker/Dockerfile.ubuntu-gtk4
+            cache-scope: ubuntu-gtk4
+          - label: Debian 12 GTK 4.8
+            target: debian12
+            dockerfile: docker/Dockerfile.debian12-gtk4
+            cache-scope: debian12-gtk4
+          - label: Fedora 41 GTK 4.16
+            target: fedora
+            dockerfile: docker/Dockerfile.fedora-gtk4
+            cache-scope: fedora-gtk4
+          - label: Windows MinGW + Wine64
+            target: windows
+            dockerfile: docker/Dockerfile.windows-wine
+            cache-scope: windows-wine
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build container image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          tags: ng-native-test:${{ matrix.target }}
+          load: true
+          cache-from: type=gha,scope=${{ matrix.cache-scope }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.cache-scope }}
+
+      - name: Run container test & E2E suite
+        run: docker run --rm ng-native-test:${{ matrix.target }}

@@ -610,7 +610,7 @@ impl NativeHttpEngine {
         if valid_count == 0 {
             return vec![false; pairs.len()];
         }
-        let _ = cmd.status();
+        let _ = cmd.stdout(Stdio::null()).stderr(Stdio::null()).status();
         pairs
             .iter()
             .map(|(url, dest)| {

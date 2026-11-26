@@ -300,11 +300,19 @@ fn handle_wait_for<W: Write>(
             );
         }
         if Instant::now() >= deadline {
+            let sys_errs = state
+                .js_runtime
+                .eval_js(
+                    state.engine,
+                    "JSON.stringify(globalThis.__NG_NATIVE__?.getSystemErrors?.() ?? [])",
+                )
+                .unwrap_or_else(|_| String::from("[]"));
             return write_raw(
                 writer,
                 &format!(
-                    r#"{{"ok":false,"error":"timeout","preview":"{}"}}"#,
-                    escape_json(&preview)
+                    r#"{{"ok":false,"error":"timeout","preview":"{}","systemErrors":"{}"}}"#,
+                    escape_json(&preview),
+                    escape_json(&sys_errs)
                 ),
             );
         }
