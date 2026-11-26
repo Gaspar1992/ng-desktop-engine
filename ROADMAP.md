@@ -4,11 +4,11 @@ This document defines the deep technical analysis and phased engineering roadmap
 
 ---
 
-## 📍 Current Status Snapshot (`v0.6.0`)
+## 📍 Current Status Snapshot (`v0.7.0`)
 
-**At a glance:** Release **`v0.6.0`** (`High-Density UI, CSS Completeness & Real Multi-OS Installers`) | **`29` native widget primitives + `<ng-anchor>`** | **`7` `@ng-desktop/*` npm packages + `5` prebuilt `@ng-desktop/engine-*` binaries** | **`233` automated tests** (`101` Vitest across `17` suites, `86` Rust unit, `46` Rust integration across `8` suites).
+**At a glance:** Release **`v0.7.0`** (`Coverage Shielding, Architectural Consolidation & Phase 18 GPU/Composition Parity`) | **`29` native widget primitives + `<ng-anchor>`** | **`7` `@ng-desktop/*` npm packages + `5` prebuilt `@ng-desktop/engine-*` binaries** | **`164` Rust tests across `11` suites (`78.25%` line coverage, `>= 75%` CI gate) + Vitest suites**
 
-### Platform Maturity Matrix (`v0.6.0`)
+### Platform Maturity Matrix (`v0.7.0`)
 
 | Area                   | Linux (`GTK4 / Libadwaita`)                                                                                                 | Windows (`Win32 / WinUI`)                                                                                                                               | macOS (`AppKit`)                                                                                                              |
 | :--------------------- | :-------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------ | :---------------------------------------------------------------------------------------------------------------------------- |
@@ -297,17 +297,18 @@ Following the completion of Phase 16 (`v0.6.0`) and Phase 17 (`v0.7.0`, GitHub P
 4. **GitHub Pages Continuous Deployment (`.github/workflows/docs-pages.yml`):**
    - [x] Configured continuous build and deployment of `dist/ng-desktop-docs/browser` to `https://gaspar1992.github.io/ng-desktop-engine/` via `actions/configure-pages@v5`, `upload-pages-artifact@v3`, and `deploy-pages@v4`, with CI verification in `.github/workflows/ci.yml`.
 
-### Phase 18 (`v0.7.x+`): GPU-Accelerated Rendering Parity & Commercial Signing (Planned 🎯)
+### Phase 18 (`v0.7.0` / `v0.7.x+`): GPU-Accelerated Rendering Parity & Commercial Signing (GPU Parity Completed ✅ / Signing Pending 🎯)
 
 Following our cross-OS rendering backend audit (`src/platforms/`):
 
-| OS Backend                       | Current Rendering Path                        | GPU Status Today                                                                                       | Target Hardening & Phase 18 Enhancement                                                                                                                                                |
-| :------------------------------- | :-------------------------------------------- | :----------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Linux (GTK4 / Libadwaita)**    | `AdwApplicationWindow` + GSK (`libgtk-4`)     | **GPU-accelerated by default** (`vulkan` / `ngl` / `gl`; CPU `cairo` in Xvfb headless)                 | Expose declarative `renderer` / `gpu` config in `angular.json` (`GSK_RENDERER`) and startup GPU telemetry.                                                                             |
-| **macOS (AppKit Cocoa)**         | `NSWindow` + `NSView` (`WindowServer`)        | **Partial** (WindowServer Metal compositing, but subviews lack explicit `setWantsLayer:YES` `CALayer`) | Enable `setWantsLayer:YES` layer-backed `CALayer` views in `appkit_sys.rs` + Core Animation GPU borders, radii, opacity, and transitions.                                              |
-| **Windows (Win32 `user32.dll`)** | Classic GDI `HWND` (`STATIC`/`BUTTON`/`EDIT`) | **CPU-rasterized controls composited by DWM** (not true WinUI 3 XAML visual trees yet)                 | Wire immediate DWM dark-mode/compositing attributes, then upgrade to **Direct2D + DirectComposition** (`d2d1.dll` + `dcomp.dll`) / **WinUI 3 XAML Islands** (`Microsoft.UI.Xaml.dll`). |
+| OS Backend                       | Current Rendering Path                        | GPU Status Today                                                                                  | Target Hardening & Phase 18 Enhancement                                                                                                                         |
+| :------------------------------- | :-------------------------------------------- | :------------------------------------------------------------------------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Linux (GTK4 / Libadwaita)**    | `AdwApplicationWindow` + GSK (`libgtk-4`)     | **GPU-accelerated by default** (`vulkan` / `ngl` / `gl`; CPU `cairo` in Xvfb headless)            | Declarative `gpu` / `gpuBackend` config (`angular.json` / `--gpu` / `NG_DESKTOP_GPU_BACKEND`) + startup GPU compositor telemetry (`v0.7.0` ✅).                 |
+| **macOS (AppKit Cocoa)**         | `NSWindow` + `NSView` (`WindowServer`)        | **Layer-backed `CALayer` Metal compositing** (`setWantsLayer:YES` + `apply_layer_style`)          | `CALayer` GPU styling (`border-radius`, `opacity`, `border-width`, `overflow: hidden`) wired in `appkit_sys.rs` / `macos_appkit.rs` (`v0.7.0` ✅).              |
+| **Windows (Win32 `user32.dll`)** | Classic GDI `HWND` (`STATIC`/`BUTTON`/`EDIT`) | **DWM-composited HWNDs** (`dwmapi.dll` dark mode, corner preference & system backdrop attributes) | Immediate DWM corner/backdrop/dark-mode hooks wired (`v0.7.0` ✅); full Direct2D + DirectComposition / WinUI 3 XAML Islands upgrade remains future (`v0.7.x+`). |
 
-- [ ] **Cross-OS GPU Backend Configuration:** Add optional `{ "gpu": "auto" | "vulkan" | "gl" | "metal" | "d2d" | "software" }` configuration across `angular.json`, `AngularNativeConfig`, and startup diagnostics.
-- [ ] **macOS `CALayer` & Core Animation Pipeline:** Enable `wantsLayer = YES` on AppKit widget views so backgrounds, borders, rounded corners, opacity, and CSS transitions execute on Metal layers.
-- [ ] **Windows Hardware Surface Upgrade:** Add `dwmapi.dll` dark-mode / composited window hints and implement Direct2D + DirectComposition / WinUI 3 XAML Islands rendering surfaces.
-- [ ] **Commercial Signing & Store Notarization:** Wire Authenticode (`signtool.exe`) and Apple Developer ID (`notarytool` + `stapler`) secrets into `.github/workflows/release.yml`.
+- [x] **Cross-OS GPU Backend Configuration (`PR #55`):** Added declarative `"gpu"` / `"gpuBackend"` configuration in `angular.json` / `AngularNativeConfig`, `--gpu` CLI flag, lock-free `AtomicU8` fallback, and startup GPU compositor telemetry across all backends.
+- [x] **macOS `CALayer` & Core Animation Pipeline (`PR #55`):** Enabled `wantsLayer = YES` and live `CALayer` GPU styling (`border-radius`, `opacity`, `border-width`, `masksToBounds`) in `appkit_sys.rs` and `macos_appkit.rs`.
+- [x] **Windows DWM Composition Hooks (`PR #55`):** Added `DWMWA_WINDOW_CORNER_PREFERENCE`, `DWMWA_SYSTEMBACKDROP_TYPE`, and `theme`/`dark-mode` live attributes in `win32_sys.rs` and `windows_winui.rs`.
+- [x] **Architectural Pattern Consolidation (`PR #54`):** Unified `WidgetTag`, `RetainedSceneBackend<D: RetainedNativeDriver>` (`WinUiBackend` & `MacOsAppKitBackend`), `PlatformBackend` lifecycle methods, and `AnyJsEngine` worker dispatch.
+- [ ] **Windows Direct2D / XAML Islands & Commercial Signing (`v0.7.x+`):** Upgrade child controls to Direct2D + DirectComposition / WinUI 3 XAML Islands and wire Authenticode (`signtool.exe`) and Apple Developer ID (`notarytool` + `stapler`) secrets into `.github/workflows/release.yml`.
