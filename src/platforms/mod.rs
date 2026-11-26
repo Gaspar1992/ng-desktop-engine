@@ -25,19 +25,23 @@ pub use linux_gtk::GtkLinuxBackend;
 pub use macos_appkit::{AppKitWidgetBinding, MacOsAppKitBackend};
 pub use scene_state::{NativeSceneNode, NativeSceneState};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU8, Ordering};
 pub use widget_tag::WidgetTag;
 pub use windows_winui::{WinUiBackend, WinUiControlBinding};
 
-/// Cross-platform GPU rendering preference resolved from `NG_DESKTOP_GPU_BACKEND`.
+static CONFIGURED_GPU_PREF: AtomicU8 = AtomicU8::new(0);
+
+/// Cross-platform GPU rendering preference resolved from `NG_DESKTOP_GPU_BACKEND` or `angular.json` `gpu`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 pub enum GpuRendererPreference {
-    Auto,
-    Vulkan,
-    Gl,
-    Ngl,
-    Metal,
-    Dwm,
-    Software,
+    Auto = 0,
+    Vulkan = 1,
+    Gl = 2,
+    Ngl = 3,
+    Metal = 4,
+    Dwm = 5,
+    Software = 6,
 }
 
 impl GpuRendererPreference {
@@ -55,8 +59,48 @@ impl GpuRendererPreference {
     }
 
     #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Vulkan => "vulkan",
+            Self::Gl => "gl",
+            Self::Ngl => "ngl",
+            Self::Metal => "metal",
+            Self::Dwm => "dwm",
+            Self::Software => "software",
+        }
+    }
+
+    const fn from_u8(code: u8) -> Self {
+        match code {
+            1 => Self::Vulkan,
+            2 => Self::Gl,
+            3 => Self::Ngl,
+            4 => Self::Metal,
+            5 => Self::Dwm,
+            6 => Self::Software,
+            _ => Self::Auto,
+        }
+    }
+
+    pub fn set_configured(pref: Self) {
+        CONFIGURED_GPU_PREF.store(pref as u8, Ordering::Relaxed);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn reset_configured() {
+        CONFIGURED_GPU_PREF.store(0, Ordering::Relaxed);
+    }
+
+    #[must_use]
     pub fn from_env() -> Self {
-        std::env::var("NG_DESKTOP_GPU_BACKEND").map_or(Self::Auto, |raw| Self::parse(&raw))
+        if let Ok(raw) = std::env::var("NG_DESKTOP_GPU_BACKEND") {
+            let trimmed = raw.trim();
+            if !trimmed.is_empty() {
+                return Self::parse(trimmed);
+            }
+        }
+        Self::from_u8(CONFIGURED_GPU_PREF.load(Ordering::Relaxed))
     }
 
     #[must_use]
@@ -174,6 +218,14 @@ pub trait PlatformBackend {
     fn step_native_events(&self, _may_block: bool) -> Vec<NativeEvent> {
         Vec::new()
     }
+    fn gpu_telemetry_summary(&self) -> String {
+        let pref = GpuRendererPreference::from_env();
+        format!(
+            "preference={} hardware_accel={}",
+            pref.as_str(),
+            pref.prefers_hardware_acceleration()
+        )
+    }
 }
 
 macro_rules! dispatch_backend {
@@ -215,6 +267,7 @@ impl AnyPlatformBackend {
 
     /// Factory Method resolving the concrete OS adapter parameterized by workspace config.
     pub fn from_config(cfg: &AngularNativeConfig) -> Result<Self, String> {
+        GpuRendererPreference::set_configured(GpuRendererPreference::parse(&cfg.gpu_backend));
         match cfg.target_platform.as_str() {
             "linux-gtk4" => Ok(Self::LinuxGtk(Box::new(GtkLinuxBackend::with_app_config(
                 &cfg.project_name,
@@ -283,6 +336,10 @@ impl PlatformBackend for AnyPlatformBackend {
 
     fn step_native_events(&self, may_block: bool) -> Vec<NativeEvent> {
         Self::step_native_events(self, may_block)
+    }
+
+    fn gpu_telemetry_summary(&self) -> String {
+        dispatch_backend!(self, b => b.gpu_telemetry_summary())
     }
 }
 
@@ -405,5 +462,37 @@ mod tests {
         assert_eq!(GpuRendererPreference::Auto.gsk_renderer_value(), None);
         assert!(GpuRendererPreference::Metal.prefers_hardware_acceleration());
         assert!(!GpuRendererPreference::Software.prefers_hardware_acceleration());
+        assert_eq!(GpuRendererPreference::Vulkan.as_str(), "vulkan");
+        assert_eq!(GpuRendererPreference::Dwm.as_str(), "dwm");
+        assert_eq!(GpuRendererPreference::Software.as_str(), "software");
+    }
+
+    #[test]
+    fn gpu_renderer_preference_honors_configured_fallback_and_telemetry() {
+        GpuRendererPreference::set_configured(GpuRendererPreference::Metal);
+        if std::env::var_os("NG_DESKTOP_GPU_BACKEND").is_none() {
+            assert_eq!(
+                GpuRendererPreference::from_env(),
+                GpuRendererPreference::Metal
+            );
+        }
+        GpuRendererPreference::reset_configured();
+        if std::env::var_os("NG_DESKTOP_GPU_BACKEND").is_none() {
+            assert_eq!(
+                GpuRendererPreference::from_env(),
+                GpuRendererPreference::Auto
+            );
+        }
+
+        let headless = AnyPlatformBackend::headless();
+        assert!(
+            headless
+                .gpu_telemetry_summary()
+                .contains("compositor=headless")
+        );
+        let winui = WinUiBackend::new_headless();
+        assert!(winui.gpu_telemetry_summary().contains("compositor="));
+        let cocoa = MacOsAppKitBackend::new_headless();
+        assert!(cocoa.gpu_telemetry_summary().contains("compositor="));
     }
 }

@@ -35,4 +35,12 @@ impl PlatformBackend for HeadlessBackend {
             self.frames.push(commands.to_vec());
         }
     }
+
+    fn gpu_telemetry_summary(&self) -> String {
+        let pref = super::GpuRendererPreference::from_env();
+        format!(
+            "preference={} compositor=headless hardware_accel=false",
+            pref.as_str()
+        )
+    }
 }

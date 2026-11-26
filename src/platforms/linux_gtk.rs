@@ -1403,6 +1403,17 @@ impl PlatformBackend for GtkLinuxBackend {
         Self::step_native_events(self, may_block)
     }
 
+    fn gpu_telemetry_summary(&self) -> String {
+        let pref = super::GpuRendererPreference::from_env();
+        let gsk = pref.gsk_renderer_value().unwrap_or("os-default");
+        format!(
+            "preference={} gsk_renderer={} hardware_accel={}",
+            pref.as_str(),
+            gsk,
+            pref.prefers_hardware_acceleration()
+        )
+    }
+
     fn flush_commands(&mut self, commands: &[RenderCommand]) {
         if let Some(new_w) = self.pending_viewport_width.take() {
             self.set_viewport_width(new_w);

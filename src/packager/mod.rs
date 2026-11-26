@@ -186,6 +186,7 @@ pub fn generate_runtime_manifest(cfg: &AngularNativeConfig, version: &str) -> St
             "  \"projectName\": \"{}\",\n",
             "  \"version\": \"{}\",\n",
             "  \"targetPlatform\": \"{}\",\n",
+            "  \"gpuBackend\": \"{}\",\n",
             "  \"outputPath\": \"{}\",\n",
             "  \"iconSearchDir\": \"{}\",\n",
             "  \"permissions\": {}\n",
@@ -194,6 +195,7 @@ pub fn generate_runtime_manifest(cfg: &AngularNativeConfig, version: &str) -> St
         escape_json(&cfg.project_name),
         escape_json(version),
         escape_json(&cfg.target_platform),
+        escape_json(&cfg.gpu_backend),
         escape_json(&cfg.output_path),
         escape_json(&cfg.icon_search_dir),
         cfg.permissions.to_json()
@@ -626,6 +628,7 @@ mod tests {
         cfg.output_path = String::from(r"C:\Users\dev\my-app\dist");
         cfg.icon_search_dir = String::from(r"C:\Users\dev\icons");
         let runtime_json = generate_runtime_manifest(&cfg, "v0.6.0");
+        assert!(runtime_json.contains("\"gpuBackend\": \"auto\""));
         assert!(runtime_json.contains(r"C:\\Users\\dev\\my-app\\dist"));
         assert!(runtime_json.contains(r"C:\\Users\\dev\\icons"));
 
