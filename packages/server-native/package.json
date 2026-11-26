@@ -1,6 +1,6 @@
 {
   "name": "@ng-desktop/server",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Isolated local AnalogJS-style backend router and host context (SQLite, XDG FS, Compute, HTTP) for NgDesktop",
   "type": "module",
   "main": "./src/index.ts",

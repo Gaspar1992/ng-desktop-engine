@@ -1,6 +1,6 @@
 [package]
 name = "ng-native-engine"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2024"
 rust-version = "1.87"
 description = "High-performance Native Desktop Rendering Engine for Angular 22+ (GTK4/Libadwaita, WinUI 3, AppKit)"
