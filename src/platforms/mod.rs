@@ -164,8 +164,8 @@ pub trait PlatformBackend {
 /// Polymorphic backend wrapper produced by the Platform Factory from `angular.json`.
 pub enum AnyPlatformBackend {
     LinuxGtk(Box<GtkLinuxBackend>),
-    WindowsWinUi(WinUiBackend),
-    MacOsAppKit(MacOsAppKitBackend),
+    WindowsWinUi(Box<WinUiBackend>),
+    MacOsAppKit(Box<MacOsAppKitBackend>),
     Headless(HeadlessBackend),
 }
 
@@ -180,8 +180,8 @@ impl AnyPlatformBackend {
     pub fn from_target(target_platform: &str) -> Result<Self, String> {
         match target_platform {
             "linux-gtk4" => Ok(Self::LinuxGtk(Box::default())),
-            "windows-winui" => Ok(Self::WindowsWinUi(WinUiBackend::new())),
-            "macos-appkit" => Ok(Self::MacOsAppKit(MacOsAppKitBackend::new())),
+            "windows-winui" => Ok(Self::WindowsWinUi(Box::default())),
+            "macos-appkit" => Ok(Self::MacOsAppKit(Box::default())),
             "headless" => Ok(Self::headless()),
             other => Err(format!("Unsupported targetPlatform '{other}'")),
         }
@@ -194,8 +194,8 @@ impl AnyPlatformBackend {
                 &cfg.project_name,
                 &cfg.icon_search_dir,
             )))),
-            "windows-winui" => Ok(Self::WindowsWinUi(WinUiBackend::new())),
-            "macos-appkit" => Ok(Self::MacOsAppKit(MacOsAppKitBackend::new())),
+            "windows-winui" => Ok(Self::WindowsWinUi(Box::default())),
+            "macos-appkit" => Ok(Self::MacOsAppKit(Box::default())),
             "headless" => Ok(Self::headless()),
             other => Err(format!("Unsupported targetPlatform '{other}'")),
         }
