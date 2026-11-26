@@ -55,7 +55,7 @@ import { DocsThemeService } from '../core/theme.service';
           </span>
           <span class="brand-text">
             <strong>ng-desktop</strong>
-            <span class="version-pill">v0.6.0</span>
+            <span class="version-pill">v0.7.0</span>
           </span>
         </a>
 

@@ -5,6 +5,14 @@ This project adheres to [Conventional Commits](https://www.conventionalcommits.o
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-26
+
+### Coverage Shielding, Architectural Refactor & Phase 18 GPU/Composition (`v0.7.0`)
+
+- **coverage gate, GPU docs & docs-site brand icon (`PR #53`):** align `docs-site` navbar `.brand-badge` with `favicon.svg`, document `NG_DESKTOP_GPU_BACKEND` in `README.md` + `docs-site`, add edge-case unit tests (`preview.rs`, `widget_attrs.rs`, `gtk4_styling.rs`, `http_native.rs`), and raise `cargo-llvm-cov --fail-under-lines` from `60` to `75` in `.github/workflows/ci.yml`.
+- **architectural pattern consolidation (`PR #54`):** introduce canonical exhaustive `WidgetTag` enum (`src/platforms/widget_tag.rs`), extract `RetainedSceneBackend<D: RetainedNativeDriver>` (`src/platforms/retained_backend.rs`) using Bridge + Template Method across `WinUiBackend` and `MacOsAppKitBackend`, unify `PlatformBackend` lifecycle methods + `dispatch_backend!`, share `combine_eval_and_drain` across `JscEngine` and `QuickJsEngine`, and replace `WorkerJsVm` with `AnyJsEngine` in `server_worker.rs`.
+- **Phase 18 GPU/composition parity (`PR #55`):** add declarative `gpu` / `gpuBackend` config in `AngularNativeConfig` + `--gpu` CLI flag + `gpuBackend` runtime manifest emission, lock-free `AtomicU8` `GpuRendererPreference` fallback, startup GPU compositor telemetry across all backends, macOS Core Animation `CALayer` GPU styling (`border-radius`, `opacity`, `border-width`, `overflow: hidden`), and Windows 11 DWM corner preference, system backdrop, and dark-mode attribute hooks.
+
 ## [0.6.0] - 2026-11-25
 
 ### Features, Virtualization, CSS Completeness & Real Installers (`v0.6.0`)

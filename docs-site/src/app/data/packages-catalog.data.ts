@@ -13,7 +13,7 @@ export const PACKAGES_CATALOG: readonly PackageSpec[] = [
   {
     id: 'platform',
     name: '@ng-desktop/platform',
-    version: '0.6.0',
+    version: '0.7.0',
     kind: 'library',
     summary:
       'Core Angular 22 Renderer2 engine bridge, 29 widget directives, CSS Flexbox/Grid runtime compiler, and O(log n) Fenwick virtual list/grid.',
@@ -35,7 +35,7 @@ bootstrapNativeApplication(App, {
   {
     id: 'builders',
     name: '@ng-desktop/builders',
-    version: '0.6.0',
+    version: '0.7.0',
     kind: 'library',
     summary:
       'Angular CLI ng add schematic, Ahead-of-Time .ngb binary compiler (AST + scoped CSS), HMR dev server, permission analyzer, and OS packager.',
@@ -54,7 +54,7 @@ pnpm exec ng-desktop package --installer=deb`,
   {
     id: 'forms',
     name: '@ng-desktop/forms',
-    version: '0.6.0',
+    version: '0.7.0',
     kind: 'library',
     summary:
       'First-class Angular Signal Forms ([formField]) controls plus reactive/template-driven ControlValueAccessor directives for all native inputs.',
@@ -72,7 +72,7 @@ pnpm exec ng-desktop package --installer=deb`,
   {
     id: 'router',
     name: '@ng-desktop/router',
-    version: '0.6.0',
+    version: '0.7.0',
     kind: 'library',
     summary:
       'Memory-backed hash/location navigation (provideNativeRouter) paired with NativeStackRouteReuseStrategy preserving scroll and view state.',
@@ -87,7 +87,7 @@ export const appConfig = {
   {
     id: 'http',
     name: '@ng-desktop/http',
-    version: '0.6.0',
+    version: '0.7.0',
     kind: 'library',
     summary:
       'Zero-CORS OS-native HTTP client backend powered by libsoup-3.0, WinHTTP, and NSURLSession (provideNativeHttpClient) plus Signal-first createNativeHttpResource.',
@@ -102,7 +102,7 @@ readonly pokemon = createNativeHttpResource(
   {
     id: 'desktop',
     name: '@ng-desktop/desktop',
-    version: '0.6.0',
+    version: '0.7.0',
     kind: 'library',
     summary:
       'Capability-gated desktop APIs: sandboxed filesystem I/O, local SQLite, OS dialogs, system tray menus, clipboard, shortcuts, and drag-and-drop.',
@@ -120,7 +120,7 @@ const filePath = desktop.openFileDialog({ title: 'Select Snapshot' });`,
   {
     id: 'server',
     name: '@ng-desktop/server',
-    version: '0.6.0',
+    version: '0.7.0',
     kind: 'library',
     summary:
       'Local-first Nitro/h3-inspired in-process server routes backed directly by Rust SQLite, eliminating separate Node daemons in desktop apps.',
@@ -140,52 +140,52 @@ export default defineNativeEventHandler((event) => {
   {
     id: 'engine-linux-x64-gnu',
     name: '@ng-desktop/engine-linux-x64-gnu',
-    version: '0.6.0',
+    version: '0.7.0',
     kind: 'binary',
     summary: 'Prebuilt Linux x86_64 GTK4 + Libadwaita + QuickJS-NG / JavaScriptCore engine binary.',
     exportsList: ['bin/ng-native-engine (ELF x86_64)'],
     installCmd: 'Installed automatically as optionalDependency of @ng-desktop/builders',
-    snippet: `"optionalDependencies": { "@ng-desktop/engine-linux-x64-gnu": "0.6.0" }`,
+    snippet: `"optionalDependencies": { "@ng-desktop/engine-linux-x64-gnu": "0.7.0" }`,
   },
   {
     id: 'engine-linux-arm64-gnu',
     name: '@ng-desktop/engine-linux-arm64-gnu',
-    version: '0.6.0',
+    version: '0.7.0',
     kind: 'binary',
     summary: 'Prebuilt Linux aarch64 GTK4 + Libadwaita engine binary for ARM workstations & SBCs.',
     exportsList: ['bin/ng-native-engine (ELF aarch64)'],
     installCmd: 'Installed automatically as optionalDependency of @ng-desktop/builders',
-    snippet: `"optionalDependencies": { "@ng-desktop/engine-linux-arm64-gnu": "0.6.0" }`,
+    snippet: `"optionalDependencies": { "@ng-desktop/engine-linux-arm64-gnu": "0.7.0" }`,
   },
   {
     id: 'engine-win32-x64-msvc',
     name: '@ng-desktop/engine-win32-x64-msvc',
-    version: '0.6.0',
+    version: '0.7.0',
     kind: 'binary',
     summary:
       'Prebuilt Windows 11 x86_64 Win32/WinUI + QuickJS-NG engine executable with MSIX packaging.',
     exportsList: ['bin/ng-native-engine.exe (PE x86_64)'],
     installCmd: 'Installed automatically as optionalDependency of @ng-desktop/builders',
-    snippet: `"optionalDependencies": { "@ng-desktop/engine-win32-x64-msvc": "0.6.0" }`,
+    snippet: `"optionalDependencies": { "@ng-desktop/engine-win32-x64-msvc": "0.7.0" }`,
   },
   {
     id: 'engine-darwin-arm64',
     name: '@ng-desktop/engine-darwin-arm64',
-    version: '0.6.0',
+    version: '0.7.0',
     kind: 'binary',
     summary: 'Prebuilt macOS Apple Silicon AppKit Cocoa + JavaScriptCore.framework engine binary.',
     exportsList: ['bin/ng-native-engine (Mach-O arm64)'],
     installCmd: 'Installed automatically as optionalDependency of @ng-desktop/builders',
-    snippet: `"optionalDependencies": { "@ng-desktop/engine-darwin-arm64": "0.6.0" }`,
+    snippet: `"optionalDependencies": { "@ng-desktop/engine-darwin-arm64": "0.7.0" }`,
   },
   {
     id: 'engine-darwin-x64',
     name: '@ng-desktop/engine-darwin-x64',
-    version: '0.6.0',
+    version: '0.7.0',
     kind: 'binary',
     summary: 'Prebuilt macOS Intel x86_64 AppKit Cocoa + JavaScriptCore.framework engine binary.',
     exportsList: ['bin/ng-native-engine (Mach-O x86_64)'],
     installCmd: 'Installed automatically as optionalDependency of @ng-desktop/builders',
-    snippet: `"optionalDependencies": { "@ng-desktop/engine-darwin-x64": "0.6.0" }`,
+    snippet: `"optionalDependencies": { "@ng-desktop/engine-darwin-x64": "0.7.0" }`,
   },
 ];
