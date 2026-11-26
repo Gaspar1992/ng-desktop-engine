@@ -631,4 +631,77 @@ export class InlineBadgeComponent {}`,
       rmSync(tmpRoot, { recursive: true, force: true });
     }
   });
+
+  it('rejects unknown --project names, unwraps object outputPath, supports app.component.ts, and detects modern permission symbols', () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), 'ng-desktop-external-compat-'));
+    try {
+      mkdirSync(join(tmpRoot, 'src/app'), { recursive: true });
+      mkdirSync(join(tmpRoot, 'src/styles'), { recursive: true });
+      writeFileSync(
+        join(tmpRoot, 'angular.json'),
+        JSON.stringify({
+          projects: {
+            'docs-only': {
+              projectType: 'application',
+              root: 'docs',
+              sourceRoot: 'docs/src',
+              architect: { build: { options: { outputPath: 'dist/docs-only' } } },
+            },
+            'external-app': {
+              projectType: 'application',
+              root: '.',
+              sourceRoot: 'src',
+              architect: {
+                build: {
+                  options: {
+                    outputPath: { base: 'dist/external-app', browser: 'browser' },
+                    styles: ['src/styles/theme.css'],
+                  },
+                },
+                native: { builder: '@ng-desktop/builders:application' },
+              },
+            },
+          },
+        }),
+      );
+      writeFileSync(
+        join(tmpRoot, 'src/styles/theme.css'),
+        ':root { --brand: #10b981; }\n.shell { background: var(--brand); }',
+      );
+      writeFileSync(
+        join(tmpRoot, 'src/app/app.component.ts'),
+        `import { Component, inject } from '@angular/core';
+import { provideNativeHttpClient } from '@ng-desktop/http';
+import { NativeFileSystemService, NativeDesktopService, NativeDropTargetDirective } from '@ng-desktop/desktop';
+@Component({ selector: 'app-root', imports: [NativeDropTargetDirective], templateUrl: './app.component.html' })
+export class AppComponent {
+  private fs = inject(NativeFileSystemService);
+  private desktop = inject(NativeDesktopService);
+  save() { this.desktop.setClipboardText('ok'); return [provideNativeHttpClient]; }
+}`,
+      );
+      writeFileSync(
+        join(tmpRoot, 'src/app/app.component.html'),
+        `<ng-window id="win" ngNativeDropTarget (fileDrop)="onDrop($event)" title="External"><ng-label id="lbl">Ready</ng-label></ng-window>`,
+      );
+
+      expect(() => resolveWorkspaceProject({ cwd: tmpRoot, projectName: 'missing-proj' })).toThrow(
+        /missing-proj/,
+      );
+
+      const resolved = resolveWorkspaceProject({ cwd: tmpRoot });
+      expect(resolved.projectName).toBe('external-app');
+      expect(resolved.outputPath).toBe('dist/external-app');
+
+      const compiled = compileBundle({ cwd: tmpRoot, rebuildIcons: false });
+      const ngb = readFileSync(compiled.bundleFile, 'utf8');
+      expect(ngb).toContain('style shell #10b981 none');
+      expect(compiled.permissions.capabilities.network).toBe(true);
+      expect(compiled.permissions.capabilities.clipboard).toBe(true);
+      expect(compiled.permissions.capabilities.filesystem.xdg).toBe(true);
+      expect(compiled.permissions.capabilities.filesystem.drop).toBe(true);
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
 });

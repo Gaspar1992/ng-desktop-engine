@@ -1,4 +1,9 @@
-import { HttpClient, HttpHeaders, HttpInterceptorFn } from '@angular/common/http';
+import {
+  HttpClient,
+  HttpErrorResponse,
+  HttpHeaders,
+  HttpInterceptorFn,
+} from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import {
@@ -473,5 +478,44 @@ describe('Phase 5 — @ng-desktop/router, @ng-desktop/http & @ng-desktop/desktop
     sqlite.execute("INSERT INTO live_cleanup (id) VALUES ('b')");
     // Frozen at count 1 after destroy()
     expect(ref.count()).toBe(1);
+  });
+
+  it('emits HttpErrorResponse on invalid 2xx JSON and serializes URLSearchParams bodies properly', async () => {
+    const bridge = ensureNgNativeBridge();
+    const originalHttp = bridge.httpRequest;
+    let capturedBody: string | undefined;
+    bridge.httpRequest = (_method, _url, body) => {
+      capturedBody = body;
+      return {
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        body: '{not-valid-json',
+      };
+    };
+
+    try {
+      TestBed.configureTestingModule({
+        providers: [provideNativeHttpClient()],
+      });
+      const http = TestBed.inject(HttpClient);
+      let caught: unknown;
+      await new Promise<void>((resolveDone) => {
+        http
+          .post('https://api.example.test/form', new URLSearchParams({ a: '1', b: 'two' }))
+          .subscribe({
+            error: (err: unknown) => {
+              caught = err;
+              resolveDone();
+            },
+          });
+      });
+
+      expect(capturedBody).toBe('a=1&b=two');
+      expect(caught).toBeInstanceOf(HttpErrorResponse);
+      expect((caught as HttpErrorResponse).status).toBe(200);
+    } finally {
+      bridge.httpRequest = originalHttp;
+    }
   });
 });

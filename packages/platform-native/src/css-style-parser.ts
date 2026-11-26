@@ -579,13 +579,22 @@ function applyDeclaration(rule: ParsedStyleRule, rawProp: string, val: string): 
   }
 }
 
-function parseRuntimeStyleEntries(cssSource: string): ParsedStyleEntry[] {
+export interface SharedRuntimeCssVars {
+  baseVars: Map<string, string>;
+  lightVars: Map<string, string>;
+  darkVars: Map<string, string>;
+}
+
+function parseRuntimeStyleEntries(
+  cssSource: string,
+  sharedVars?: SharedRuntimeCssVars,
+): ParsedStyleEntry[] {
   const cleaned = cssSource.replace(/\/\*[\s\S]*?\*\//g, '');
   const blocks = extractCssBlocks(cleaned);
 
-  const baseVars = new Map<string, string>();
-  const lightVars = new Map<string, string>();
-  const darkVars = new Map<string, string>();
+  const baseVars = sharedVars?.baseVars ?? new Map<string, string>();
+  const lightVars = sharedVars?.lightVars ?? new Map<string, string>();
+  const darkVars = sharedVars?.darkVars ?? new Map<string, string>();
 
   for (const block of blocks) {
     const selectors = block.selectorText.split(',');
@@ -733,12 +742,13 @@ export function registerParsedStyles(
   bridge: NgNativeBridge,
   styles: readonly string[],
   scopedClassesByScope?: Map<string, Set<string>>,
+  sharedVars?: SharedRuntimeCssVars,
 ): void {
   for (const css of styles) {
     if (typeof css !== 'string' || css.trim().length === 0) {
       continue;
     }
-    for (const entry of parseRuntimeStyleEntries(css)) {
+    for (const entry of parseRuntimeStyleEntries(css, sharedVars)) {
       if (entry.scopeToken && scopedClassesByScope) {
         let classes = scopedClassesByScope.get(entry.scopeToken);
         if (!classes) {

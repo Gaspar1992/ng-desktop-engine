@@ -17,7 +17,7 @@ export default defineNativeEventHandler((event) => {
     });
   }
 
-  const body = readBody<{ note?: string }>(event);
+  const body = readBody<{ note?: string }>(event) ?? {};
   const note = String(body.note ?? '');
   event.context.db.execute('INSERT OR REPLACE INTO field_notes (id, note) VALUES (?, ?);', [
     id,

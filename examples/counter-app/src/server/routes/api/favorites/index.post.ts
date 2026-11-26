@@ -14,7 +14,7 @@ interface SaveFavoriteBody {
 
 export default defineNativeEventHandler((event) => {
   ensurePokedexSchema(event.context.db);
-  const body = readBody<SaveFavoriteBody>(event);
+  const body = readBody<SaveFavoriteBody>(event) ?? {};
   const id = Number.parseInt(String(body.id ?? ''), 10);
   const name = String(body.name ?? '').trim();
   const note = String(body.note ?? '');

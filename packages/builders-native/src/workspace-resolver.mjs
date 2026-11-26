@@ -50,18 +50,52 @@ function findNxProjectJsonFiles(workspaceRoot) {
   return found;
 }
 
+function unwrapOutputPath(raw) {
+  if (typeof raw === 'string' && raw.trim().length > 0) {
+    return raw.trim();
+  }
+  if (
+    raw &&
+    typeof raw === 'object' &&
+    typeof raw.base === 'string' &&
+    raw.base.trim().length > 0
+  ) {
+    return raw.base.trim();
+  }
+  return null;
+}
+
+function walkAncestorDirs(startDir) {
+  const dirs = [];
+  let current = resolve(startDir);
+  while (true) {
+    dirs.push(current);
+    const parent = dirname(current);
+    if (parent === current) {
+      break;
+    }
+    current = parent;
+  }
+  return dirs;
+}
+
 function resolveFromAngularJson(workspaceRoot, configFile, angularJson, requestedProject) {
   const projects = angularJson.projects ?? {};
   const projectKeys = Object.keys(projects);
   if (projectKeys.length === 0) {
     throw new Error(`No projects defined in '${configFile}'`);
   }
-  const projectName =
-    requestedProject && projects[requestedProject]
-      ? requestedProject
-      : angularJson.defaultProject && projects[angularJson.defaultProject]
-        ? angularJson.defaultProject
-        : projectKeys[0];
+  if (requestedProject && !projects[requestedProject]) {
+    throw new Error(
+      `Project '${requestedProject}' not found in '${configFile}'. Available projects: ${projectKeys.join(', ')}`,
+    );
+  }
+  const nativeCapableProject = projectKeys.find((key) => Boolean(projects[key]?.architect?.native));
+  const projectName = requestedProject
+    ? requestedProject
+    : angularJson.defaultProject && projects[angularJson.defaultProject]
+      ? angularJson.defaultProject
+      : (nativeCapableProject ?? projectKeys[0]);
 
   const projectCfg = projects[projectName];
   if (!projectCfg) {
@@ -71,7 +105,10 @@ function resolveFromAngularJson(workspaceRoot, configFile, angularJson, requeste
   const sourceRoot = projectCfg.sourceRoot ?? (projectRoot === '.' ? 'src' : `${projectRoot}/src`);
   const buildOptions = projectCfg.architect?.build?.options ?? {};
   const nativeOptions = projectCfg.architect?.native?.options ?? {};
-  const outputPath = nativeOptions.outputPath || buildOptions.outputPath || `dist/${projectName}`;
+  const outputPath =
+    unwrapOutputPath(nativeOptions.outputPath) ||
+    unwrapOutputPath(buildOptions.outputPath) ||
+    `dist/${projectName}`;
   const version = nativeOptions.version || readPackageVersion(workspaceRoot, projectRoot);
 
   return {
@@ -99,8 +136,8 @@ function resolveFromNxProjectJson(workspaceRoot, configFile, projectJson) {
   const buildOptions = projectJson.targets?.build?.options ?? {};
   const nativeOptions = projectJson.targets?.native?.options ?? {};
   const outputPath =
-    nativeOptions.outputPath ||
-    buildOptions.outputPath ||
+    unwrapOutputPath(nativeOptions.outputPath) ||
+    unwrapOutputPath(buildOptions.outputPath) ||
     (projectRoot === '.' ? `dist/${projectName}` : `dist/${projectRoot}`);
   const version = nativeOptions.version || readPackageVersion(workspaceRoot, projectRoot);
 
@@ -164,7 +201,11 @@ export function resolveWorkspaceProject({ cwd = process.cwd(), configPath, proje
     return resolveFromNxProjectJson(dirname(absConfig), absConfig, raw);
   }
 
-  const candidateRoots = [cwd, resolve(__dirname, '../../..')];
+  const monorepoFallback = resolve(__dirname, '../../..');
+  const candidateRoots = walkAncestorDirs(cwd);
+  if (!candidateRoots.includes(monorepoFallback)) {
+    candidateRoots.push(monorepoFallback);
+  }
   for (const root of candidateRoots) {
     const angularFile = resolve(root, 'angular.json');
     if (existsSync(angularFile)) {

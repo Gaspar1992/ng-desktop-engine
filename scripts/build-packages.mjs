@@ -225,6 +225,7 @@ function buildSinglePackage(pkgConfig, builtPackages) {
       ? {
           dependencies: {
             '@angular/compiler': '>=22.0.0',
+            esbuild: '>=0.24.0',
             'oxc-parser': '>=0.159.0',
             postcss: '>=8.5.0',
             ...rawPkg.dependencies,

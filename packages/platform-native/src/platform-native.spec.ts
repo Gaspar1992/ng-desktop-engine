@@ -1215,4 +1215,48 @@ describe('@ng-desktop/platform — NativeRenderer2 & Bridge', () => {
     const removeCmds = bridge.__drainQueue().split('\n');
     expect(removeCmds).toContain(`remove_class ${labelA.id} badge__compa`);
   });
+
+  it('supports short keyup.* bindings, removeStyle mapping, file-drop mapping, and shared :root vars', () => {
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+    const factory = new NativeRendererFactory2();
+    const keyPlugin = new NativeKeyEventsPlugin();
+
+    expect(keyPlugin.supports('keyup.a')).toBe(true);
+    expect(keyPlugin.supports('keyup.f1')).toBe(true);
+    expect(keyPlugin.supports('keydown.a')).toBe(true);
+    expect(keyPlugin.supports('keydown.')).toBe(false);
+    expect(keyPlugin.supports('keyup.')).toBe(false);
+
+    const rootRenderer = factory.createRenderer(null, {
+      id: 'root-vars',
+      encapsulation: 2,
+      styles: [
+        `:root { --brand: #ff0055; }
+         .root-box { background: var(--brand); }`,
+      ],
+      data: {},
+    });
+    factory.createRenderer(null, {
+      id: 'child-consumer',
+      encapsulation: 2,
+      styles: [`.child-card { color: var(--brand); padding: 8px; }`],
+      data: {},
+    });
+
+    const box = rootRenderer.createElement('ng-box');
+    rootRenderer.removeStyle(box, 'gap');
+    rootRenderer.removeStyle(box, 'margin-left');
+    let receivedDrop: unknown;
+    rootRenderer.listen(box, 'file-drop', (ev: unknown) => {
+      receivedDrop = ev;
+    });
+    bridge.__dispatchEvent(box.id, 'drop', '/tmp/a.json');
+
+    const cmds = bridge.__drainQueue().split('\n');
+    expect(cmds).toContain('style child-card none #ff0055 8 0');
+    expect(cmds.some((c) => c.startsWith(`attr ${box.id} spacing`))).toBe(true);
+    expect(cmds.some((c) => c.startsWith(`attr ${box.id} margin-start`))).toBe(true);
+    expect(receivedDrop).toMatchObject({ type: 'file-drop', value: '/tmp/a.json' });
+  });
 });

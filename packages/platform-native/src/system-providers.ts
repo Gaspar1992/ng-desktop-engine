@@ -112,7 +112,10 @@ export class NativeKeyEventsPlugin extends EventManagerPlugin {
 
   override supports(eventName: string): boolean {
     const lower = eventName.trim().toLowerCase();
-    return (lower.startsWith('keydown.') || lower.startsWith('keyup.')) && lower.length > 8;
+    return (
+      (lower.startsWith('keydown.') && lower.length > 8) ||
+      (lower.startsWith('keyup.') && lower.length > 6)
+    );
   }
 
   override addEventListener(

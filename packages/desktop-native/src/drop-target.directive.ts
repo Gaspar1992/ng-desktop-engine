@@ -23,7 +23,7 @@ export class NativeDropTargetDirective implements OnDestroy {
     const nativeEl = elRef.nativeElement;
 
     renderer.setAttribute(nativeEl, 'drop-target', 'true');
-    this.unlisten = renderer.listen(nativeEl, 'file-drop', (event?: unknown) => {
+    this.unlisten = renderer.listen(nativeEl, 'drop', (event?: unknown) => {
       const paths = NativeDropTargetDirective.extractPaths(event);
       if (paths.length > 0) {
         this.fileDrop.emit(paths);

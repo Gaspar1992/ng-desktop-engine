@@ -272,16 +272,33 @@ export function compileBundle({
 
   const sourceRootAbs = resolve(rootDir, workspace.sourceRoot);
   const appDir = resolve(sourceRootAbs, 'app');
-  const tsSource = readFileSync(resolve(appDir, 'app.ts'), 'utf8');
+  const resolveRootEntryFile = () => {
+    for (const candidate of ['app.ts', 'app.component.ts']) {
+      if (existsSync(resolve(appDir, candidate))) {
+        return candidate;
+      }
+    }
+    const candidates = collectComponentTsFiles(appDir, appDir);
+    for (const rel of candidates) {
+      const src = readFileSync(resolve(appDir, rel), 'utf8');
+      if (src.includes('@Component')) {
+        return rel;
+      }
+    }
+    return 'app.ts';
+  };
+  const rootEntryFile = resolveRootEntryFile();
+  const rootEntryAbs = resolve(appDir, rootEntryFile);
+  const tsSource = readFileSync(rootEntryAbs, 'utf8');
   const { state, numericSignals, methods, component } = extractComponentMetadata(
     tsSource,
-    'app.ts',
+    rootEntryFile,
   );
   const htmlSource =
     typeof component.template === 'string'
       ? component.template
-      : component.templateUrl && existsSync(resolve(appDir, component.templateUrl))
-        ? readFileSync(resolve(appDir, component.templateUrl), 'utf8')
+      : component.templateUrl && existsSync(resolve(dirname(rootEntryAbs), component.templateUrl))
+        ? readFileSync(resolve(dirname(rootEntryAbs), component.templateUrl), 'utf8')
         : '';
   const indexHtmlPath = resolve(sourceRootAbs, 'index.html');
   const indexHtml = existsSync(indexHtmlPath) ? readFileSync(indexHtmlPath, 'utf8') : '';
@@ -298,21 +315,45 @@ export function compileBundle({
     lightVars: new Map(),
     darkVars: new Map(),
   };
-  const globalStylesPath = resolve(sourceRootAbs, 'styles.css');
-  if (existsSync(globalStylesPath)) {
-    extractCssVariables(readFileSync(globalStylesPath, 'utf8'), 'styles.css', sharedVars);
+  const resolveGlobalStyleFiles = () => {
+    const configured = Array.isArray(workspace.buildOptions?.styles)
+      ? workspace.buildOptions.styles
+      : [];
+    const resolved = [];
+    for (const entry of configured) {
+      const rel = typeof entry === 'string' ? entry : entry?.input;
+      if (typeof rel !== 'string' || !rel.trim()) continue;
+      const abs = resolve(rootDir, rel);
+      if (existsSync(abs)) {
+        resolved.push({ rel, abs });
+      }
+    }
+    if (resolved.length > 0) {
+      return resolved;
+    }
+    for (const fallbackName of ['styles.css', 'styles.scss']) {
+      const abs = resolve(sourceRootAbs, fallbackName);
+      if (existsSync(abs)) {
+        return [{ rel: fallbackName, abs }];
+      }
+    }
+    return [];
+  };
+  const globalStyleFiles = resolveGlobalStyleFiles();
+  for (const styleEntry of globalStyleFiles) {
+    extractCssVariables(readFileSync(styleEntry.abs, 'utf8'), styleEntry.rel, sharedVars);
   }
-  for (const { css, from } of collectComponentCssSources(component, appDir)) {
+  for (const { css, from } of collectComponentCssSources(component, dirname(rootEntryAbs))) {
     extractCssVariables(css, from, sharedVars);
   }
 
   const collectedRules = [];
-  if (existsSync(globalStylesPath)) {
+  for (const styleEntry of globalStyleFiles) {
     collectedRules.push(
-      ...parseStylesCss(readFileSync(globalStylesPath, 'utf8'), 'styles.css', sharedVars),
+      ...parseStylesCss(readFileSync(styleEntry.abs, 'utf8'), styleEntry.rel, sharedVars),
     );
   }
-  collectedRules.push(...collectComponentStyleRules(component, appDir, sharedVars));
+  collectedRules.push(...collectComponentStyleRules(component, dirname(rootEntryAbs), sharedVars));
 
   const candidateFiles = collectComponentTsFiles(appDir, appDir);
   for (const file of candidateFiles) {

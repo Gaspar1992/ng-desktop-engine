@@ -183,25 +183,29 @@ impl WidgetKind {
             "ng-label" | "gtk-label" => Ok(Self::Label {
                 text: String::new(),
             }),
-            "ng-entry" | "gtk-entry" => Ok(Self::Entry {
+            "ng-entry" | "gtk-entry" | "adw-entry-row" => Ok(Self::Entry {
                 text: String::new(),
                 placeholder: String::new(),
             }),
-            "ng-switch" | "gtk-switch" => Ok(Self::Switch { active: false }),
-            "ng-checkbox" | "ng-check" | "gtk-check-button" => Ok(Self::CheckButton {
-                label: String::new(),
-                active: false,
-            }),
+            "ng-switch" | "gtk-switch" | "adw-switch-row" => Ok(Self::Switch { active: false }),
+            "ng-checkbox" | "ng-check" | "ng-check-button" | "gtk-check-button" => {
+                Ok(Self::CheckButton {
+                    label: String::new(),
+                    active: false,
+                })
+            }
             "ng-slider" | "ng-scale" | "gtk-scale" => Ok(Self::Slider {
                 value: 0,
                 min: 0,
                 max: 100,
             }),
-            "ng-select" | "ng-dropdown" | "gtk-drop-down" => Ok(Self::DropDown {
-                options: Vec::new(),
-                selected: 0,
-            }),
-            "ng-image" | "gtk-picture" | "ng-picture" => Ok(Self::Image {
+            "ng-select" | "ng-dropdown" | "gtk-drop-down" | "gtk-dropdown" | "adw-combo-row" => {
+                Ok(Self::DropDown {
+                    options: Vec::new(),
+                    selected: 0,
+                })
+            }
+            "ng-image" | "gtk-picture" | "ng-picture" | "adw-image" => Ok(Self::Image {
                 src: String::new(),
                 width: 0,
                 height: 0,
@@ -251,12 +255,14 @@ impl WidgetKind {
                 editable: true,
                 monospace: false,
             }),
-            "ng-password-entry" | "gtk-password-entry" => Ok(Self::PasswordEntry {
-                text: String::new(),
-                placeholder: String::new(),
-                show_peek_icon: true,
-            }),
-            "ng-spin-button" | "gtk-spin-button" => Ok(Self::SpinButton {
+            "ng-password-entry" | "gtk-password-entry" | "adw-password-entry-row" => {
+                Ok(Self::PasswordEntry {
+                    text: String::new(),
+                    placeholder: String::new(),
+                    show_peek_icon: true,
+                })
+            }
+            "ng-spin-button" | "gtk-spin-button" | "adw-spin-row" => Ok(Self::SpinButton {
                 value: 0,
                 min: 0,
                 max: 100,
@@ -1031,5 +1037,45 @@ mod tests {
         pop.remove_child(p_id, row1).unwrap();
         assert_eq!(pop.child_ids(), Vec::<NodeId>::new());
         assert_eq!(pop.tag_name(), "ng-popover");
+    }
+
+    #[test]
+    fn accepts_angular_directive_and_adw_form_row_tag_aliases() {
+        assert!(matches!(
+            WidgetKind::from_tag("ng-check-button").unwrap(),
+            WidgetKind::CheckButton { .. }
+        ));
+        assert!(matches!(
+            WidgetKind::from_tag("gtk-dropdown").unwrap(),
+            WidgetKind::DropDown { .. }
+        ));
+        assert!(matches!(
+            WidgetKind::from_tag("adw-image").unwrap(),
+            WidgetKind::Image { .. }
+        ));
+        assert!(matches!(
+            WidgetKind::from_tag("adw-entry-row").unwrap(),
+            WidgetKind::Entry { .. }
+        ));
+        assert!(matches!(
+            WidgetKind::from_tag("adw-password-entry-row").unwrap(),
+            WidgetKind::PasswordEntry { .. }
+        ));
+        assert!(matches!(
+            WidgetKind::from_tag("adw-switch-row").unwrap(),
+            WidgetKind::Switch { .. }
+        ));
+        assert!(matches!(
+            WidgetKind::from_tag("adw-combo-row").unwrap(),
+            WidgetKind::DropDown { .. }
+        ));
+        assert!(matches!(
+            WidgetKind::from_tag("adw-spin-row").unwrap(),
+            WidgetKind::SpinButton { .. }
+        ));
+
+        let mut spinner = WidgetKind::from_tag("ng-spinner").unwrap();
+        spinner.set_attribute("spinning", "false");
+        assert!(matches!(spinner, WidgetKind::Spinner { active: false }));
     }
 }

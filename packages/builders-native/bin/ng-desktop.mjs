@@ -2,7 +2,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SRC_ROOT = existsSync(resolve(__dirname, '../fesm2022/build-bundle.mjs'))
@@ -15,10 +15,10 @@ const [
   { resolveEngineBinaryPath },
   { resolveWorkspaceProject },
 ] = await Promise.all([
-  import(resolve(SRC_ROOT, 'build-bundle.mjs')),
-  import(resolve(SRC_ROOT, 'permission-analyzer.mjs')),
-  import(resolve(SRC_ROOT, 'resolve-engine-binary.mjs')),
-  import(resolve(SRC_ROOT, 'workspace-resolver.mjs')),
+  import(pathToFileURL(resolve(SRC_ROOT, 'build-bundle.mjs')).href),
+  import(pathToFileURL(resolve(SRC_ROOT, 'permission-analyzer.mjs')).href),
+  import(pathToFileURL(resolve(SRC_ROOT, 'resolve-engine-binary.mjs')).href),
+  import(pathToFileURL(resolve(SRC_ROOT, 'workspace-resolver.mjs')).href),
 ]);
 
 function getFlag(args, name) {
