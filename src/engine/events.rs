@@ -84,7 +84,7 @@ pub fn is_coalescible_event(event_name: &str) -> bool {
 }
 
 /// Deduplicates high-frequency continuous events (`mousemove`, `scroll`, `wheel`, `resize`) per `(NodeId, event_name)`
-/// within a single frame while preserving exact FIFO ordering of discrete user actions (`clicked`, `keydown`, etc.).
+/// within a single frame while preserving exact causal ordering across discrete user actions (`clicked`, `keydown`, etc.).
 #[must_use]
 pub fn coalesce_frame_events(events: Vec<NativeEvent>) -> Vec<NativeEvent> {
     if events.len() <= 1 {
@@ -92,15 +92,23 @@ pub fn coalesce_frame_events(events: Vec<NativeEvent>) -> Vec<NativeEvent> {
     }
     let mut coalesced: Vec<NativeEvent> = Vec::with_capacity(events.len());
     for ev in events {
-        if is_coalescible_event(&ev.event_name)
-            && let Some(pos) = coalesced.iter().rposition(|existing| {
-                existing.node == ev.node && existing.event_name == ev.event_name
-            })
-        {
-            coalesced[pos].payload = ev.payload;
-        } else {
-            coalesced.push(ev);
+        if is_coalescible_event(&ev.event_name) {
+            let mut matched_idx = None;
+            for (idx, existing) in coalesced.iter().enumerate().rev() {
+                if !is_coalescible_event(&existing.event_name) {
+                    break;
+                }
+                if existing.node == ev.node && existing.event_name == ev.event_name {
+                    matched_idx = Some(idx);
+                    break;
+                }
+            }
+            if let Some(pos) = matched_idx {
+                coalesced[pos].payload = ev.payload;
+                continue;
+            }
         }
+        coalesced.push(ev);
     }
     coalesced
 }
@@ -253,11 +261,13 @@ mod tests {
         });
 
         let out = coalesce_frame_events(frame);
-        assert_eq!(out.len(), 3);
+        assert_eq!(out.len(), 4);
         assert_eq!(out[0].event_name, "mousemove");
-        assert_eq!(out[0].payload, EventPayload::Int(99));
+        assert_eq!(out[0].payload, EventPayload::Int(25));
         assert_eq!(out[1].event_name, "clicked");
-        assert_eq!(out[2].event_name, "resize");
-        assert_eq!(out[2].payload, EventPayload::Int(1200));
+        assert_eq!(out[2].event_name, "mousemove");
+        assert_eq!(out[2].payload, EventPayload::Int(99));
+        assert_eq!(out[3].event_name, "resize");
+        assert_eq!(out[3].payload, EventPayload::Int(1200));
     }
 }

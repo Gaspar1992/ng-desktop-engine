@@ -204,18 +204,24 @@ impl StyleRegistry {
         id
     }
 
-    pub fn attach_class(&mut self, node: NodeId, class_name: &str) -> Result<StyleId, EngineError> {
-        let style_id = if let Some(&id) = self.ids_by_name.get(class_name) {
-            id
+    pub fn attach_class_with_rule(
+        &mut self,
+        node: NodeId,
+        class_name: &str,
+    ) -> Result<(StyleId, Option<StyleRule>), EngineError> {
+        let (style_id, registered_rule) = if let Some(&id) = self.ids_by_name.get(class_name) {
+            (id, None)
         } else if self
             .rules_by_id
             .values()
             .any(|rule| rule.class_name == class_name)
         {
-            self.register_rule(StyleRule {
+            let placeholder = StyleRule {
                 class_name: class_name.to_string(),
                 ..StyleRule::default()
-            })
+            };
+            let id = self.register_rule(placeholder.clone());
+            (id, Some(placeholder))
         } else {
             return Err(EngineError::StyleNotFound(class_name.to_string()));
         };
@@ -224,7 +230,12 @@ impl StyleRegistry {
         if !list.contains(&style_id) {
             list.push(style_id);
         }
-        Ok(style_id)
+        Ok((style_id, registered_rule))
+    }
+
+    pub fn attach_class(&mut self, node: NodeId, class_name: &str) -> Result<StyleId, EngineError> {
+        self.attach_class_with_rule(node, class_name)
+            .map(|(style_id, _)| style_id)
     }
 
     pub fn detach_class(&mut self, node: NodeId, class_name: &str) -> Option<StyleId> {

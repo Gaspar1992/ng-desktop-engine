@@ -173,7 +173,11 @@ impl<B: PlatformBackend> RenderEngine<B> {
 
     pub fn add_class(&mut self, node: NodeId, class_name: &str) -> Result<(), EngineError> {
         let _ = self.arena.get(node)?;
-        let style_id = self.styles.attach_class(node, class_name)?;
+        let (style_id, registered_rule) = self.styles.attach_class_with_rule(node, class_name)?;
+        if let Some(rule) = registered_rule {
+            self.commands
+                .push(RenderCommand::RegisterStyle { style_id, rule });
+        }
         self.commands
             .push(RenderCommand::ApplyStyleClass { node, style_id });
         Ok(())

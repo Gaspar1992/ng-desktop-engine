@@ -6,6 +6,28 @@ import net from 'node:net';
  * loopback `tcp://127.0.0.1:<port>` pointer file used on Windows.
  * Returns `{ error }` if a `tcp://` pointer file has an invalid host or port.
  */
+function resolveHmrToken(socketPath, explicitToken) {
+  if (typeof explicitToken === 'string' && explicitToken.trim()) {
+    return explicitToken.trim();
+  }
+  const envToken = process.env.NG_DESKTOP_HMR_TOKEN?.trim();
+  if (envToken) {
+    return envToken;
+  }
+  const tokenPath = `${socketPath}.token`;
+  try {
+    if (existsSync(tokenPath)) {
+      const token = readFileSync(tokenPath, 'utf8').trim();
+      if (token) {
+        return token;
+      }
+    }
+  } catch {
+    // Ignore unreadable token files; server enforces auth if required.
+  }
+  return undefined;
+}
+
 function resolveHmrTarget(socketPath) {
   try {
     if (statSync(socketPath).isFile()) {
@@ -61,8 +83,11 @@ export function sendHmrMessage(socketPath, message, { timeoutMs = 1500 } = {}) {
       }
     }, timeoutMs);
 
+    const resolvedToken = resolveHmrToken(socketPath, message?.token);
+    const wireMessage = resolvedToken ? { ...message, token: resolvedToken } : message;
+
     client.on('connect', () => {
-      client.write(JSON.stringify(message) + '\n');
+      client.write(JSON.stringify(wireMessage) + '\n');
     });
 
     client.on('data', (chunk) => {

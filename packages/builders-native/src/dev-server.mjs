@@ -19,6 +19,7 @@ const engineArgs = [
   ...resolvedEngine.args,
   `--config=${workspace.configFile}`,
   `--project=${workspace.projectName}`,
+  '--hmr',
 ];
 
 process.stdout.write(

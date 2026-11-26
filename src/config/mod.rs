@@ -7,6 +7,7 @@ pub mod permissions;
 
 pub use permissions::AppPermissions;
 
+use crate::desktop::json::{JsonValue, parse_json};
 use crate::engine::EngineError;
 use std::env;
 use std::fs;
@@ -131,10 +132,18 @@ impl AngularNativeConfig {
     /// Reads and resolves native build settings from an `angular.json`, Nx `project.json`, or
     /// `ng-desktop.runtime.json` file, merging an adjacent `permissions.manifest.json` if present.
     pub fn from_file(path: impl AsRef<Path>) -> Result<Self, EngineError> {
+        Self::from_file_for_project(path, None)
+    }
+
+    /// Reads and resolves native build settings for a specific workspace project when `project_hint` is provided.
+    pub fn from_file_for_project(
+        path: impl AsRef<Path>,
+        project_hint: Option<&str>,
+    ) -> Result<Self, EngineError> {
         let path_ref = path.as_ref();
         let content =
             fs::read_to_string(path_ref).map_err(|e| EngineError::ConfigError(e.to_string()))?;
-        let mut cfg = Self::from_json_str(&content)?;
+        let mut cfg = Self::from_json_str_for_project(&content, project_hint)?;
         cfg.merge_adjacent_manifests(path_ref.parent());
         Ok(cfg)
     }
@@ -161,7 +170,9 @@ impl AngularNativeConfig {
         let mut cfg = explicit_config
             .map_or_else(
                 || Self::discover_from_environment(project_override.as_deref()),
-                |config_path| Self::from_file(config_path).ok(),
+                |config_path| {
+                    Self::from_file_for_project(config_path, project_override.as_deref()).ok()
+                },
             )
             .unwrap_or_else(|| Self::default_standalone("ng-desktop-app"));
 
@@ -180,18 +191,19 @@ impl AngularNativeConfig {
     /// Parses Angular CLI (`angular.json`), Nx (`project.json`), or runtime (`ng-desktop.runtime.json`)
     /// JSON payloads into an `AngularNativeConfig`.
     pub fn from_json_str(content: &str) -> Result<Self, EngineError> {
-        let project_name = Self::extract_json_string(content, "projectName")
-            .or_else(|| Self::extract_json_string(content, "defaultProject"))
-            .or_else(|| Self::extract_first_project_name(content))
-            .or_else(|| Self::extract_nx_project_name(content))
-            .ok_or_else(|| {
-                EngineError::ConfigError(String::from(
-                    "Missing project identifier in config ('projectName', 'defaultProject', 'projects', or Nx 'name')",
-                ))
-            })?;
+        Self::from_json_str_for_project(content, None)
+    }
 
-        let raw_target = Self::extract_json_string(content, "targetPlatform");
-        let raw_os = Self::extract_json_string(content, "os");
+    /// Parses JSON configuration payloads scoping option lookups strictly to `project_hint` when present.
+    pub fn from_json_str_for_project(
+        content: &str,
+        project_hint: Option<&str>,
+    ) -> Result<Self, EngineError> {
+        let root = parse_json(content).map_err(EngineError::ConfigError)?;
+        let (project_name, scopes) = Self::resolve_project_and_scopes(&root, project_hint)?;
+
+        let raw_target = Self::lookup_string(&scopes, "targetPlatform");
+        let raw_os = Self::lookup_string(&scopes, "os");
         let os = match raw_os.as_deref() {
             Some("auto") | None => raw_target
                 .as_deref()
@@ -200,21 +212,21 @@ impl AngularNativeConfig {
         };
 
         let target_platform = raw_target.unwrap_or_else(|| resolve_target_platform(&os));
-        let js_engine = Self::extract_json_string(content, "jsEngine")
+        let js_engine = Self::lookup_string(&scopes, "jsEngine")
             .unwrap_or_else(|| resolve_default_js_engine(&os));
-        let output_path = Self::extract_json_string(content, "outputPath")
-            .unwrap_or_else(|| format!("dist/{project_name}"));
-        let icon_search_dir = Self::extract_json_string(content, "iconSearchDir")
+        let output_path =
+            Self::lookup_output_path(&scopes).unwrap_or_else(|| format!("dist/{project_name}"));
+        let icon_search_dir = Self::lookup_string(&scopes, "iconSearchDir")
             .unwrap_or_else(|| format!("{output_path}/icons"));
-        let version = Self::extract_json_string(content, "version")
-            .or_else(|| Self::extract_json_string(content, "appVersion"))
+        let version = Self::lookup_string(&scopes, "version")
+            .or_else(|| Self::lookup_string(&scopes, "appVersion"))
             .unwrap_or_else(|| String::from(env!("CARGO_PKG_VERSION")));
-        let arch = match Self::extract_json_string(content, "arch").as_deref() {
+        let arch = match Self::lookup_string(&scopes, "arch").as_deref() {
             Some("auto") | None => String::from(env::consts::ARCH),
             Some(explicit) => String::from(explicit),
         };
-        let cpu = Self::extract_json_string(content, "cpu").unwrap_or_else(|| String::from("auto"));
-        let permissions = AppPermissions::from_json_str(content);
+        let cpu = Self::lookup_string(&scopes, "cpu").unwrap_or_else(|| String::from("auto"));
+        let permissions = Self::lookup_permissions(&scopes);
 
         Ok(Self {
             project_name,
@@ -228,6 +240,102 @@ impl AngularNativeConfig {
             icon_search_dir,
             permissions,
         })
+    }
+
+    fn resolve_project_and_scopes<'a>(
+        root: &'a JsonValue,
+        project_hint: Option<&str>,
+    ) -> Result<(String, Vec<&'a JsonValue>), EngineError> {
+        if let Some(runtime_name) = root.get_str("projectName") {
+            return Ok((String::from(runtime_name), vec![root]));
+        }
+
+        if let Some(projects_obj) = root.get_object("projects")
+            && let Some(entries) = projects_obj.as_object()
+        {
+            let chosen = project_hint
+                .and_then(|hint| entries.iter().find(|(name, _)| name == hint))
+                .or_else(|| {
+                    root.get_str("defaultProject")
+                        .and_then(|def| entries.iter().find(|(name, _)| name == def))
+                })
+                .or_else(|| {
+                    entries.iter().find(|(_, proj)| {
+                        proj.get_object("architect")
+                            .and_then(|a| a.get_object("native"))
+                            .is_some()
+                            || proj
+                                .get_object("targets")
+                                .and_then(|t| t.get_object("native"))
+                                .is_some()
+                    })
+                })
+                .or_else(|| entries.first());
+
+            if let Some((proj_name, proj_val)) = chosen {
+                let mut scopes = Vec::new();
+                for container in ["architect", "targets"] {
+                    if let Some(targets_obj) = proj_val.get_object(container) {
+                        for target in ["native", "build"] {
+                            if let Some(opts) = targets_obj
+                                .get_object(target)
+                                .and_then(|t| t.get_object("options"))
+                            {
+                                scopes.push(opts);
+                            }
+                        }
+                    }
+                }
+                scopes.push(proj_val);
+                return Ok((proj_name.clone(), scopes));
+            }
+        }
+
+        if let Some(nx_name) = root.get_str("name") {
+            let mut scopes = Vec::new();
+            if let Some(targets_obj) = root.get_object("targets") {
+                for target in ["native", "build"] {
+                    if let Some(opts) = targets_obj
+                        .get_object(target)
+                        .and_then(|t| t.get_object("options"))
+                    {
+                        scopes.push(opts);
+                    }
+                }
+            }
+            scopes.push(root);
+            return Ok((String::from(nx_name), scopes));
+        }
+
+        Err(EngineError::ConfigError(String::from(
+            "Missing project identifier in config ('projectName', 'defaultProject', 'projects', or Nx 'name')",
+        )))
+    }
+
+    fn lookup_string(scopes: &[&JsonValue], key: &str) -> Option<String> {
+        scopes
+            .iter()
+            .find_map(|scope| scope.get_str(key).map(String::from))
+    }
+
+    fn lookup_output_path(scopes: &[&JsonValue]) -> Option<String> {
+        scopes.iter().find_map(|scope| {
+            let val = scope.get("outputPath")?;
+            val.as_str()
+                .map(String::from)
+                .or_else(|| val.get_str("base").map(String::from))
+        })
+    }
+
+    fn lookup_permissions(scopes: &[&JsonValue]) -> AppPermissions {
+        for scope in scopes {
+            if scope.get_object("permissions").is_some()
+                || scope.get_object("capabilities").is_some()
+            {
+                return AppPermissions::from_json_value(scope);
+            }
+        }
+        AppPermissions::minimal()
     }
 
     fn discover_from_environment(project_hint: Option<&str>) -> Option<Self> {
@@ -275,7 +383,7 @@ impl AngularNativeConfig {
         }
 
         for candidate in candidates {
-            if let Ok(cfg) = Self::from_file(&candidate) {
+            if let Ok(cfg) = Self::from_file_for_project(&candidate, project_hint) {
                 return Some(cfg);
             }
         }
@@ -340,43 +448,6 @@ impl AngularNativeConfig {
             self.os = os_from_target_platform(target);
             self.js_engine = resolve_default_js_engine(&self.os);
         }
-    }
-
-    fn extract_first_project_name(json: &str) -> Option<String> {
-        let projects_key = "\"projects\"";
-        let start = json.find(projects_key)? + projects_key.len();
-        let rest = &json[start..];
-        let brace = rest.find('{')? + 1;
-        let inside = rest[brace..].trim_start();
-        if !inside.starts_with('"') {
-            return None;
-        }
-        let name_part = &inside[1..];
-        let end_quote = name_part.find('"')?;
-        Some(name_part[..end_quote].to_string())
-    }
-
-    fn extract_nx_project_name(json: &str) -> Option<String> {
-        Self::extract_json_string(json, "name")
-    }
-
-    fn extract_json_string(json: &str, key: &str) -> Option<String> {
-        let pattern = format!("\"{key}\"");
-        let mut offset = 0;
-        while let Some(rel_idx) = json[offset..].find(&pattern) {
-            let key_end = offset + rel_idx + pattern.len();
-            let after_key = json[key_end..].trim_start();
-            if let Some(colon_rest) = after_key.strip_prefix(':') {
-                let after_colon = colon_rest.trim_start();
-                if let Some(value_part) = after_colon.strip_prefix('"')
-                    && let Some(end_quote) = value_part.find('"')
-                {
-                    return Some(value_part[..end_quote].to_string());
-                }
-            }
-            offset = key_end;
-        }
-        None
     }
 }
 
@@ -529,5 +600,67 @@ mod tests {
         assert_eq!(cfg.icon_search_dir, "build/custom-client/icons");
         assert_eq!(cfg.target_platform, "macos-appkit");
         assert_eq!(cfg.os, "macos");
+    }
+
+    #[test]
+    fn isolates_selected_project_scope_from_sibling_projects_and_object_output_path() {
+        let multi_project_json = r#"{
+            "projects": {
+                "ng-linux-counter": {
+                    "architect": {
+                        "build": {
+                            "options": {
+                                "outputPath": { "base": "dist/custom-counter" }
+                            }
+                        },
+                        "native": {
+                            "options": {
+                                "os": "linux",
+                                "permissions": {
+                                    "capabilities": { "sqlite": true }
+                                }
+                            }
+                        }
+                    }
+                },
+                "ng-desktop-docs": {
+                    "architect": {
+                        "build": {
+                            "options": {
+                                "outputPath": "dist/ng-desktop-docs"
+                            }
+                        },
+                        "native": {
+                            "options": {
+                                "os": "windows",
+                                "permissions": {
+                                    "capabilities": { "network": true, "fullSystemAccess": true }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }"#;
+
+        let primary = AngularNativeConfig::from_json_str(multi_project_json).unwrap();
+        assert_eq!(primary.project_name, "ng-linux-counter");
+        assert_eq!(primary.output_path, "dist/custom-counter");
+        assert_eq!(primary.os, "linux");
+        assert!(primary.permissions.sqlite);
+        assert!(!primary.permissions.network);
+        assert!(!primary.permissions.full_system_access);
+
+        let docs = AngularNativeConfig::from_json_str_for_project(
+            multi_project_json,
+            Some("ng-desktop-docs"),
+        )
+        .unwrap();
+        assert_eq!(docs.project_name, "ng-desktop-docs");
+        assert_eq!(docs.output_path, "dist/ng-desktop-docs");
+        assert_eq!(docs.os, "windows");
+        assert!(docs.permissions.network);
+        assert!(docs.permissions.full_system_access);
+        assert!(!docs.permissions.sqlite);
     }
 }

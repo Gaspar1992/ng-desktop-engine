@@ -10,8 +10,9 @@ use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::fmt::Write as _;
 use std::fs;
+use std::io::Write as _;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -507,18 +508,25 @@ impl NativeHttpEngine {
             plan.timeout_ms,
             &pairs,
         );
-        for ((idx, key, _), ((_, tmp_path), ok)) in plan
+        for ((idx, key, req), ((_, tmp_path), ok)) in plan
             .pending_gets
             .iter()
             .zip(pairs.into_iter().zip(ok_flags))
         {
+            let unsafe_url = !is_safe_http_url(&req.url);
             let body = if ok {
                 fs::read_to_string(&tmp_path).unwrap_or_default()
             } else {
                 String::new()
             };
             let _ = fs::remove_file(&tmp_path);
-            let status = if ok { 200 } else { 500 };
+            let status = if ok {
+                200
+            } else if unsafe_url {
+                400
+            } else {
+                500
+            };
             let res = NativeHttpResponse {
                 status,
                 status_text: default_reason_phrase(status),
@@ -576,6 +584,10 @@ impl NativeHttpEngine {
             "-s",
             "-f",
             "-L",
+            "--proto",
+            "=http,https",
+            "--proto-redir",
+            "=http,https",
             "--http2",
             "-Z",
             "--parallel-immediate",
@@ -584,16 +596,26 @@ impl NativeHttpEngine {
             "--max-time",
             &timeout_secs,
         ]);
+        let mut valid_count = 0usize;
         for (url, dest) in pairs {
+            if !is_safe_http_url(url) {
+                continue;
+            }
             if let Some(parent) = dest.parent() {
                 let _ = fs::create_dir_all(parent);
             }
-            cmd.arg("-o").arg(dest).arg(url);
+            cmd.arg("-o").arg(dest).arg("--url").arg(url.trim());
+            valid_count += 1;
+        }
+        if valid_count == 0 {
+            return vec![false; pairs.len()];
         }
         let _ = cmd.status();
         pairs
             .iter()
-            .map(|(_, dest)| fs::metadata(dest).is_ok_and(|m| m.len() > 0))
+            .map(|(url, dest)| {
+                is_safe_http_url(url) && fs::metadata(dest).is_ok_and(|m| m.len() > 0)
+            })
             .collect()
     }
 
@@ -700,14 +722,52 @@ fn error_500_response(call_kind: NativeHttpCallKind, status_text: &str) -> Nativ
     }
 }
 
+pub(crate) fn is_safe_http_url(url: &str) -> bool {
+    let trimmed = url.trim();
+    if !(trimmed.starts_with("http://") || trimmed.starts_with("https://")) {
+        return false;
+    }
+    !trimmed.chars().any(|c| c.is_control() || c.is_whitespace())
+}
+
+pub(crate) fn is_safe_http_method(method: &str) -> bool {
+    let trimmed = method.trim();
+    !trimmed.is_empty() && trimmed.len() <= 16 && trimmed.bytes().all(|b| b.is_ascii_alphabetic())
+}
+
+fn sanitize_header_part(raw: &str) -> Option<&str> {
+    if raw.chars().any(|c| matches!(c, '\r' | '\n' | '\0')) {
+        None
+    } else {
+        Some(raw)
+    }
+}
+
+fn bad_request_response(call_kind: NativeHttpCallKind, reason: &str) -> NativeHttpResponse {
+    NativeHttpResponse {
+        status: 400,
+        status_text: String::from("Bad Request"),
+        body: format!(r#"{{"error":"{reason}"}}"#),
+        headers: HashMap::new(),
+        transport: String::from("http-validation"),
+        call_kind,
+        cached: false,
+    }
+}
+
 fn perform_outbound_detached(
     request: &NativeHttpRequest,
     timeout_ms: u32,
     platform: OsHttpPlatform,
 ) -> NativeHttpResponse {
-    if !request.url.starts_with("http://") && !request.url.starts_with("https://") {
-        return not_found_response(request.call_kind);
+    if !is_safe_http_url(&request.url) {
+        return bad_request_response(request.call_kind, "Unsafe or non-HTTP URL rejected");
     }
+    if !is_safe_http_method(&request.method) {
+        return bad_request_response(request.call_kind, "Invalid HTTP method");
+    }
+    let trimmed_url = request.url.trim();
+    let method_upper = request.method.trim().to_ascii_uppercase();
     if platform == OsHttpPlatform::LinuxLibsoup {
         let libsoup_raw = THREAD_LIBSOUP.with(|cell| {
             let mut slot = cell.borrow_mut();
@@ -720,8 +780,8 @@ fn perform_outbound_detached(
             };
             soup.set_timeout_ms(timeout_ms);
             soup.send_raw(
-                &request.method,
-                &request.url,
+                &method_upper,
+                trimmed_url,
                 &request.headers,
                 request.body.as_deref(),
             )
@@ -758,26 +818,42 @@ fn execute_curl_fallback(
     timeout_ms: u32,
     platform: OsHttpPlatform,
 ) -> NativeHttpResponse {
+    if !is_safe_http_url(&request.url) {
+        return bad_request_response(request.call_kind, "Unsafe or non-HTTP URL rejected");
+    }
+    if !is_safe_http_method(&request.method) {
+        return bad_request_response(request.call_kind, "Invalid HTTP method");
+    }
+    let clean_url = request.url.trim();
+    let clean_method = request.method.trim().to_ascii_uppercase();
     let timeout_secs = timeout_ms.div_ceil(1000).max(1).to_string();
     let mut cmd = Command::new("curl");
     cmd.args([
         "-s",
         "-L",
+        "--proto",
+        "=http,https",
+        "--proto-redir",
+        "=http,https",
         "--http2",
         "--max-time",
         &timeout_secs,
         "-w",
         "\n__NG_STATUS__:%{http_code}",
         "-X",
-        &request.method,
+        &clean_method,
     ]);
     for (k, v) in &request.headers {
-        cmd.arg("-H").arg(format!("{k}: {v}"));
+        if let (Some(ck), Some(cv)) = (sanitize_header_part(k), sanitize_header_part(v)) {
+            cmd.arg("-H").arg(format!("{ck}: {cv}"));
+        }
     }
-    if let Some(body) = &request.body {
-        cmd.arg("--data-raw").arg(body);
+    if request.body.is_some() {
+        cmd.arg("--data-binary").arg("@-");
+        cmd.stdin(Stdio::piped());
     }
-    cmd.arg(&request.url);
+    cmd.arg("--").arg(clean_url);
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
     let transport = match platform {
         OsHttpPlatform::LinuxLibsoup => "linux-curl-http2",
@@ -785,7 +861,18 @@ fn execute_curl_fallback(
         OsHttpPlatform::WindowsWinHttp => "windows-winhttp-curl",
     };
 
-    if let Ok(output) = cmd.output()
+    let output_res = if let Some(body) = &request.body {
+        cmd.spawn().and_then(|mut child| {
+            if let Some(mut stdin) = child.stdin.take() {
+                let _ = stdin.write_all(body.as_bytes());
+            }
+            child.wait_with_output()
+        })
+    } else {
+        cmd.output()
+    };
+
+    if let Ok(output) = output_res
         && output.status.success()
     {
         let full = String::from_utf8_lossy(&output.stdout);
@@ -1044,5 +1131,31 @@ mod tests {
             let json = handle.join().unwrap();
             assert!(json.contains(r#""status":200"#));
         }
+    }
+
+    #[test]
+    fn rejects_unsafe_urls_schemes_whitespace_and_flag_methods() {
+        assert!(is_safe_http_url("https://pokeapi.co/api/v2/pokemon/25"));
+        assert!(is_safe_http_url("http://127.0.0.1:8080/health"));
+        assert!(!is_safe_http_url("file:///etc/passwd"));
+        assert!(!is_safe_http_url("gopher://127.0.0.1:70/1"));
+        assert!(!is_safe_http_url("-o /tmp/pwn https://example.com"));
+        assert!(!is_safe_http_url("https://example.com/a\r\nX-Inject: 1"));
+
+        assert!(is_safe_http_method("GET"));
+        assert!(is_safe_http_method("post"));
+        assert!(!is_safe_http_method("-o"));
+        assert!(!is_safe_http_method("GET\n-K"));
+        assert!(!is_safe_http_method(""));
+
+        let flags = NativeHttpEngine::download_files_parallel_with(
+            4,
+            1000,
+            &[(
+                String::from("file:///etc/passwd"),
+                PathBuf::from("/tmp/ng_native_should_never_write.txt"),
+            )],
+        );
+        assert_eq!(flags, vec![false]);
     }
 }

@@ -36,6 +36,9 @@ impl JsRuntime {
         event_name: &str,
         payload: &EventPayload,
     ) -> Result<(), EngineError> {
+        if Self::is_drop_event(event_name) && !self.host_bridge.allows_filesystem_drop() {
+            return Ok(());
+        }
         let node_id = self.resolve_var(var_name)?;
         self.dispatch_to_js(engine, var_name, event_name, payload)?;
         self.trigger_node_event(engine, node_id, event_name)
@@ -50,6 +53,9 @@ impl JsRuntime {
         event_name: &str,
         payload: &EventPayload,
     ) -> Result<(), EngineError> {
+        if Self::is_drop_event(event_name) && !self.host_bridge.allows_filesystem_drop() {
+            return Ok(());
+        }
         if let Some(var) = self.node_vars.get(&node_id).cloned() {
             self.dispatch_to_js(engine, &var, event_name, payload)?;
         }
@@ -59,6 +65,10 @@ impl JsRuntime {
             }
             Err(err) => Err(err),
         }
+    }
+
+    fn is_drop_event(event_name: &str) -> bool {
+        matches!(event_name, "drop" | "files-dropped" | "file-drop")
     }
 
     /// Dispatches a native OS event by `NodeId` and runs registered Angular handlers.

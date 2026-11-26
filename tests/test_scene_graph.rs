@@ -887,3 +887,31 @@ fn gtk_live_list_box_and_popover_lifecycle() {
     engine.flush_frame();
     assert_eq!(engine.backend().widget_count(), 0);
 }
+
+#[test]
+fn add_class_for_pseudo_only_style_emits_register_style_before_apply_style_class() {
+    let mut engine = RenderEngine::new(HeadlessBackend::new());
+    let btn = engine.create_element("ng-button").unwrap();
+    engine.register_style(StyleRule {
+        class_name: String::from("pill-hover"),
+        background: Some(String::from("#2563eb")),
+        pseudo_class: Some(String::from("hover")),
+        ..StyleRule::default()
+    });
+    engine.add_class(btn, "pill-hover").unwrap();
+    engine.flush_frame();
+
+    let cmds = &engine.backend().frames[0];
+    let reg_pos = cmds
+        .iter()
+        .position(|c| matches!(c, RenderCommand::RegisterStyle { rule, .. } if rule.class_name == "pill-hover" && rule.pseudo_class.is_none()))
+        .expect("placeholder RegisterStyle command");
+    let apply_pos = cmds
+        .iter()
+        .position(|c| matches!(c, RenderCommand::ApplyStyleClass { node, .. } if *node == btn))
+        .expect("ApplyStyleClass command");
+    assert!(
+        reg_pos < apply_pos,
+        "RegisterStyle must precede ApplyStyleClass"
+    );
+}

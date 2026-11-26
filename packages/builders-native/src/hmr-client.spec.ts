@@ -55,6 +55,41 @@ describe('HMR IPC Client (Node.js)', () => {
     expect(res.response).toEqual({ status: 'ok', pong: true });
   });
 
+  it('automatically attaches bearer token from <socketPath>.token sidecar file', async () => {
+    const authSocket = join(tmpdir(), `ng-native-hmr-auth-${process.pid}.tcp`);
+    const tokenFile = `${authSocket}.token`;
+    const authServer = net.createServer((conn: net.Socket) => {
+      conn.on('data', (data: Buffer) => {
+        const msg = JSON.parse(data.toString().trim());
+        if (msg.token === 'test-sidecar-secret') {
+          conn.write(JSON.stringify({ status: 'ok', pong: true }) + '\n');
+        } else {
+          conn.write(JSON.stringify({ status: 'error', message: 'Unauthorized' }) + '\n');
+        }
+      });
+    });
+
+    await new Promise<void>((resolve) => authServer.listen(0, '127.0.0.1', () => resolve()));
+    try {
+      const addr = authServer.address() as net.AddressInfo;
+      writeFileSync(authSocket, `tcp://127.0.0.1:${addr.port}\n`, 'utf8');
+      writeFileSync(tokenFile, 'test-sidecar-secret\n', 'utf8');
+
+      const res = await pingHmr(authSocket);
+      expect(res.connected).toBe(true);
+      expect(res.response).toEqual({ status: 'ok', pong: true });
+    } finally {
+      await new Promise<void>((resolve) => authServer.close(() => resolve()));
+      for (const file of [authSocket, tokenFile]) {
+        try {
+          unlinkSync(file);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+    }
+  });
+
   it('pushes bundle reload and handles script payload', async () => {
     const res = await pushHmrReload(testSocket, 'signal count 42\ntext win App');
     expect(res.connected).toBe(true);

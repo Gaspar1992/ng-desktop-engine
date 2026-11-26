@@ -139,34 +139,7 @@ fn find_json_value_start<'a>(json: &'a str, key: &str) -> Option<&'a str> {
 }
 
 fn parse_json_string_at(after_colon: &str) -> Option<(String, usize)> {
-    let rest = after_colon.strip_prefix('"')?;
-    let mut out = String::new();
-    let mut chars = rest.char_indices();
-    while let Some((idx, ch)) = chars.next() {
-        match ch {
-            '"' => return Some((out, idx + 2)),
-            '\\' => match chars.next() {
-                Some((_, '"')) => out.push('"'),
-                Some((_, '\\')) => out.push('\\'),
-                Some((_, '/')) => out.push('/'),
-                Some((_, 'n')) => out.push('\n'),
-                Some((_, 'r')) => out.push('\r'),
-                Some((_, 't')) => out.push('\t'),
-                Some((_, 'u')) => {
-                    let hex: String = chars.by_ref().take(4).map(|(_, c)| c).collect();
-                    if let Ok(code) = u32::from_str_radix(&hex, 16)
-                        && let Some(decoded) = char::from_u32(code)
-                    {
-                        out.push(decoded);
-                    }
-                }
-                Some((_, other)) => out.push(other),
-                None => break,
-            },
-            c => out.push(c),
-        }
-    }
-    None
+    super::json::parse_json_string_at(after_colon).ok()
 }
 
 pub(crate) fn extract_json_string(json: &str, key: &str) -> Option<String> {
