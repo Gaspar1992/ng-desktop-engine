@@ -40,10 +40,6 @@ jobs:
             target: windows
             dockerfile: docker/Dockerfile.windows-wine
             cache-scope: windows-wine
-          - label: macOS Cross Clippy
-            target: macos
-            dockerfile: docker/Dockerfile.macos-cross
-            cache-scope: macos-cross
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7

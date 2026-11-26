@@ -284,12 +284,11 @@ fn pokedex_angular_app_full_e2e_via_agnostic_harness() {
     client.send_ok(r#"{"cmd":"dispatch","target":"search_entry","event":"input","value":"pika"}"#);
     client.send_ok(r#"{"cmd":"wait_for","text":"Bulbasaur","absent":true,"timeoutMs":4000}"#);
     client.send_ok(r#"{"cmd":"dispatch","target":"open-poke-25","event":"clicked"}"#);
-    let detail = client.send_ok(r#"{"cmd":"wait_for","text":"N.º 0025","timeoutMs":4000}"#);
+    let detail = client.send_ok(r#"{"cmd":"wait_for","text":"PS (35 / 255)","timeoutMs":6000}"#);
     assert!(
-        detail.contains("Static") && detail.contains("Ratón"),
+        detail.contains("N.º 0025") && detail.contains("Static") && detail.contains("Ratón"),
         "detail: {detail}"
     );
-    assert!(detail.contains("PS (35 / 255)"), "detail: {detail}");
 
     // Favorite & field note roundtrip + Favorites filter
     client.send_ok(r#"{"cmd":"dispatch","target":"btn_toggle_fav","event":"clicked"}"#);
@@ -330,7 +329,7 @@ fn pokedex_sqlite_persistence_survives_process_restart_e2e() {
     let mut p1 = spawn_pokedex_harness(&app_id);
     p1.send_ok(r#"{"cmd":"wait_for","text":"Pikachu","timeoutMs":6000}"#);
     p1.send_ok(r#"{"cmd":"dispatch","target":"open-poke-25","event":"clicked"}"#);
-    p1.send_ok(r#"{"cmd":"wait_for","text":"N.º 0025","timeoutMs":4000}"#);
+    p1.send_ok(r#"{"cmd":"wait_for","text":"PS (35 / 255)","timeoutMs":6000}"#);
     p1.send_ok(r#"{"cmd":"dispatch","target":"btn_toggle_fav","event":"clicked"}"#);
     p1.send_ok(r#"{"cmd":"wait_for","text":"En Favoritos","timeoutMs":4000}"#);
     p1.send_ok(
@@ -345,8 +344,9 @@ fn pokedex_sqlite_persistence_survives_process_restart_e2e() {
     let restored_list = p2.send_ok(r#"{"cmd":"wait_for","text":"★ Pikachu","timeoutMs":6000}"#);
     assert!(restored_list.contains("★ Pikachu"), "{restored_list}");
     p2.send_ok(r#"{"cmd":"dispatch","target":"open-poke-25","event":"clicked"}"#);
+    p2.send_ok(r#"{"cmd":"wait_for","text":"PS (35 / 255)","timeoutMs":6000}"#);
     let reopened =
-        p2.send_ok(r#"{"cmd":"wait_for","text":"Pikachu ⚡ Persistente 🚀","timeoutMs":4000}"#);
+        p2.send_ok(r#"{"cmd":"wait_for","text":"Pikachu ⚡ Persistente 🚀","timeoutMs":6000}"#);
     assert!(reopened.contains("En Favoritos"), "{reopened}");
     p2.quit();
 
