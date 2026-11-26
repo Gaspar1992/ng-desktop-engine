@@ -225,6 +225,12 @@ export class NativeWindowDirective {
   @Input('prevent-close') set preventCloseAttr(val: NativeBoolInput) {
     syncNativeAttr(this.renderer, this.el, 'prevent-close', val);
   }
+  @Input() set backdrop(val: NativeAttrInput) {
+    syncNativeAttr(this.renderer, this.el, 'backdrop', val);
+  }
+  @Input() set theme(val: NativeAttrInput) {
+    syncNativeAttr(this.renderer, this.el, 'theme', val);
+  }
 }
 
 /**

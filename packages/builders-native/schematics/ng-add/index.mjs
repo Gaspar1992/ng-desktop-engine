@@ -17,6 +17,7 @@ export function applyNgAddToTree(tree, options = {}) {
 
   const builderOptions = {
     targetPlatform,
+    ...(options.gpu && options.gpu !== 'auto' ? { gpu: options.gpu } : {}),
     permissions: {
       mode: permissionsMode,
     },

@@ -7,6 +7,7 @@ export interface SchematicTreeLike {
 export interface NgAddSchematicOptions {
   project?: string;
   targetPlatform?: 'linux-gtk4' | 'windows-winui' | 'macos-appkit';
+  gpu?: 'auto' | 'vulkan' | 'gl' | 'ngl' | 'metal' | 'dwm' | 'software';
   permissionsMode?: 'auto' | 'strict';
 }
 

@@ -39,11 +39,15 @@ export function provideNativePlatform(): EnvironmentProviders {
   ]);
 }
 
-export interface NativeBootstrapContext {
+export interface NativeBootstrapContext extends PromiseLike<ApplicationRef> {
   readonly rootComponent: Type<unknown>;
   readonly bridge: NgNativeBridge;
   readonly config: ApplicationConfig;
   readonly appRefPromise?: Promise<ApplicationRef>;
+  catch<TResult = never>(
+    onrejected?: ((reason: unknown) => TResult | PromiseLike<TResult>) | null,
+  ): Promise<ApplicationRef | TResult>;
+  finally(onfinally?: (() => void) | null): Promise<ApplicationRef>;
 }
 
 /**
@@ -61,10 +65,20 @@ export function bootstrapNativeApplication(
   const appRefPromise = isIvyComponent
     ? bootstrapApplication(rootComponent, mergedConfig)
     : undefined;
+  const resolvedPromise = appRefPromise ?? Promise.resolve(undefined as unknown as ApplicationRef);
   return {
     rootComponent,
     bridge,
     config: mergedConfig,
     ...(appRefPromise ? { appRefPromise } : {}),
+    then(onfulfilled, onrejected) {
+      return resolvedPromise.then(onfulfilled, onrejected);
+    },
+    catch(onrejected) {
+      return resolvedPromise.catch(onrejected);
+    },
+    finally(onfinally) {
+      return resolvedPromise.finally(onfinally);
+    },
   };
 }

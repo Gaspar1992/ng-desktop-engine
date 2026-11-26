@@ -518,4 +518,36 @@ describe('Phase 5 — @ng-desktop/router, @ng-desktop/http & @ng-desktop/desktop
       bridge.httpRequest = originalHttp;
     }
   });
+
+  it('supports setAppMenu auto-shortcuts, bindShortcut disposer/DestroyRef cleanup, and persistWindowGeometry', () => {
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+
+    TestBed.configureTestingModule({
+      providers: [provideNativeDesktop({ persistWindowGeometry: true })],
+    });
+    const desktop = TestBed.inject(NativeDesktopService);
+    let refreshed = 0;
+    desktop.setAppMenu(
+      [
+        { id: 'refresh', label: 'Refresh', accelerator: '<Control>r', enabled: true },
+        { id: 'disabled-item', label: 'Disabled', accelerator: '<Control>d', enabled: false },
+      ],
+      { refresh: () => (refreshed += 1) },
+      { registerShortcuts: true },
+    );
+    expect(desktop.triggerShortcut('<Control>r')).toBe(true);
+    expect(refreshed).toBe(1);
+    expect(desktop.triggerShortcut('<Control>d')).toBe(false);
+
+    let toggled = 0;
+    const dispose = desktop.bindShortcut('<Control>t', 'toggle-theme', () => {
+      toggled += 1;
+    });
+    expect(desktop.triggerShortcut('<Control>t')).toBe(true);
+    expect(toggled).toBe(1);
+    dispose();
+    dispose();
+    expect(desktop.triggerShortcut('<Control>t')).toBe(false);
+  });
 });

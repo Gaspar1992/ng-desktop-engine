@@ -1259,4 +1259,41 @@ describe('@ng-desktop/platform — NativeRenderer2 & Bridge', () => {
     expect(cmds.some((c) => c.startsWith(`attr ${box.id} margin-start`))).toBe(true);
     expect(receivedDrop).toMatchObject({ type: 'file-drop', value: '/tmp/a.json' });
   });
+
+  it('supports PromiseLike chaining on bootstrapNativeApplication and backdrop/theme inputs on NativeWindowDirective', async () => {
+    const { Component } = await import('@angular/core');
+    const { TestBed } = await import('@angular/core/testing');
+    const { bootstrapNativeApplication } = await import('./platform');
+    const { NativeWindowDirective } = await import('./native-directives');
+
+    class PlainApp {}
+    let caughtCalled = false;
+    const ctx = bootstrapNativeApplication(PlainApp);
+    expect(typeof ctx.then).toBe('function');
+    expect(typeof ctx.catch).toBe('function');
+    await ctx.catch(() => {
+      caughtCalled = true;
+    });
+    expect(caughtCalled).toBe(false);
+
+    @Component({
+      selector: 'ng-win-dx-host',
+      imports: [NativeWindowDirective],
+      template: `<ng-window id="dx_win" [backdrop]="'mica'" [theme]="'dark'" />`,
+    })
+    class WinDxHost {}
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [WinDxHost],
+      providers: [provideNativePlatform()],
+    });
+    const bridge = ensureNgNativeBridge();
+    bridge.__drainQueue();
+    const fixture = TestBed.createComponent(WinDxHost);
+    fixture.detectChanges();
+    const cmds = bridge.__drainQueue();
+    expect(cmds).toContain('backdrop mica');
+    expect(cmds).toContain('theme dark');
+  });
 });

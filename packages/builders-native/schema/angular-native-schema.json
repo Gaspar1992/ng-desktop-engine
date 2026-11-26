@@ -2,51 +2,78 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "ng-desktop://config/angular-native-schema.json",
   "title": "Angular + NgDesktop Extended Workspace Configuration",
-  "description": "Extends the official Angular CLI workspace schema with minimal native desktop OS, CPU architecture, and packaging configuration.",
-  "allOf": [
-    {
-      "$ref": "../../../node_modules/@angular/cli/lib/config/schema.json"
+  "description": "Standalone workspace schema validating Angular CLI (architect.native) and Nx (targets.native) NgDesktop configurations without broken relative node_modules refs.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "defaultProject": {
+      "type": "string",
+      "description": "Default project name used when no --project flag is supplied."
     },
-    {
+    "projects": {
       "type": "object",
-      "properties": {
-        "projects": {
-          "type": "object",
-          "additionalProperties": {
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "architect": {
             "type": "object",
+            "additionalProperties": true,
             "properties": {
-              "architect": {
-                "type": "object",
-                "properties": {
-                  "native": {
-                    "type": "object",
-                    "properties": {
-                      "builder": {
-                        "type": "string",
-                        "enum": [
-                          "@ng-desktop/builders:application",
-                          "@ng-desktop/builders:build",
-                          "@ng-desktop/builders:engine",
-                          "@ng-desktop/builders:dev-server"
-                        ]
-                      },
-                      "options": {
-                        "$ref": "./native-builder-schema.json"
-                      },
-                      "configurations": {
-                        "type": "object",
-                        "additionalProperties": {
-                          "$ref": "./native-builder-schema.json"
-                        }
-                      }
-                    }
-                  }
-                }
+              "native": {
+                "$ref": "#/definitions/nativeTarget"
+              }
+            }
+          },
+          "targets": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "native": {
+                "$ref": "#/definitions/nativeTarget"
               }
             }
           }
         }
       }
     }
-  ]
+  },
+  "definitions": {
+    "nativeTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "builder": {
+          "type": "string",
+          "enum": [
+            "@ng-desktop/builders:application",
+            "@ng-desktop/builders:build",
+            "@ng-desktop/builders:engine",
+            "@ng-desktop/builders:dev-server"
+          ]
+        },
+        "executor": {
+          "type": "string",
+          "enum": [
+            "@ng-desktop/builders:application",
+            "@ng-desktop/builders:build",
+            "@ng-desktop/builders:engine",
+            "@ng-desktop/builders:dev-server"
+          ]
+        },
+        "options": {
+          "$ref": "./native-builder-schema.json"
+        },
+        "configurations": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "./native-builder-schema.json"
+          }
+        },
+        "defaultConfiguration": {
+          "type": "string"
+        }
+      }
+    }
+  }
 }
