@@ -226,7 +226,6 @@ function extractTsApiCatalog() {
       skipLibCheck: true,
       experimentalDecorators: true,
       strict: true,
-      baseUrl: ROOT_DIR,
       paths: pathMappings,
     },
   );
@@ -446,13 +445,33 @@ pre {
   .pkg-layout {
     grid-template-columns: 260px minmax(0, 1fr);
   }
+
+  .toc-sidebar {
+    position: sticky;
+    top: 4.5rem;
+    max-height: 75vh;
+    overflow-y: auto;
+  }
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 50;
+  padding: 0.6rem 1rem;
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 700;
+  border-radius: 0 0 8px 0;
+  text-decoration: none;
+}
+
+.skip-link:focus {
+  left: 0;
 }
 
 .toc-sidebar {
-  position: sticky;
-  top: 4.5rem;
-  max-height: 75vh;
-  overflow-y: auto;
   display: grid;
   gap: 0.35rem;
 }
@@ -465,6 +484,19 @@ pre {
 
 .toc-sidebar a:hover {
   color: var(--accent);
+}
+
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.tag-list {
+  margin: 0.65rem 0 0;
+  padding-left: 1.15rem;
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.88rem;
 }
 
 .symbol-list {
@@ -567,6 +599,7 @@ function buildTsApiIndexHtml(catalog) {
     'Complete TypeScript and Angular API reference across all seven @ng-desktop/* packages.',
   )}
   <body>
+    <a class="skip-link" href="#api-main">Skip to API content</a>
     <header class="topbar">
       <div class="topbar-inner">
         <strong>ng-desktop-engine · TypeScript API Reference</strong>
@@ -577,7 +610,7 @@ function buildTsApiIndexHtml(catalog) {
         </nav>
       </div>
     </header>
-    <main class="page-shell">
+    <main id="api-main" class="page-shell">
       <section class="hero">
         <span class="badge">Auto-Generated from packages/*/src/index.ts</span>
         <h1>&#64;ng-desktop/* TypeScript &amp; Angular API (${totalSymbols} Symbols)</h1>
@@ -586,6 +619,7 @@ function buildTsApiIndexHtml(catalog) {
         </p>
         <label for="api-global-search" class="muted">Filter all exported symbols:</label>
         <input id="api-global-search" type="search" class="search-input" placeholder="Search bootstrapNativeApplication, parseRuntimeStyles, Signal..." />
+        <p id="api-global-status" class="muted" aria-live="polite">Showing ${totalSymbols} of ${totalSymbols} symbols</p>
       </section>
 
       <section class="pkg-grid" aria-label="Package reference pages">
@@ -594,31 +628,40 @@ function buildTsApiIndexHtml(catalog) {
 
       <section class="card">
         <h2>All Exported Symbols</h2>
-        <table class="members-table">
-          <thead>
-            <tr>
-              <th scope="col">Kind</th>
-              <th scope="col">Symbol</th>
-              <th scope="col">Package</th>
-              <th scope="col">Summary</th>
-            </tr>
-          </thead>
-          <tbody id="api-symbol-rows">
-            ${symbolRowsHtml}
-          </tbody>
-        </table>
+        <div class="table-scroll">
+          <table class="members-table">
+            <thead>
+              <tr>
+                <th scope="col">Kind</th>
+                <th scope="col">Symbol</th>
+                <th scope="col">Package</th>
+                <th scope="col">Summary</th>
+              </tr>
+            </thead>
+            <tbody id="api-symbol-rows">
+              ${symbolRowsHtml}
+            </tbody>
+          </table>
+        </div>
       </section>
     </main>
     <script>
       (function () {
         var input = document.getElementById('api-global-search');
+        var status = document.getElementById('api-global-status');
         var rows = Array.prototype.slice.call(document.querySelectorAll('#api-symbol-rows tr'));
         if (!input) return;
         input.addEventListener('input', function () {
           var q = String(input.value || '').trim().toLowerCase();
+          var visible = 0;
           for (var i = 0; i < rows.length; i += 1) {
             var text = rows[i].getAttribute('data-search') || '';
-            rows[i].classList.toggle('is-hidden', Boolean(q) && text.indexOf(q) === -1);
+            var hidden = Boolean(q) && text.indexOf(q) === -1;
+            rows[i].classList.toggle('is-hidden', hidden);
+            if (!hidden) visible += 1;
+          }
+          if (status) {
+            status.textContent = 'Showing ' + visible + ' of ' + rows.length + ' symbols';
           }
         });
       })();
@@ -641,17 +684,28 @@ function buildPackageApiHtml(pkg) {
           : '';
       const membersHtml =
         sym.members.length > 0
-          ? `<table class="members-table">
+          ? `<div class="table-scroll"><table class="members-table">
               <thead><tr><th scope="col">Member</th><th scope="col">Description</th></tr></thead>
               <tbody>
                 ${sym.members
                   .map(
                     (m) =>
-                      `<tr><td><code>${escapeHtml(m.signature)}</code></td><td class="muted">${escapeHtml(m.description || 'Public member')}</td></tr>`,
+                      `<tr><td><code>${escapeHtml(m.signature)}</code></td><td class="muted">${escapeHtml(m.description)}</td></tr>`,
                   )
                   .join('\n')}
               </tbody>
-            </table>`
+            </table></div>`
+          : '';
+      const tagsHtml =
+        sym.tags.length > 0
+          ? `<ul class="tag-list">
+              ${sym.tags
+                .map(
+                  (t) =>
+                    `<li><code>@${escapeHtml(t.name)}</code>${t.text ? ` ${escapeHtml(t.text)}` : ''}</li>`,
+                )
+                .join('\n')}
+            </ul>`
           : '';
 
       return `<article id="sym-${escapeHtml(sym.name)}" class="card" data-symbol="${escapeHtml(`${sym.name} ${sym.kind} ${sym.description}`.toLowerCase())}">
@@ -664,6 +718,7 @@ function buildPackageApiHtml(pkg) {
         </div>
         <pre><code>${escapeHtml(sym.signature)}</code></pre>
         ${sym.description ? `<p>${escapeHtml(sym.description)}</p>` : ''}
+        ${tagsHtml}
         ${membersHtml}
       </article>`;
     })
@@ -671,6 +726,7 @@ function buildPackageApiHtml(pkg) {
 
   return `${buildHtmlHead(`${pkg.name} — TypeScript API Reference`, pkg.description)}
   <body>
+    <a class="skip-link" href="#pkg-main">Skip to package symbols</a>
     <header class="topbar">
       <div class="topbar-inner">
         <strong>${escapeHtml(pkg.name)} (v${escapeHtml(pkg.version)})</strong>
@@ -681,12 +737,13 @@ function buildPackageApiHtml(pkg) {
         </nav>
       </div>
     </header>
-    <main class="page-shell">
+    <main id="pkg-main" class="page-shell">
       <section class="hero">
         <span class="badge">${pkg.symbolCount} Exports</span>
         <h1>${escapeHtml(pkg.name)}</h1>
         <p class="muted">${escapeHtml(pkg.description)}</p>
         <input id="pkg-symbol-filter" type="search" class="search-input" placeholder="Filter ${escapeHtml(pkg.name)} symbols..." aria-label="Filter symbols in ${escapeHtml(pkg.name)}" />
+        <p id="pkg-filter-status" class="muted" aria-live="polite">Showing ${pkg.symbolCount} of ${pkg.symbolCount} exports</p>
       </section>
 
       <div class="pkg-layout">
@@ -702,13 +759,20 @@ function buildPackageApiHtml(pkg) {
     <script>
       (function () {
         var input = document.getElementById('pkg-symbol-filter');
+        var status = document.getElementById('pkg-filter-status');
         var cards = Array.prototype.slice.call(document.querySelectorAll('#pkg-symbol-list article'));
         if (!input) return;
         input.addEventListener('input', function () {
           var q = String(input.value || '').trim().toLowerCase();
+          var visible = 0;
           for (var i = 0; i < cards.length; i += 1) {
             var text = cards[i].getAttribute('data-symbol') || '';
-            cards[i].classList.toggle('is-hidden', Boolean(q) && text.indexOf(q) === -1);
+            var hidden = Boolean(q) && text.indexOf(q) === -1;
+            cards[i].classList.toggle('is-hidden', hidden);
+            if (!hidden) visible += 1;
+          }
+          if (status) {
+            status.textContent = 'Showing ' + visible + ' of ' + cards.length + ' exports';
           }
         });
       })();

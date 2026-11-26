@@ -1,4 +1,4 @@
-import { Component, computed, signal } from '@angular/core';
+import { Component, computed, ElementRef, signal, viewChildren } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { PIPELINE_STAGES, type PipelineStage } from '../data/architecture-pillars.data';
 
@@ -17,14 +17,19 @@ import { PIPELINE_STAGES, type PipelineStage } from '../data/architecture-pillar
       </header>
 
       <div class="stage-tabs" role="tablist" aria-label="Pipeline stages">
-        @for (stage of stages; track stage.id) {
+        @for (stage of stages; track stage.id; let idx = $index) {
           <button
+            #tabBtn
             type="button"
             role="tab"
+            [id]="'tab-' + stage.id"
             class="stage-tab"
             [class.is-selected]="selectedId() === stage.id"
             [attr.aria-selected]="selectedId() === stage.id"
+            [attr.aria-controls]="'panel-' + stage.id"
+            [attr.tabindex]="selectedId() === stage.id ? 0 : -1"
             (click)="selectedId.set(stage.id)"
+            (keydown)="onTabKeydown($event, idx)"
           >
             <span class="stage-step">{{ stage.step }}</span>
             <span class="stage-title">{{ stage.title }}</span>
@@ -33,7 +38,13 @@ import { PIPELINE_STAGES, type PipelineStage } from '../data/architecture-pillar
       </div>
 
       @if (activeStage(); as stage) {
-        <section class="card stage-detail" role="tabpanel" [attr.aria-label]="stage.title">
+        <section
+          class="card stage-detail"
+          role="tabpanel"
+          tabindex="0"
+          [id]="'panel-' + stage.id"
+          [attr.aria-labelledby]="'tab-' + stage.id"
+        >
           <div class="detail-meta">
             <span class="eyebrow">Stage {{ stage.step }}</span>
             <div class="module-chips">
@@ -52,7 +63,7 @@ import { PIPELINE_STAGES, type PipelineStage } from '../data/architecture-pillar
         <article class="card">
           <h3>Generational Arena Safety</h3>
           <p>
-            Every widget lives in a generational <code>NodeHandle</code> slot table rather than
+            Every widget lives in a generational <code>NodeId</code> slot table rather than
             reference-counted cycles, preventing use-after-destroy crashes during rapid view swaps.
           </p>
         </article>
@@ -65,11 +76,11 @@ import { PIPELINE_STAGES, type PipelineStage } from '../data/architecture-pillar
           </p>
         </article>
         <article class="card">
-          <h3>Capability-Based Desktop Security</h3>
+          <h3>GPU-Aware Native Toolkits</h3>
           <p>
-            Filesystem, SQLite, shell, tray, and HTTP capabilities are statically scanned via
-            <code>ng-desktop permissions</code> and enforced by Rust guards inside
-            <code>src/desktop/</code>.
+            GTK4 leverages GSK GPU acceleration (Vulkan/GL), AppKit targets WindowServer Metal
+            compositing, and Windows drives DWM-composited HWNDs with explicit GPU layer/backend
+            options planned on the roadmap.
           </p>
         </article>
       </section>
@@ -197,8 +208,37 @@ import { PIPELINE_STAGES, type PipelineStage } from '../data/architecture-pillar
 export class ArchitecturePage {
   readonly stages = PIPELINE_STAGES;
   readonly selectedId = signal<string>(PIPELINE_STAGES[0]?.id ?? 'angular-ivy');
+  private readonly tabButtons = viewChildren<ElementRef<HTMLButtonElement>>('tabBtn');
 
   readonly activeStage = computed<PipelineStage | undefined>(() =>
     this.stages.find((stage) => stage.id === this.selectedId()),
   );
+
+  onTabKeydown(event: KeyboardEvent, currentIndex: number): void {
+    const count = this.stages.length;
+    if (count === 0) {
+      return;
+    }
+    let nextIndex: number | null = null;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      nextIndex = (currentIndex + 1) % count;
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      nextIndex = (currentIndex - 1 + count) % count;
+    } else if (event.key === 'Home') {
+      nextIndex = 0;
+    } else if (event.key === 'End') {
+      nextIndex = count - 1;
+    }
+
+    if (nextIndex === null) {
+      return;
+    }
+    event.preventDefault();
+    const targetStage = this.stages[nextIndex];
+    if (!targetStage) {
+      return;
+    }
+    this.selectedId.set(targetStage.id);
+    this.tabButtons()[nextIndex]?.nativeElement.focus();
+  }
 }

@@ -13,7 +13,9 @@ export const PLAYGROUND_PRESETS: readonly PlaygroundPreset[] = [
     description:
       'Native window, Libadwaita header bar, stack container, label, and action buttons.',
     template: `<ng-window title="Counter Studio" [default-width]="720" [default-height]="460">
-  <ng-header-bar title="Counter Studio"></ng-header-bar>
+  <ng-header-bar title="Counter Studio">
+    <ng-button label="Increment (+1)" class="primary-action" (click)="count.update(n => n + 1)"></ng-button>
+  </ng-header-bar>
   <ng-box orientation="vertical" spacing="16" class="counter-shell">
     <ng-label text="Native GTK4 / WinUI 3 / AppKit Counter" class="headline"></ng-label>
     <ng-level-bar [value]="42" [min]="0" [max]="100"></ng-level-bar>
@@ -33,7 +35,7 @@ export const PLAYGROUND_PRESETS: readonly PlaygroundPreset[] = [
   :root {
     --card-bg: #181a24;
     --card-ink: #f4f4f6;
-    --accent-bg: #ff4d79;
+    --accent-bg: #b80036;
   }
 }
 
@@ -62,12 +64,12 @@ export const PLAYGROUND_PRESETS: readonly PlaygroundPreset[] = [
     id: 'theme-tokens',
     name: 'Dark / Light CSS Tokens',
     description:
-      'Uses `:root` variables and `@media (prefers-color-scheme: dark)` synthesized by `@ng-desktop/platform`.',
-    template: `<ng-clamp [maximum-size]="640">
+      'Uses :root variables and @media (prefers-color-scheme: dark) synthesized by @ng-desktop/platform.',
+    template: `<ng-clamp [max-size]="640">
   <ng-box orientation="vertical" spacing="14" class="panel-card">
     <ng-label text="Reactive System Palette" class="panel-title"></ng-label>
     <ng-switch [checked]="true"></ng-switch>
-    <ng-progress-bar [fraction]="0.78" [show-text]="true"></ng-progress-bar>
+    <ng-progress-bar [value]="0.78"></ng-progress-bar>
   </ng-box>
 </ng-clamp>`,
     css: `:root {
@@ -100,13 +102,13 @@ export const PLAYGROUND_PRESETS: readonly PlaygroundPreset[] = [
     id: 'signal-forms',
     name: 'Signal Forms Settings',
     description:
-      'Native entry, password box, dropdown selector, checkbox, and slider mapped cleanly.',
+      'Native entry, password box, CSV dropdown selector, checkbox, and slider mapped cleanly.',
     template: `<ng-box orientation="vertical" spacing="12" class="settings-form">
   <ng-label text="Workspace Preferences" class="form-title"></ng-label>
   <ng-entry placeholder="App Display Name"></ng-entry>
   <ng-password-entry placeholder="Signing Certificate Secret" [show-peek-icon]="true"></ng-password-entry>
-  <ng-select [options]="['Linux GTK4', 'Windows WinUI 3', 'macOS AppKit']"></ng-select>
-  <ng-check-button label="Enable SQLite WAL Cache" [checked]="true"></ng-check-button>
+  <ng-select options="Linux GTK4,Windows WinUI 3,macOS AppKit" [selected]="0"></ng-select>
+  <ng-checkbox label="Enable SQLite WAL Cache" [checked]="true"></ng-checkbox>
   <ng-slider [value]="75" [min]="0" [max]="100"></ng-slider>
 </ng-box>`,
     css: `.settings-form {
@@ -126,16 +128,16 @@ export const PLAYGROUND_PRESETS: readonly PlaygroundPreset[] = [
     id: 'pokedex-detail',
     name: 'Pokédex Master-Detail',
     description:
-      'Master-detail `ng-paned` split with search bar, virtual grid host, and detail scroll view.',
+      'Master-detail ng-paned split with search bar, responsive flow grid, and detail scroll view.',
     template: `<ng-paned orientation="horizontal" [position]="320">
   <ng-box orientation="vertical" spacing="10" class="sidebar-pane">
     <ng-search-entry placeholder="Filter Pokémon (Ctrl+F)"></ng-search-entry>
-    <ng-flow [min-children-per-line]="2" [column-spacing]="8">
+    <ng-flow [min-children]="2" [column-spacing]="8">
       <ng-button label="#025 Pikachu"></ng-button>
       <ng-button label="#006 Charizard"></ng-button>
     </ng-flow>
   </ng-box>
-  <ng-scroll vscrollbar-policy="automatic">
+  <ng-scroll [min-height]="360">
     <ng-box orientation="vertical" spacing="12" class="detail-pane">
       <ng-label text="#025 Pikachu — Electric Type" class="poke-heading"></ng-label>
       <ng-level-bar [value]="90" [min]="0" [max]="150"></ng-level-bar>

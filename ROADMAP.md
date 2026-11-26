@@ -296,3 +296,18 @@ Following the completion of Phase 16 (`v0.6.0`) and Phase 17 (`v0.7.0`, GitHub P
    - [x] Bundled `@ng-desktop/*` TypeScript API reference (`/api-ts/` across all 7 packages), `cargo doc --no-deps` Rust engine documentation (`/api-rust/`), `.nojekyll`, and `404.html` SPA routing fallback into `dist/ng-desktop-docs/browser`.
 4. **GitHub Pages Continuous Deployment (`.github/workflows/docs-pages.yml`):**
    - [x] Configured continuous build and deployment of `dist/ng-desktop-docs/browser` to `https://gaspar1992.github.io/ng-desktop-engine/` via `actions/configure-pages@v5`, `upload-pages-artifact@v3`, and `deploy-pages@v4`, with CI verification in `.github/workflows/ci.yml`.
+
+### Phase 18 (`v0.7.x+`): GPU-Accelerated Rendering Parity & Commercial Signing (Planned 🎯)
+
+Following our cross-OS rendering backend audit (`src/platforms/`):
+
+| OS Backend                       | Current Rendering Path                        | GPU Status Today                                                                                       | Target Hardening & Phase 18 Enhancement                                                                                                                                                |
+| :------------------------------- | :-------------------------------------------- | :----------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Linux (GTK4 / Libadwaita)**    | `AdwApplicationWindow` + GSK (`libgtk-4`)     | **GPU-accelerated by default** (`vulkan` / `ngl` / `gl`; CPU `cairo` in Xvfb headless)                 | Expose declarative `renderer` / `gpu` config in `angular.json` (`GSK_RENDERER`) and startup GPU telemetry.                                                                             |
+| **macOS (AppKit Cocoa)**         | `NSWindow` + `NSView` (`WindowServer`)        | **Partial** (WindowServer Metal compositing, but subviews lack explicit `setWantsLayer:YES` `CALayer`) | Enable `setWantsLayer:YES` layer-backed `CALayer` views in `appkit_sys.rs` + Core Animation GPU borders, radii, opacity, and transitions.                                              |
+| **Windows (Win32 `user32.dll`)** | Classic GDI `HWND` (`STATIC`/`BUTTON`/`EDIT`) | **CPU-rasterized controls composited by DWM** (not true WinUI 3 XAML visual trees yet)                 | Wire immediate DWM dark-mode/compositing attributes, then upgrade to **Direct2D + DirectComposition** (`d2d1.dll` + `dcomp.dll`) / **WinUI 3 XAML Islands** (`Microsoft.UI.Xaml.dll`). |
+
+- [ ] **Cross-OS GPU Backend Configuration:** Add optional `{ "gpu": "auto" | "vulkan" | "gl" | "metal" | "d2d" | "software" }` configuration across `angular.json`, `AngularNativeConfig`, and startup diagnostics.
+- [ ] **macOS `CALayer` & Core Animation Pipeline:** Enable `wantsLayer = YES` on AppKit widget views so backgrounds, borders, rounded corners, opacity, and CSS transitions execute on Metal layers.
+- [ ] **Windows Hardware Surface Upgrade:** Add `dwmapi.dll` dark-mode / composited window hints and implement Direct2D + DirectComposition / WinUI 3 XAML Islands rendering surfaces.
+- [ ] **Commercial Signing & Store Notarization:** Wire Authenticode (`signtool.exe`) and Apple Developer ID (`notarytool` + `stapler`) secrets into `.github/workflows/release.yml`.

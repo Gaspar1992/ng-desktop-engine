@@ -115,11 +115,11 @@ export const PRIMITIVES_CATALOG: readonly PrimitiveSpec[] = [
     gtk4: 'GtkScrolledWindow',
     winui3: 'ScrollViewer',
     appkit: 'NSScrollView',
-    attributes: ['hscrollbar-policy', 'vscrollbar-policy', 'scroll-top'],
-    events: ['scroll'],
+    attributes: ['min-height'],
+    events: ['scroll', 'scrollTop', 'scrollBottom', 'scrollEdge'],
     summary:
       'Scrollable viewport emitting live offset and viewport-height telemetry to drive virtual lists and grids at 60fps.',
-    snippet: `<ng-scroll vscrollbar-policy="automatic" (scroll)="onViewportScroll($event)">
+    snippet: `<ng-scroll [min-height]="360" (scroll)="onViewportScroll($event)">
   <ng-box orientation="vertical" spacing="8">
     <ng-label text="Scrollable native body"></ng-label>
   </ng-box>
@@ -170,11 +170,11 @@ export const PRIMITIVES_CATALOG: readonly PrimitiveSpec[] = [
     gtk4: 'GtkFlowBox',
     winui3: 'ItemsRepeater',
     appkit: 'NSCollectionView',
-    attributes: ['min-children-per-line', 'max-children-per-line', 'row-spacing', 'column-spacing'],
-    events: ['child-activated'],
+    attributes: ['min-children', 'max-children', 'row-spacing', 'column-spacing', 'homogeneous'],
+    events: [],
     summary:
       'Responsive wrapping container that automatically flows cards or badges across multiple lines based on viewport width.',
-    snippet: `<ng-flow [min-children-per-line]="2" [max-children-per-line]="5" [column-spacing]="10">
+    snippet: `<ng-flow [min-children]="2" [max-children]="5" [column-spacing]="10">
   @for (tag of tags(); track tag) {
     <ng-button [label]="tag"></ng-button>
   }
@@ -209,11 +209,11 @@ export const PRIMITIVES_CATALOG: readonly PrimitiveSpec[] = [
     gtk4: 'GtkStack',
     winui3: 'NavigationView',
     appkit: 'NSTabView',
-    attributes: ['visible-child-name', 'transition-type', 'transition-duration'],
+    attributes: ['visible-child', 'transition'],
     events: [],
     summary:
       'Single-active-child container with native transition animations backing `NativeStackRouteReuseStrategy` views.',
-    snippet: `<ng-stack [visible-child-name]="activeTab()" transition-type="slide-left-right">
+    snippet: `<ng-stack [visible-child]="activeTab()" transition="slide-left-right">
   <ng-box name="overview"><ng-label text="Overview"></ng-label></ng-box>
   <ng-box name="logs"><ng-label text="Live Logs"></ng-label></ng-box>
 </ng-stack>`,
@@ -246,11 +246,11 @@ export const PRIMITIVES_CATALOG: readonly PrimitiveSpec[] = [
     gtk4: 'AdwClamp',
     winui3: 'Grid',
     appkit: 'NSBox',
-    attributes: ['maximum-size', 'tightening-threshold'],
+    attributes: ['max-size', 'maximum-size'],
     events: [],
     summary:
       'Centered maximum-width reading column container ensuring readable line lengths across ultrawide desktop displays.',
-    snippet: `<ng-clamp [maximum-size]="760" [tightening-threshold]="540">
+    snippet: `<ng-clamp [max-size]="760">
   <ng-box orientation="vertical" spacing="16">
     <ng-label text="Centered preferences form"></ng-label>
   </ng-box>
@@ -363,10 +363,10 @@ export const PRIMITIVES_CATALOG: readonly PrimitiveSpec[] = [
     gtk4: 'GtkSpinner',
     winui3: 'ProgressRing',
     appkit: 'NSProgressIndicator',
-    attributes: ['spinning'],
+    attributes: ['active'],
     events: [],
     summary: 'Indeterminate OS-native loading ring animated directly by the toolkit compositor.',
-    snippet: `<ng-spinner [spinning]="loading()"></ng-spinner>`,
+    snippet: `<ng-spinner [active]="loading()"></ng-spinner>`,
   },
   {
     id: 'progress-bar',
@@ -377,11 +377,11 @@ export const PRIMITIVES_CATALOG: readonly PrimitiveSpec[] = [
     gtk4: 'GtkProgressBar',
     winui3: 'ProgressBar',
     appkit: 'NSProgressIndicator',
-    attributes: ['fraction', 'text', 'show-text'],
+    attributes: ['value', 'indeterminate'],
     events: [],
     summary:
-      'Determinate progress bar displaying normalized `0.0–1.0` completion fractions and optional inline text.',
-    snippet: `<ng-progress-bar [fraction]="downloadProgress()" [show-text]="true"></ng-progress-bar>`,
+      'Determinate progress bar displaying normalized `0.0–1.0` completion fractions and indeterminate mode.',
+    snippet: `<ng-progress-bar [value]="downloadProgress()" [indeterminate]="false"></ng-progress-bar>`,
   },
   {
     id: 'entry',
@@ -476,8 +476,8 @@ export const PRIMITIVES_CATALOG: readonly PrimitiveSpec[] = [
     id: 'check-button',
     name: 'CheckButton',
     category: 'Form Inputs',
-    canonicalTag: 'ng-check-button',
-    aliases: ['ng-checkbox', 'ng-check', 'gtk-check-button'],
+    canonicalTag: 'ng-checkbox',
+    aliases: ['ng-check', 'gtk-check-button'],
     gtk4: 'GtkCheckButton',
     winui3: 'CheckBox',
     appkit: 'NSButtonCheckbox',
@@ -485,7 +485,7 @@ export const PRIMITIVES_CATALOG: readonly PrimitiveSpec[] = [
     events: ['toggled', 'change'],
     summary:
       'Standard labeled checkbox supporting Signal Forms boolean validation and keyboard Space activation.',
-    snippet: `<ng-check-button label="Enable SQLite WAL journal" [checked]="walEnabled()" (toggled)="walEnabled.set($event.checked)"></ng-check-button>`,
+    snippet: `<ng-checkbox label="Enable SQLite WAL journal" [checked]="walEnabled()" (toggled)="walEnabled.set($event.checked)"></ng-checkbox>`,
   },
   {
     id: 'slider',
@@ -511,10 +511,10 @@ export const PRIMITIVES_CATALOG: readonly PrimitiveSpec[] = [
     gtk4: 'GtkDropDown',
     winui3: 'ComboBox',
     appkit: 'NSPopUpButton',
-    attributes: ['options', 'selected', 'selected-index'],
-    events: ['change', 'selection-changed'],
+    attributes: ['options', 'selected'],
+    events: ['change', 'valueChange'],
     summary:
-      'Native popup selector accepting an array of string options and emitting the active choice index and label.',
-    snippet: `<ng-select [options]="['Auto (OS)', 'Light', 'Dark']" [selected]="themeMode()" (change)="themeMode.set($event.value)"></ng-select>`,
+      'Native popup selector accepting CSV option strings (`Auto,Light,Dark`) and emitting the selected index.',
+    snippet: `<ng-select options="Auto (OS),Light,Dark" [selected]="themeIndex()" (valueChange)="themeIndex.set($event.value)"></ng-select>`,
   },
 ];

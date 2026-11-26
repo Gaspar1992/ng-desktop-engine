@@ -21,9 +21,9 @@ export const PIPELINE_STAGES: readonly PipelineStage[] = [
   {
     id: 'ngb-compiler',
     step: '02',
-    title: 'AOT `.ngb` Bytecode & CSS Compiler',
+    title: 'AOT .ngb Bytecode & CSS Compiler',
     summary:
-      'Static templates, scoped ViewEncapsulation rules, and `:root` theme variables compile into compact binary `.ngb` instructions.',
+      'Static templates, scoped ViewEncapsulation rules, and :root theme variables compile into compact .ngb instructions.',
     modules: ['packages/builders-native', 'oxc-parser', 'postcss'],
     detail:
       'Build-time style extraction parses Flexbox/Grid rules, pseudo-classes (:hover, :focus, :active, :disabled), opacity, transitions, and CSS custom property dark/light variants into pre-validated opcodes alongside SHA-256 asset hashing.',
@@ -33,40 +33,39 @@ export const PIPELINE_STAGES: readonly PipelineStage[] = [
     step: '03',
     title: 'Dual JS Engine (JavaScriptCore / QuickJS-NG)',
     summary:
-      'Embeds OS JavaScriptCore on macOS or QuickJS-NG in ~2MB memory — no Node process or V8 isolate fleet required.',
+      'Embeds OS JavaScriptCore or QuickJS-NG in minimal RAM — no Chromium or Node child process required.',
     modules: ['src/runtime/quickjs_engine.rs', 'src/runtime/jsc_sys.rs'],
     detail:
-      'Native host functions (`__ng_dispatch`, `__ng_register_style`, `__ng_http_request`, `__ng_sqlite_exec`) cross cleanly from JS into bounded Rust queues with microtask draining per frame.',
+      'Native host functions cross cleanly from JS into bounded Rust queues with microtask draining per frame.',
   },
   {
     id: 'arena-queue',
     step: '04',
-    title: 'Generational Arena & CommandQueue',
+    title: 'Generational Arena & Command Queue',
     summary:
-      'Safe Rust tree ownership using generational handles avoids raw pointers, cycles, and main-thread stalls.',
-    modules: ['src/engine/arena.rs', 'src/engine/command_queue.rs'],
+      'Safe Rust tree ownership using generational NodeId handles avoids raw pointers, cycles, and main-thread stalls.',
+    modules: ['src/engine/arena.rs', 'src/engine/commands.rs'],
     detail:
-      'Every widget lives in a generational SlotMap (`NodeHandle`) with O(1) stale-handle protection. UI mutations batch in `CommandQueue` and reconcile cleanly onto the OS UI toolkit.',
+      'Every widget lives in a generational Arena (index + generation) with runtime BorrowState checking. UI mutations batch into RenderCommand frames and reconcile cleanly onto the OS UI toolkit.',
   },
   {
     id: 'layout-css',
     step: '05',
     title: 'Shared Layout Solver & Style Engine',
     summary:
-      'Deterministic 1D Flexbox + 2D Grid geometry solver shared across Linux, Windows, and macOS.',
-    modules: ['src/engine/layout_solver.rs', 'src/engine/styles.rs'],
+      'Deterministic 1D Flexbox + 2D Grid geometry solver shared across Windows and macOS alongside GTK4 CSS.',
+    modules: ['src/platforms/layout_solver.rs', 'src/engine/styles.rs'],
     detail:
-      'Viewport resize, `ng-clamp` tightening, `ng-paned` split positions, and `@media (prefers-color-scheme)` token cascades compute consistent bounding rects across WinUI 3 and AppKit while GTK4 integrates via CSS provider classes.',
+      'Viewport resize, ng-clamp tightening, ng-paned split positions, and @media (prefers-color-scheme) token cascades compute consistent bounding rects in layout_solver.rs while GTK4 integrates natively via GSK GPU/CSS providers.',
   },
   {
     id: 'native-backends',
     step: '06',
-    title: 'GTK4, WinUI 3, AppKit & OS Packaging',
-    summary:
-      'Direct native OS widgets plus zero-config `.deb`, `AppImage`, `Flatpak`, `.msix`, and `.dmg` installers.',
+    title: 'GTK4, Win32/WinUI, AppKit & OS Packaging',
+    summary: 'Direct native OS widgets plus .deb, AppImage, Flatpak, .msix, and .dmg installers.',
     modules: ['src/platforms/', 'src/packager/builders.rs'],
     detail:
-      'Every UI element is a true OS control (`AdwApplicationWindow`, `ContentDialog`, `NSStackView`) — inheriting accessibility, IME, smooth scrolling, and packaging directly into distributable native installers.',
+      'Linux GTK4 renders through GPU-accelerated GSK (Vulkan/GL), macOS AppKit composites via WindowServer Metal layers, Windows drives native DWM-composited HWNDs, and builders package native OS installers.',
   },
 ];
 
@@ -104,7 +103,7 @@ export const COMPARISON_ROWS: readonly FrameworkComparisonRow[] = [
   },
   {
     aspect: 'HTML/CSS Tax',
-    ngDesktop: 'Zero WebView — compiled `.ngb` & native styles',
+    ngDesktop: 'Zero WebView — compiled .ngb & native styles',
     electron: 'Full browser runtime + CSS compositor',
     tauri: 'Full WebView runtime + OS browser quirks',
   },
