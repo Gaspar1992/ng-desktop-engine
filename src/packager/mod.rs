@@ -346,7 +346,7 @@ pub fn generate_windows_appx_manifest_with_permissions(
     let app_runtime_attrs = if perms.full_system_access {
         r#"EntryPoint="Windows.FullTrustApplication""#
     } else {
-        r#"uap10:RuntimeBehavior="packagedClassicApp" uap10:TrustLevel="appContainer""#
+        r#"EntryPoint="Windows.PartialTrustApplication" uap10:RuntimeBehavior="packagedClassicApp" uap10:TrustLevel="appContainer""#
     };
 
     format!(
@@ -360,7 +360,7 @@ pub fn generate_windows_appx_manifest_with_permissions(
     <Logo>Assets\Logo.png</Logo>
   </Properties>
   <Dependencies>
-    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
   </Dependencies>
   <Resources>
     <Resource Language="en-us" />
@@ -576,8 +576,10 @@ mod tests {
         assert!(win_manifest.contains("Identity Name=\"NgNative.my-notes\""));
         assert!(win_manifest.contains("Version=\"0.4.0.0\""));
         assert!(win_manifest.contains("Executable=\"my-notes.exe\""));
+        assert!(win_manifest.contains("EntryPoint=\"Windows.PartialTrustApplication\""));
         assert!(win_manifest.contains("uap10:RuntimeBehavior=\"packagedClassicApp\""));
         assert!(win_manifest.contains("uap10:TrustLevel=\"appContainer\""));
+        assert!(win_manifest.contains("MinVersion=\"10.0.19041.0\""));
         assert!(!win_manifest.contains("NgDesktop.SandboxedApp"));
         assert!(!win_manifest.contains("runFullTrust"));
         assert!(!win_manifest.contains("internetClient"));
