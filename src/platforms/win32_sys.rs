@@ -112,6 +112,57 @@ pub fn win32_show_cmd(visible: bool) -> i32 {
     if in_ci { 4 } else { 5 } // SW_SHOWNOACTIVATE vs SW_SHOW
 }
 
+pub const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
+pub const DWMWCP_DEFAULT: i32 = 0;
+pub const DWMWCP_DONOTROUND: i32 = 1;
+pub const DWMWCP_ROUND: i32 = 2;
+pub const DWMWCP_ROUNDSMALL: i32 = 3;
+
+pub const DWMSBT_AUTO: i32 = 0;
+pub const DWMSBT_NONE: i32 = 1;
+pub const DWMSBT_MAINWINDOW: i32 = 2;
+pub const DWMSBT_TRANSIENTWINDOW: i32 = 3;
+pub const DWMSBT_TABBEDWINDOW: i32 = 4;
+
+/// Resolves Windows 11 `DWMWA_WINDOW_CORNER_PREFERENCE` from inline CSS `border-radius`.
+#[must_use]
+pub fn resolve_dwm_corner_preference(style_css: &str) -> i32 {
+    for decl in style_css.split(';') {
+        let Some((key, val)) = decl.split_once(':') else {
+            continue;
+        };
+        if key.trim().eq_ignore_ascii_case("border-radius") {
+            let trimmed = val.trim();
+            let numeric = trimmed.strip_suffix("px").map_or(trimmed, str::trim);
+            if let Ok(radius) = numeric.parse::<f64>()
+                && radius.is_finite()
+                && radius >= 0.0
+            {
+                if radius == 0.0 {
+                    return DWMWCP_DONOTROUND;
+                }
+                if radius <= 5.0 {
+                    return DWMWCP_ROUNDSMALL;
+                }
+                return DWMWCP_ROUND;
+            }
+        }
+    }
+    DWMWCP_DEFAULT
+}
+
+/// Resolves Windows 11 `DWMWA_SYSTEMBACKDROP_TYPE` from a declarative backdrop name.
+#[must_use]
+pub fn resolve_dwm_backdrop_type(backdrop: &str) -> i32 {
+    match backdrop.trim().to_ascii_lowercase().as_str() {
+        "mica" | "mainwindow" => DWMSBT_MAINWINDOW,
+        "acrylic" | "transient" => DWMSBT_TRANSIENTWINDOW,
+        "tabbed" | "mica-alt" => DWMSBT_TABBEDWINDOW,
+        "none" => DWMSBT_NONE,
+        _ => DWMSBT_AUTO,
+    }
+}
+
 #[cfg(target_os = "windows")]
 const WS_OVERLAPPEDWINDOW: u32 = 0x00CF_0000;
 #[cfg(target_os = "windows")]
@@ -223,8 +274,6 @@ const DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1: u32 = 19;
 const DWMWA_USE_IMMERSIVE_DARK_MODE: u32 = 20;
 #[cfg(target_os = "windows")]
 const DWMWA_SYSTEMBACKDROP_TYPE: u32 = 38;
-#[cfg(target_os = "windows")]
-const DWMSBT_MAINWINDOW: c_int = 2;
 
 #[cfg(target_os = "windows")]
 #[repr(C)]
@@ -889,6 +938,44 @@ impl Win32Sys {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         coalesce_frame_events(std::mem::take(&mut *guard))
     }
+
+    pub(super) fn apply_dwm_composition_attrs(
+        &self,
+        handle: Win32Handle,
+        corner_pref: Option<i32>,
+        backdrop: Option<i32>,
+    ) {
+        if !crate::platforms::GpuRendererPreference::from_env().prefers_hardware_acceleration() {
+            return;
+        }
+        let Some(dwm_set) = self.dwm_set_window_attribute else {
+            return;
+        };
+        let hwnd = handle.0 as *mut c_void;
+        let dword_size = u32::try_from(size_of::<c_int>()).unwrap_or(4);
+        if let Some(corner) = corner_pref {
+            let val: c_int = corner;
+            unsafe {
+                let _ = dwm_set(
+                    hwnd,
+                    DWMWA_WINDOW_CORNER_PREFERENCE,
+                    (&raw const val).cast::<c_void>(),
+                    dword_size,
+                );
+            }
+        }
+        if let Some(backdrop_val) = backdrop {
+            let val: c_int = backdrop_val;
+            unsafe {
+                let _ = dwm_set(
+                    hwnd,
+                    DWMWA_SYSTEMBACKDROP_TYPE,
+                    (&raw const val).cast::<c_void>(),
+                    dword_size,
+                );
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -912,5 +999,28 @@ mod tests {
 
         assert_eq!(win32_show_cmd(false), 0);
         assert!(matches!(win32_show_cmd(true), 4 | 5));
+    }
+
+    #[test]
+    fn resolves_dwm_corner_preference_and_backdrop_types() {
+        assert_eq!(
+            resolve_dwm_corner_preference("border-radius: 0px"),
+            DWMWCP_DONOTROUND
+        );
+        assert_eq!(
+            resolve_dwm_corner_preference("border-radius: 4px"),
+            DWMWCP_ROUNDSMALL
+        );
+        assert_eq!(
+            resolve_dwm_corner_preference("border-radius: 12px"),
+            DWMWCP_ROUND
+        );
+        assert_eq!(resolve_dwm_corner_preference("color: red"), DWMWCP_DEFAULT);
+
+        assert_eq!(resolve_dwm_backdrop_type("mica"), DWMSBT_MAINWINDOW);
+        assert_eq!(resolve_dwm_backdrop_type("acrylic"), DWMSBT_TRANSIENTWINDOW);
+        assert_eq!(resolve_dwm_backdrop_type("mica-alt"), DWMSBT_TABBEDWINDOW);
+        assert_eq!(resolve_dwm_backdrop_type("none"), DWMSBT_NONE);
+        assert_eq!(resolve_dwm_backdrop_type("auto"), DWMSBT_AUTO);
     }
 }

@@ -510,15 +510,25 @@ fn main() {
             js_runtime.js_engine().engine_name(),
             js_runtime.js_engine().is_jit_enabled()
         );
+        eprintln!(
+            "GPU Compositor -> '{}' ({})",
+            engine.backend().backend_name(),
+            engine.backend().gpu_telemetry_summary()
+        );
         let _server_state = attach_server_worker_if_present(&cfg, &js_runtime, true);
         run_test_ipc_mode(&cfg, &mut engine, &mut js_runtime, defer_boot);
         return;
     }
 
     println!(
-        "Initialized JS Engine -> '{}' (JIT={})\n",
+        "Initialized JS Engine -> '{}' (JIT={})",
         js_runtime.js_engine().engine_name(),
         js_runtime.js_engine().is_jit_enabled()
+    );
+    println!(
+        "GPU Compositor -> '{}' ({})\n",
+        engine.backend().backend_name(),
+        engine.backend().gpu_telemetry_summary()
     );
 
     let server_state = attach_server_worker_if_present(&cfg, &js_runtime, false);

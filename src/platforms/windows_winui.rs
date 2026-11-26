@@ -7,7 +7,10 @@ use super::layout_solver::compute_parent_relative_bounds;
 use super::retained_backend::{RetainedNativeDriver, RetainedSceneBackend};
 use super::scene_state::{NativeSceneNode, NativeSceneState};
 #[cfg(target_os = "windows")]
-use super::win32_sys::{Win32Handle, Win32Sys, is_headless_env};
+use super::win32_sys::{
+    Win32Handle, Win32Sys, is_headless_env, resolve_dwm_backdrop_type,
+    resolve_dwm_corner_preference,
+};
 use crate::engine::{EventMask, NativeEvent, NodeId, RenderCommand};
 #[cfg(target_os = "windows")]
 use crate::ffi_dl::DynLib;
@@ -349,6 +352,33 @@ impl WinUiFfiDriver {
                         "close-window" if NativeSceneState::parse_truthy_attr(value) => {
                             self.unregister_node(*node);
                         }
+                        "style" if self.live_toplevels.contains(node) => {
+                            if value.to_ascii_lowercase().contains("border-radius")
+                                && let Some(win32) = &self.win32
+                            {
+                                win32.apply_dwm_composition_attrs(
+                                    h,
+                                    Some(resolve_dwm_corner_preference(value)),
+                                    None,
+                                );
+                            }
+                        }
+                        "backdrop" | "window-backdrop" if self.live_toplevels.contains(node) => {
+                            if let Some(win32) = &self.win32 {
+                                win32.apply_dwm_composition_attrs(
+                                    h,
+                                    None,
+                                    Some(resolve_dwm_backdrop_type(value)),
+                                );
+                            }
+                        }
+                        "theme" | "dark-mode" if self.live_toplevels.contains(node) => {
+                            if let Some(win32) = &self.win32 {
+                                let dark = value.eq_ignore_ascii_case("dark")
+                                    || NativeSceneState::parse_truthy_attr(value);
+                                win32.apply_dwm_theme(h, dark);
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -649,5 +679,21 @@ impl PlatformBackend for WinUiBackend {
 
     fn step_native_events(&self, _may_block: bool) -> Vec<NativeEvent> {
         Self::step_native_events(self)
+    }
+
+    fn gpu_telemetry_summary(&self) -> String {
+        let pref = super::GpuRendererPreference::from_env();
+        let accel = pref.prefers_hardware_acceleration();
+        let compositor = if accel {
+            "DWM/DirectComposition"
+        } else {
+            "Software"
+        };
+        format!(
+            "preference={} compositor={} hardware_accel={}",
+            pref.as_str(),
+            compositor,
+            accel
+        )
     }
 }

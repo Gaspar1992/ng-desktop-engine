@@ -219,9 +219,9 @@ npx ng-desktop run
 - **Node.js** `>= 24` & **pnpm** `>= 11`
 - **Linux Desktop (for live GUI & full FFI):** `libgtk-4-1`, `libadwaita-1-0`, `libjavascriptcoregtk-6.0-1`, `libsoup-3.0-0`, `libsqlite3-0`.
 
-### GPU Rendering Configuration (`NG_DESKTOP_GPU_BACKEND`)
+### GPU Rendering Configuration (`NG_DESKTOP_GPU_BACKEND` / `angular.json` `gpu` / `--gpu`)
 
-Override the native GPU/compositor backend at launch with `NG_DESKTOP_GPU_BACKEND`:
+Configure the native GPU/compositor backend declaratively in `angular.json` (`"gpu": "vulkan"`), via `--gpu <backend>`, or at launch with `NG_DESKTOP_GPU_BACKEND`:
 
 - `auto` (default): hardware acceleration enabled (`GSK_RENDERER` OS default on Linux, Metal `setWantsLayer:YES` on macOS, DWM compositing + backdrop on Windows).
 - `vulkan` / `gl` / `ngl`: sets `GSK_RENDERER` on Linux GTK4 before toolkit initialization.

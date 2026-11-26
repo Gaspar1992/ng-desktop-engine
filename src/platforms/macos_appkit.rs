@@ -451,6 +451,9 @@ impl AppKitFfiDriver {
                                 sys.close_window(h);
                             }
                         }
+                        "style" => {
+                            sys.apply_layer_style(h, self.live_toplevels.contains(node), value);
+                        }
                         _ => {}
                     }
                 }
@@ -757,5 +760,21 @@ impl PlatformBackend for MacOsAppKitBackend {
 
     fn step_native_events(&self, _may_block: bool) -> Vec<NativeEvent> {
         Self::step_native_events(self)
+    }
+
+    fn gpu_telemetry_summary(&self) -> String {
+        let pref = super::GpuRendererPreference::from_env();
+        let accel = pref.prefers_hardware_acceleration();
+        let compositor = if accel {
+            "CoreAnimation/Metal"
+        } else {
+            "Software"
+        };
+        format!(
+            "preference={} compositor={} hardware_accel={}",
+            pref.as_str(),
+            compositor,
+            accel
+        )
     }
 }

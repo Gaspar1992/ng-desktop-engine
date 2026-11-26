@@ -28,6 +28,7 @@ pub struct AngularNativeConfig {
     pub js_engine: String,
     pub output_path: String,
     pub icon_search_dir: String,
+    pub gpu_backend: String,
     pub permissions: AppPermissions,
 }
 
@@ -125,6 +126,7 @@ impl AngularNativeConfig {
             js_engine,
             output_path,
             icon_search_dir,
+            gpu_backend: String::from("auto"),
             permissions: AppPermissions::minimal(),
         }
     }
@@ -166,6 +168,8 @@ impl AngularNativeConfig {
         let target_override = extract_cli_flag(args, "--target-platform")
             .or_else(|| extract_cli_flag(args, "--target"))
             .or_else(|| read_non_empty_env("NG_DESKTOP_TARGET_PLATFORM"));
+        let gpu_override = extract_cli_flag(args, "--gpu")
+            .or_else(|| read_non_empty_env("NG_DESKTOP_GPU_BACKEND"));
 
         let mut cfg = explicit_config
             .map_or_else(
@@ -181,6 +185,7 @@ impl AngularNativeConfig {
             version_override.as_deref(),
             output_override.as_deref(),
             target_override.as_deref(),
+            gpu_override.as_deref(),
         );
         if output_override.is_some() && cfg.permissions == AppPermissions::minimal() {
             cfg.merge_adjacent_manifests(None);
@@ -226,6 +231,12 @@ impl AngularNativeConfig {
             Some(explicit) => String::from(explicit),
         };
         let cpu = Self::lookup_string(&scopes, "cpu").unwrap_or_else(|| String::from("auto"));
+        let gpu_backend = Self::lookup_string(&scopes, "gpu")
+            .or_else(|| Self::lookup_string(&scopes, "gpuBackend"))
+            .map_or_else(
+                || String::from("auto"),
+                |raw| raw.trim().to_ascii_lowercase(),
+            );
         let permissions = Self::lookup_permissions(&scopes);
 
         Ok(Self {
@@ -238,6 +249,7 @@ impl AngularNativeConfig {
             js_engine,
             output_path,
             icon_search_dir,
+            gpu_backend,
             permissions,
         })
     }
@@ -421,6 +433,7 @@ impl AngularNativeConfig {
         version_override: Option<&str>,
         output_override: Option<&str>,
         target_override: Option<&str>,
+        gpu_override: Option<&str>,
     ) {
         if let Some(project) = project_override {
             let old_default_out = format!("dist/{}", self.project_name);
@@ -447,6 +460,9 @@ impl AngularNativeConfig {
             self.target_platform = String::from(target);
             self.os = os_from_target_platform(target);
             self.js_engine = resolve_default_js_engine(&self.os);
+        }
+        if let Some(gpu) = gpu_override {
+            self.gpu_backend = gpu.trim().to_ascii_lowercase();
         }
     }
 }
@@ -662,5 +678,39 @@ mod tests {
         assert!(docs.permissions.network);
         assert!(docs.permissions.full_system_access);
         assert!(!docs.permissions.sqlite);
+    }
+
+    #[test]
+    fn parses_gpu_backend_from_config_and_cli_override() {
+        let angular_json = r#"{
+            "projects": {
+                "gpu-app": {
+                    "architect": {
+                        "native": {
+                            "options": {
+                                "os": "linux",
+                                "gpu": "Vulkan"
+                            }
+                        }
+                    }
+                }
+            }
+        }"#;
+        let cfg = AngularNativeConfig::from_json_str(angular_json).unwrap();
+        assert_eq!(cfg.gpu_backend, "vulkan");
+
+        let runtime_json = r#"{
+            "projectName": "gpu-app",
+            "gpuBackend": "Metal"
+        }"#;
+        let runtime_cfg = AngularNativeConfig::from_json_str(runtime_json).unwrap();
+        assert_eq!(runtime_cfg.gpu_backend, "metal");
+
+        let cli_cfg = AngularNativeConfig::from_cli_and_env(&[
+            String::from("ng-native-engine"),
+            String::from("--gpu"),
+            String::from("Software"),
+        ]);
+        assert_eq!(cli_cfg.gpu_backend, "software");
     }
 }

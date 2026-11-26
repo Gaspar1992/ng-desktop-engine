@@ -36,6 +36,64 @@ pub struct NsRect {
     pub size: NsSize,
 }
 
+/// Core Animation (`CALayer`) GPU-accelerated styling properties parsed from inline CSS.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct CaLayerStyleProps {
+    pub corner_radius: Option<f64>,
+    pub opacity: Option<f32>,
+    pub border_width: Option<f64>,
+    pub masks_to_bounds: bool,
+}
+
+fn parse_css_px_or_number(raw: &str) -> Option<f64> {
+    let trimmed = raw.trim();
+    let numeric = trimmed.strip_suffix("px").map_or(trimmed, str::trim);
+    let parsed: f64 = numeric.parse().ok()?;
+    (parsed.is_finite() && parsed >= 0.0).then_some(parsed)
+}
+
+/// Parses GPU-composited `CALayer` styling attributes (`border-radius`, `opacity`, `border-width`, `overflow`).
+#[must_use]
+pub fn parse_calayer_style(style_css: &str) -> CaLayerStyleProps {
+    let mut props = CaLayerStyleProps::default();
+    let mut overflow_hidden = false;
+    for decl in style_css.split(';') {
+        let Some((key, val)) = decl.split_once(':') else {
+            continue;
+        };
+        let key = key.trim().to_ascii_lowercase();
+        let val = val.trim();
+        match key.as_str() {
+            "border-radius" => {
+                if let Some(radius) = parse_css_px_or_number(val) {
+                    props.corner_radius = Some(radius);
+                }
+            }
+            "opacity" => {
+                if let Ok(alpha) = val.parse::<f64>()
+                    && alpha.is_finite()
+                {
+                    #[allow(clippy::cast_possible_truncation)]
+                    {
+                        props.opacity = Some(alpha.clamp(0.0, 1.0) as f32);
+                    }
+                }
+            }
+            "border-width" => {
+                if let Some(width) = parse_css_px_or_number(val) {
+                    props.border_width = Some(width);
+                }
+            }
+            "overflow" => {
+                overflow_hidden = val.eq_ignore_ascii_case("hidden");
+            }
+            _ => {}
+        }
+    }
+    props.masks_to_bounds = props.corner_radius.is_some() || overflow_hidden;
+    props
+}
+
 /// Opaque AppKit Objective-C object (`NSWindow` / `NSPanel` / `NSView`) handle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AppKitHandle(pub(super) usize);
@@ -1048,6 +1106,47 @@ impl AppKitSys {
         coalesce_frame_events(std::mem::take(&mut *guard))
     }
 
+    pub(super) fn apply_layer_style(&self, handle: AppKitHandle, is_window: bool, style_css: &str) {
+        if !crate::platforms::GpuRendererPreference::from_env().prefers_hardware_acceleration() {
+            return;
+        }
+        let props = parse_calayer_style(style_css);
+        if props == CaLayerStyleProps::default() {
+            return;
+        }
+        let target = if is_window {
+            unsafe { self.send_ptr0(handle.0 as *mut c_void, c"contentView") }
+        } else {
+            handle.0 as *mut c_void
+        };
+        if target.is_null() {
+            return;
+        }
+        unsafe { self.send_void_bool(target, c"setWantsLayer:", true) };
+        let layer = unsafe { self.send_ptr0(target, c"layer") };
+        if layer.is_null() {
+            return;
+        }
+        if let Some(radius) = props.corner_radius {
+            let set_f64: unsafe extern "C" fn(*mut c_void, *mut c_void, f64) =
+                unsafe { std::mem::transmute_copy::<*mut c_void, _>(&self.objc_msg_send) };
+            unsafe { set_f64(layer, self.sel(c"setCornerRadius:"), radius) };
+        }
+        if props.masks_to_bounds {
+            unsafe { self.send_void_bool(layer, c"setMasksToBounds:", true) };
+        }
+        if let Some(alpha) = props.opacity {
+            let set_f32: unsafe extern "C" fn(*mut c_void, *mut c_void, f32) =
+                unsafe { std::mem::transmute_copy::<*mut c_void, _>(&self.objc_msg_send) };
+            unsafe { set_f32(layer, self.sel(c"setOpacity:"), alpha) };
+        }
+        if let Some(border_w) = props.border_width {
+            let set_f64: unsafe extern "C" fn(*mut c_void, *mut c_void, f64) =
+                unsafe { std::mem::transmute_copy::<*mut c_void, _>(&self.objc_msg_send) };
+            unsafe { set_f64(layer, self.sel(c"setBorderWidth:"), border_w) };
+        }
+    }
+
     pub(super) fn release(&self, handle: AppKitHandle) {
         node_map()
             .lock()
@@ -1129,5 +1228,24 @@ mod tests {
             close.payload,
             EventPayload::Text(String::from(r#"{"preventable":true}"#))
         );
+    }
+
+    #[test]
+    fn parses_calayer_gpu_style_properties_and_clamps_values() {
+        let parsed = parse_calayer_style(
+            "border-radius: 12px; opacity: 1.5; border-width: 2px; overflow: hidden",
+        );
+        assert_eq!(parsed.corner_radius, Some(12.0));
+        assert_eq!(parsed.opacity, Some(1.0));
+        assert_eq!(parsed.border_width, Some(2.0));
+        assert!(parsed.masks_to_bounds);
+
+        let negative = parse_calayer_style("border-radius: -4px; opacity: -0.2; border-width: NaN");
+        assert_eq!(negative.corner_radius, None);
+        assert_eq!(negative.opacity, Some(0.0));
+        assert_eq!(negative.border_width, None);
+        assert!(!negative.masks_to_bounds);
+
+        assert_eq!(parse_calayer_style(""), CaLayerStyleProps::default());
     }
 }
