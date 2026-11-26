@@ -4,7 +4,7 @@ A high-performance, memory-safe **Native Desktop Rendering Engine for Angular 22
 
 `ng-desktop-engine` replaces `@angular/platform-browser` and the browser DOM/WebView completely. Instead of bundling Chromium (Electron) or relying on an embedded HTML WebView (Tauri), Angular components drive **100% native OS widgets** across **Linux (GTK4 / Libadwaita)**, **Windows 11 (Win32 / WinUI)**, and **macOS (Cocoa / AppKit)** using ES2024+ embedded JS runtimes, a shared Rust layout solver, and native OS service drivers (see the [Platform Maturity Matrix](./ROADMAP.md#platform-maturity-matrix-v060)).
 
-> **Using `@ng-desktop/*` in your own app?** Jump straight to the step-by-step [**External Angular 22+ & Nx Tutorial (`docs/GETTING_STARTED.md`)**](./docs/GETTING_STARTED.md).
+> **Using `@ng-desktop/*` in your own app?** Browse the interactive [**Official Documentation Portal**](https://gaspar1992.github.io/ng-desktop-engine/) (with live **`.ngb` Playground**, **29-Primitive Explorer**, [`/api-ts/`](https://gaspar1992.github.io/ng-desktop-engine/api-ts/) & [`/api-rust/`](https://gaspar1992.github.io/ng-desktop-engine/api-rust/)), or jump straight to the [**External Angular 22+ & Nx Tutorial (`docs/GETTING_STARTED.md`)**](./docs/GETTING_STARTED.md).
 
 ---
 
