@@ -310,6 +310,74 @@ impl WinUiFfiDriver {
     }
 
     #[cfg(target_os = "windows")]
+    fn apply_live_attribute(&mut self, node: NodeId, key: &str, value: &str) {
+        let Some(&h) = self.live_handles.get(&node) else {
+            return;
+        };
+        match key {
+            "title" | "value" | "text" | "label" => {
+                if let Some(win32) = &self.win32 {
+                    win32.set_text(h, value);
+                }
+            }
+            "visible" => {
+                if let Some(win32) = &self.win32 {
+                    win32.set_visible(h, NativeSceneState::parse_truthy_attr(value));
+                }
+            }
+            "open" => {
+                if self
+                    .bindings
+                    .get(&node)
+                    .is_some_and(|b| b.xaml_class == "Microsoft.UI.Xaml.Controls.Flyout")
+                    && let Some(win32) = &self.win32
+                {
+                    win32.set_visible(h, NativeSceneState::parse_truthy_attr(value));
+                }
+            }
+            "sensitive" => {
+                if let Some(win32) = &self.win32 {
+                    win32.set_enabled(h, NativeSceneState::parse_truthy_attr(value));
+                }
+            }
+            "prevent-close" => {
+                Win32Sys::set_prevent_close(h, NativeSceneState::parse_truthy_attr(value));
+            }
+            "close-window" if NativeSceneState::parse_truthy_attr(value) => {
+                self.unregister_node(node);
+            }
+            "style" if self.live_toplevels.contains(&node) => {
+                if value.to_ascii_lowercase().contains("border-radius")
+                    && let Some(win32) = &self.win32
+                {
+                    win32.apply_dwm_composition_attrs(
+                        h,
+                        Some(resolve_dwm_corner_preference(value)),
+                        None,
+                    );
+                }
+            }
+            "backdrop" | "window-backdrop" if self.live_toplevels.contains(&node) => {
+                if let Some(win32) = &self.win32 {
+                    win32.apply_dwm_composition_attrs(
+                        h,
+                        None,
+                        Some(resolve_dwm_backdrop_type(value)),
+                    );
+                }
+            }
+            "theme" | "dark-mode" if self.live_toplevels.contains(&node) => {
+                if let Some(win32) = &self.win32 {
+                    let dark = value.eq_ignore_ascii_case("dark")
+                        || NativeSceneState::parse_truthy_attr(value);
+                    win32.apply_dwm_theme(h, dark);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[cfg(target_os = "windows")]
     fn apply_live_command(&mut self, cmd: &RenderCommand, state: &NativeSceneState) {
         match cmd {
             RenderCommand::SetText { id, text } => {
@@ -318,70 +386,7 @@ impl WinUiFfiDriver {
                 }
             }
             RenderCommand::SetAttribute { node, key, value } => {
-                if let Some(&h) = self.live_handles.get(node) {
-                    match key.as_str() {
-                        "title" | "value" | "text" | "label" => {
-                            if let Some(win32) = &self.win32 {
-                                win32.set_text(h, value);
-                            }
-                        }
-                        "visible" => {
-                            if let Some(win32) = &self.win32 {
-                                win32.set_visible(h, NativeSceneState::parse_truthy_attr(value));
-                            }
-                        }
-                        "open" => {
-                            if self.bindings.get(node).is_some_and(|b| {
-                                b.xaml_class == "Microsoft.UI.Xaml.Controls.Flyout"
-                            }) && let Some(win32) = &self.win32
-                            {
-                                win32.set_visible(h, NativeSceneState::parse_truthy_attr(value));
-                            }
-                        }
-                        "sensitive" => {
-                            if let Some(win32) = &self.win32 {
-                                win32.set_enabled(h, NativeSceneState::parse_truthy_attr(value));
-                            }
-                        }
-                        "prevent-close" => {
-                            Win32Sys::set_prevent_close(
-                                h,
-                                NativeSceneState::parse_truthy_attr(value),
-                            );
-                        }
-                        "close-window" if NativeSceneState::parse_truthy_attr(value) => {
-                            self.unregister_node(*node);
-                        }
-                        "style" if self.live_toplevels.contains(node) => {
-                            if value.to_ascii_lowercase().contains("border-radius")
-                                && let Some(win32) = &self.win32
-                            {
-                                win32.apply_dwm_composition_attrs(
-                                    h,
-                                    Some(resolve_dwm_corner_preference(value)),
-                                    None,
-                                );
-                            }
-                        }
-                        "backdrop" | "window-backdrop" if self.live_toplevels.contains(node) => {
-                            if let Some(win32) = &self.win32 {
-                                win32.apply_dwm_composition_attrs(
-                                    h,
-                                    None,
-                                    Some(resolve_dwm_backdrop_type(value)),
-                                );
-                            }
-                        }
-                        "theme" | "dark-mode" if self.live_toplevels.contains(node) => {
-                            if let Some(win32) = &self.win32 {
-                                let dark = value.eq_ignore_ascii_case("dark")
-                                    || NativeSceneState::parse_truthy_attr(value);
-                                win32.apply_dwm_theme(h, dark);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
+                self.apply_live_attribute(*node, key, value);
             }
             RenderCommand::AppendChild { parent, child }
             | RenderCommand::InsertBefore { parent, child, .. } => {
