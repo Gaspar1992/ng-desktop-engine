@@ -617,6 +617,17 @@ export class NativeRenderer2 extends Renderer2 {
     if (isInternalAngularAttr(name)) {
       return;
     }
+    if (
+      name !== 'class' &&
+      name !== 'className' &&
+      name !== 'src' &&
+      name !== 'ngSrc' &&
+      name !== 'scroll-to' &&
+      name !== 'scroll-anchor' &&
+      el.attributes.get(name) === value
+    ) {
+      return;
+    }
     el.attributes.set(name, value);
     if (name === 'class' || name === 'className') {
       this.syncClassList(el, value);
@@ -636,15 +647,18 @@ export class NativeRenderer2 extends Renderer2 {
       return;
     }
     if (
-      name === 'title' &&
-      (el.tag === 'ng-window' ||
-        el.tag === 'adw-window' ||
-        el.tag === 'ng-dialog' ||
-        el.tag === 'gtk-dialog' ||
-        el.tag === 'adw-dialog' ||
-        el.tag === 'ng-header-bar' ||
-        el.tag === 'adw-header-bar')
+      name === 'label' ||
+      (name === 'text' && TEXT_BEARING_TAGS.has(el.tag)) ||
+      (name === 'title' &&
+        (el.tag === 'ng-window' ||
+          el.tag === 'adw-window' ||
+          el.tag === 'ng-dialog' ||
+          el.tag === 'gtk-dialog' ||
+          el.tag === 'adw-dialog' ||
+          el.tag === 'ng-header-bar' ||
+          el.tag === 'adw-header-bar'))
     ) {
+      el.textContent = value;
       this.bridge.setText(el.id, value);
     } else {
       this.bridge.setAttribute(el.id, name, value);
