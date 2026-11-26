@@ -346,6 +346,7 @@ impl NativeServerWorker {
 
         let handle = thread::Builder::new()
             .name(String::from("ng-native-server"))
+            .stack_size(8 * 1024 * 1024)
             .spawn(move || {
                 Self::run_worker_thread(&boot, &ready_tx, &rx);
             })
