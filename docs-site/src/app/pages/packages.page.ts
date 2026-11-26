@@ -6,7 +6,7 @@ import { PACKAGES_CATALOG, type PackageSpec } from '../data/packages-catalog.dat
   template: `
     <div class="docs-container packages-shell">
       <header class="page-head">
-        <span class="eyebrow">npm OIDC Registry · v0.6.0</span>
+        <span class="eyebrow">npm OIDC Registry · v0.7.0</span>
         <h1>&#64;ng-desktop/* Packages &amp; Prebuilt Engine Binaries</h1>
         <p>
           Seven modular Angular &amp; tooling libraries paired with five prebuilt platform engine

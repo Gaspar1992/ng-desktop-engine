@@ -181,7 +181,7 @@ ng-desktop-engine/
 │   ├── test_native_server_worker.rs # In-process @ng-desktop/server route worker tests
 │   ├── test_pipeline_and_hmr.rs  # Full bundle pipeline, HMR & cross-OS socket/TCP IPC tests
 │   └── test_scene_graph.rs       # Arena invariants, anchors & reverse event dispatch tests
-├── ROADMAP.md                    # Current v0.6.0 snapshot, parity matrix & upcoming milestones
+├── ROADMAP.md                    # Current v0.7.0 snapshot, parity matrix & upcoming milestones
 ├── CHANGELOG.md                  # Release notes and version changelog
 ├── SECURITY.md                   # Vulnerability disclosure policy, SLAs & FFI threat model
 ├── CONTRIBUTING.md               # Contribution guidelines, SOLID standards & release workflow
@@ -276,7 +276,7 @@ cargo run                # or: NG_NATIVE_BATCH=1 cargo run
 
 - See [**GETTING_STARTED.md**](./docs/GETTING_STARTED.md) for a copy-paste tutorial integrating `@ng-desktop/*` into an external Angular 22+ or Nx app.
 - See [**ECOSYSTEM_COMPATIBILITY.md**](./docs/ECOSYSTEM_COMPATIBILITY.md) for integration with **NgRx**, **Angular Aria**, **Angular CDK**, **Angular Material** gap analysis, **@ng-desktop/server**, and **Nx**.
-- See [**ROADMAP.md**](./ROADMAP.md) for the `v0.6.0` platform maturity matrix, remaining gaps, and upcoming `v0.7.0` milestones.
+- See [**ROADMAP.md**](./ROADMAP.md) for the `v0.7.0` platform maturity matrix and upcoming milestones.
 - See [**CHANGELOG.md**](./CHANGELOG.md) for release notes and detailed version history.
 
 ---
