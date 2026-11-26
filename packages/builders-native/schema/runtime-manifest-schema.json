@@ -1,0 +1,50 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ng-desktop://config/runtime-manifest-schema.json",
+  "title": "NgDesktop Runtime Manifest (ng-desktop.runtime.json)",
+  "description": "Embedded runtime configuration manifest emitted alongside compiled desktop bundles and native installers.",
+  "type": "object",
+  "required": ["schemaVersion", "projectName", "version", "targetPlatform", "permissions"],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 1,
+      "description": "Runtime manifest schema version."
+    },
+    "projectName": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Application/project identifier."
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Application semantic version."
+    },
+    "targetPlatform": {
+      "type": "string",
+      "enum": ["linux-gtk4", "windows-winui", "macos-appkit", "headless"],
+      "description": "Target native UI backend."
+    },
+    "gpuBackend": {
+      "type": "string",
+      "enum": ["auto", "vulkan", "gl", "ngl", "metal", "dwm", "software"],
+      "default": "auto",
+      "description": "Resolved GPU/compositor backend preference."
+    },
+    "outputPath": {
+      "type": "string",
+      "description": "Relative bundle output directory."
+    },
+    "iconSearchDir": {
+      "type": "string",
+      "description": "Directory containing multi-resolution application icons."
+    },
+    "permissions": {
+      "type": "object",
+      "description": "Resolved least-privilege OS capability flags."
+    }
+  },
+  "additionalProperties": true
+}

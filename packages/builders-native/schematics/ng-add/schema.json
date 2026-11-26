@@ -14,6 +14,12 @@
       "default": "linux-gtk4",
       "description": "Primary desktop platform target."
     },
+    "gpu": {
+      "type": "string",
+      "enum": ["auto", "vulkan", "gl", "ngl", "metal", "dwm", "software"],
+      "default": "auto",
+      "description": "Preferred native GPU/compositor backend."
+    },
     "permissionsMode": {
       "type": "string",
       "enum": ["auto", "strict"],

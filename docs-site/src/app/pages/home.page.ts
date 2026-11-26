@@ -11,7 +11,7 @@ import { PLAYGROUND_PRESETS } from '../data/playground-presets.data';
   template: `
     <div class="docs-container home-shell">
       <section class="hero-card">
-        <span class="eyebrow">v0.7.0 · Zero WebView · Zero Electron</span>
+        <span class="eyebrow">v0.7.1 · Zero WebView · Zero Electron</span>
         <h1>Angular 22 Native Desktop Apps</h1>
         <p class="hero-lead">
           Compile standard Angular templates, Signals, Control Flow, and scoped CSS directly into

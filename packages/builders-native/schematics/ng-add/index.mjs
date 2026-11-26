@@ -9,14 +9,15 @@ export function applyNgAddToTree(tree, options = {}) {
     const pkgRaw = tree.read('/package.json')?.toString('utf8') ?? '{}';
     const pkg = JSON.parse(pkgRaw);
     pkg.dependencies ??= {};
-    pkg.dependencies['@ng-desktop/platform'] ??= '^0.7.0';
+    pkg.dependencies['@ng-desktop/platform'] ??= '^0.7.1';
     pkg.devDependencies ??= {};
-    pkg.devDependencies['@ng-desktop/builders'] ??= '^0.7.0';
+    pkg.devDependencies['@ng-desktop/builders'] ??= '^0.7.1';
     tree.overwrite('/package.json', `${JSON.stringify(pkg, null, 2)}\n`);
   }
 
   const builderOptions = {
     targetPlatform,
+    ...(options.gpu && options.gpu !== 'auto' ? { gpu: options.gpu } : {}),
     permissions: {
       mode: permissionsMode,
     },

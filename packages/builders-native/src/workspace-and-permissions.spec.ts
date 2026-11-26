@@ -704,4 +704,74 @@ export class AppComponent {
       rmSync(tmpRoot, { recursive: true, force: true });
     }
   });
+
+  it('exposes complete builder, workspace, and runtime manifest JSON schemas plus ng-add gpu option', () => {
+    const schemaDir = join(process.cwd(), 'packages/builders-native/schema');
+    const builderSchema = JSON.parse(
+      readFileSync(join(schemaDir, 'native-builder-schema.json'), 'utf8'),
+    ) as {
+      properties: Record<string, Record<string, unknown>>;
+    };
+    const angularSchema = JSON.parse(
+      readFileSync(join(schemaDir, 'angular-native-schema.json'), 'utf8'),
+    ) as {
+      allOf?: unknown[];
+      definitions?: Record<string, unknown>;
+    };
+    const runtimeSchema = JSON.parse(
+      readFileSync(join(schemaDir, 'runtime-manifest-schema.json'), 'utf8'),
+    ) as {
+      required: string[];
+      properties: Record<string, unknown>;
+    };
+
+    expect(builderSchema.properties['gpu']?.['enum']).toEqual([
+      'auto',
+      'vulkan',
+      'gl',
+      'ngl',
+      'metal',
+      'dwm',
+      'software',
+    ]);
+    expect(builderSchema.properties['appId']).toBeDefined();
+    expect(builderSchema.properties['window']).toBeDefined();
+    expect(builderSchema.properties['server']).toBeDefined();
+    expect(builderSchema.properties['hmr']).toBeDefined();
+    expect(
+      (builderSchema.properties['packageFormats']?.['items'] as Record<string, unknown>)?.['enum'],
+    ).toEqual(['deb', 'appimage', 'flatpak', 'msix', 'dmg']);
+
+    const permProps = builderSchema.properties['permissions']?.['properties'] as Record<
+      string,
+      Record<string, unknown>
+    >;
+    expect((permProps['allow']?.['items'] as Record<string, unknown>)?.['enum']).toContain(
+      'filesystem:dialogs',
+    );
+    expect(angularSchema.allOf).toBeUndefined();
+    expect(angularSchema.definitions?.['nativeTarget']).toBeDefined();
+    expect(runtimeSchema.required).toContain('targetPlatform');
+    expect(runtimeSchema.properties['gpuBackend']).toBeDefined();
+
+    const files = new Map<string, string>([
+      ['/package.json', JSON.stringify({ name: 'gpu-demo', dependencies: {} })],
+      [
+        '/angular.json',
+        JSON.stringify({ defaultProject: 'gpu-demo', projects: { 'gpu-demo': { architect: {} } } }),
+      ],
+    ]);
+    const tree = {
+      exists: (path: string) => files.has(path),
+      read: (path: string) => files.get(path) ?? null,
+      overwrite: (path: string, content: string) => {
+        files.set(path, content);
+      },
+    };
+    applyNgAddToTree(tree, { targetPlatform: 'linux-gtk4', gpu: 'vulkan' });
+    const parsed = JSON.parse(files.get('/angular.json') ?? '{}') as {
+      projects: Record<string, { architect: Record<string, { options: Record<string, unknown> }> }>;
+    };
+    expect(parsed.projects['gpu-demo']?.architect['native']?.options['gpu']).toBe('vulkan');
+  });
 });

@@ -1,19 +1,38 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ng-desktop://config/native-builder-schema.json",
   "title": "Angular Native Application Builder Options",
+  "description": "Configuration options for @ng-desktop/builders:application, dev-server, and packager targets.",
   "type": "object",
+  "defaultSnippets": [
+    {
+      "label": "NgDesktop Application Target",
+      "description": "Minimal native desktop target with auto OS/GPU detection and auto permissions.",
+      "body": {
+        "os": "auto",
+        "arch": "auto",
+        "gpu": "auto",
+        "permissions": {
+          "mode": "auto"
+        }
+      }
+    }
+  ],
   "properties": {
     "os": {
       "type": "string",
       "enum": ["auto", "linux", "windows", "macos"],
       "default": "auto",
-      "description": "Target desktop operating system. Defaults to the current host OS and derives the native toolkit automatically."
+      "description": "Target desktop operating system. Defaults to the current host OS and derives the native toolkit automatically.",
+      "markdownDescription": "Target desktop OS (`auto`, `linux`, `windows`, `macos`). Defaults to the host OS.",
+      "examples": ["auto", "linux", "windows", "macos"]
     },
     "arch": {
       "type": "string",
       "enum": ["auto", "x86_64", "aarch64", "universal"],
       "default": "auto",
-      "description": "Target CPU architecture for the compiled native binary."
+      "description": "Target CPU architecture for the compiled native binary.",
+      "markdownDescription": "Target CPU architecture (`auto`, `x86_64`, `aarch64`, `universal`)."
     },
     "cpu": {
       "type": "string",
@@ -30,6 +49,34 @@
       "type": "string",
       "enum": ["jsc", "quickjs"],
       "description": "Optional embedded JavaScript engine override (defaults to 'jsc' on Linux/macOS and 'quickjs' on Windows)."
+    },
+    "gpu": {
+      "type": "string",
+      "enum": ["auto", "vulkan", "gl", "ngl", "metal", "dwm", "software"],
+      "default": "auto",
+      "description": "Native GPU/compositor backend preference (overridable at runtime via --gpu or NG_DESKTOP_GPU_BACKEND).",
+      "markdownDescription": "Native GPU/compositor backend (`auto`, `vulkan`, `gl`, `ngl`, `metal`, `dwm`, `software`). Overridable via `--gpu` or `NG_DESKTOP_GPU_BACKEND`.",
+      "examples": ["auto", "vulkan", "metal", "dwm", "software"]
+    },
+    "appId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]+)+$",
+      "description": "Reverse-DNS desktop application identifier (e.g. 'com.acme.pokedex') used for .desktop, Flatpak, MSIX, and macOS Info.plist.",
+      "markdownDescription": "Reverse-DNS application ID (e.g. `com.acme.pokedex`) used for Linux `.desktop`/Flatpak, Windows MSIX, and macOS `Info.plist`.",
+      "examples": ["dev.ngnative.pokedex", "com.example.desktop-app"]
+    },
+    "displayName": {
+      "type": "string",
+      "description": "Human-friendly application name shown in OS launchers, installers, and window titles.",
+      "examples": ["Pokédex Nacional", "My Desktop App"]
+    },
+    "icon": {
+      "type": "string",
+      "description": "Path to primary source icon (.png, .svg, or .ico) used to generate multi-resolution OS icons."
+    },
+    "iconSearchDir": {
+      "type": "string",
+      "description": "Directory containing pre-generated multi-resolution application icons (defaults to '<outputPath>/icons')."
     },
     "outputPath": {
       "type": "string",
@@ -61,9 +108,107 @@
       "type": "string",
       "description": "Application release version propagated to runtime config and OS installers."
     },
+    "window": {
+      "type": "object",
+      "description": "Default native window appearance, geometry, and composition hints.",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Initial native window title."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 160,
+          "default": 1020,
+          "description": "Default window width in logical pixels."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 120,
+          "default": 720,
+          "description": "Default window height in logical pixels."
+        },
+        "minWidth": {
+          "type": "integer",
+          "minimum": 120,
+          "description": "Minimum resizable window width in logical pixels."
+        },
+        "minHeight": {
+          "type": "integer",
+          "minimum": 100,
+          "description": "Minimum resizable window height in logical pixels."
+        },
+        "resizable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether the primary native window can be resized by the user."
+        },
+        "decorated": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether OS window decorations/titlebar are enabled."
+        },
+        "persistGeometry": {
+          "type": "boolean",
+          "default": false,
+          "description": "Persist and restore window size, position, and maximized state across launches."
+        },
+        "theme": {
+          "type": "string",
+          "enum": ["system", "light", "dark"],
+          "default": "system",
+          "description": "Preferred window color scheme."
+        },
+        "backdrop": {
+          "type": "string",
+          "enum": ["auto", "mica", "acrylic", "tabbed", "none"],
+          "default": "auto",
+          "description": "Windows 11 DWM system backdrop material (ignored on platforms without DWM)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "server": {
+      "type": "object",
+      "description": "Optional embedded @ng-desktop/server route worker configuration.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable in-process QuickJS-NG server route worker when server routes are present."
+        },
+        "routesDir": {
+          "type": "string",
+          "description": "Relative directory containing file-based @ng-desktop/server route handlers."
+        }
+      },
+      "additionalProperties": false
+    },
+    "hmr": {
+      "type": "object",
+      "description": "Development Hot Module Replacement (HMR) IPC settings.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable authenticated HMR IPC socket/TCP server during development."
+        },
+        "eval": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow authenticated remote JS eval commands over dev HMR IPC."
+        },
+        "socketPath": {
+          "type": "string",
+          "description": "Custom Unix domain socket or loopback TCP pointer file path."
+        }
+      },
+      "additionalProperties": false
+    },
     "permissions": {
       "type": "object",
       "description": "Build-time static capability analysis policy and manual allow/deny overrides.",
+      "markdownDescription": "Build-time static capability policy (`auto` infers from AST imports; `strict` allows only `allow`).",
       "properties": {
         "mode": {
           "type": "string",
@@ -73,12 +218,42 @@
         },
         "allow": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string",
+            "enum": [
+              "network",
+              "sqlite",
+              "filesystem",
+              "filesystem:xdg",
+              "filesystem:dialogs",
+              "filesystem:drop",
+              "clipboard",
+              "notifications",
+              "compute-threads",
+              "full-system-access"
+            ]
+          },
+          "uniqueItems": true,
           "description": "Capabilities explicitly granted (e.g. 'network', 'sqlite', 'filesystem:dialogs')."
         },
         "deny": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string",
+            "enum": [
+              "network",
+              "sqlite",
+              "filesystem",
+              "filesystem:xdg",
+              "filesystem:dialogs",
+              "filesystem:drop",
+              "clipboard",
+              "notifications",
+              "compute-threads",
+              "full-system-access"
+            ]
+          },
+          "uniqueItems": true,
           "description": "Capabilities explicitly revoked even if detected in source files."
         }
       },
@@ -88,8 +263,9 @@
       "type": "array",
       "items": {
         "type": "string",
-        "enum": ["deb", "appimage", "flatpak", "msi", "dmg"]
+        "enum": ["deb", "appimage", "flatpak", "msix", "dmg"]
       },
+      "uniqueItems": true,
       "description": "Distribution package formats emitted by the native packager."
     }
   },

@@ -1,4 +1,4 @@
-import { Component, HostListener, viewChild } from '@angular/core';
+import { Component, viewChild } from '@angular/core';
 import { RouterLink, RouterOutlet } from '@angular/router';
 import { DocsNavbarComponent } from './layout/docs-navbar.component';
 import { SearchDialogComponent } from './layout/search-dialog.component';
@@ -6,6 +6,9 @@ import { SearchDialogComponent } from './layout/search-dialog.component';
 @Component({
   selector: 'docs-root',
   imports: [RouterOutlet, RouterLink, DocsNavbarComponent, SearchDialogComponent],
+  host: {
+    '(window:keydown)': 'handleGlobalShortcut($event)',
+  },
   template: `
     <a class="skip-link" href="#main-content">Skip to main content</a>
     <docs-navbar (openSearch)="openSearchDialog()" />
@@ -112,7 +115,6 @@ import { SearchDialogComponent } from './layout/search-dialog.component';
 export class App {
   private readonly searchDialog = viewChild.required(SearchDialogComponent);
 
-  @HostListener('window:keydown', ['$event'])
   handleGlobalShortcut(event: KeyboardEvent): void {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
       event.preventDefault();

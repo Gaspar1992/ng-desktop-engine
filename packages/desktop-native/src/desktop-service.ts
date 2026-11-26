@@ -1,7 +1,10 @@
 import {
+  DestroyRef,
   EnvironmentProviders,
+  inject,
   Injectable,
   makeEnvironmentProviders,
+  provideEnvironmentInitializer,
   signal,
   WritableSignal,
 } from '@angular/core';
@@ -205,6 +208,7 @@ export class NativeDesktopService {
   setAppMenu(
     items: readonly NativeMenuItem[],
     handlers?: Record<string, () => void>,
+    options?: { registerShortcuts?: boolean },
   ): readonly NativeMenuItem[] {
     if (handlers) {
       for (const [id, handler] of Object.entries(handlers)) {
@@ -215,6 +219,13 @@ export class NativeDesktopService {
       this.bridge.setAppMenu?.(items) ??
       items.map((item) => ({ ...item, enabled: item.enabled !== false }));
     this.appMenu.set(updated);
+    if (options?.registerShortcuts) {
+      for (const item of updated) {
+        if (item.accelerator?.trim() && item.enabled !== false) {
+          this.registerShortcut(item.accelerator, item.id);
+        }
+      }
+    }
     return updated;
   }
 
@@ -262,6 +273,37 @@ export class NativeDesktopService {
       this.shortcuts().filter((item) => item.accelerator !== accelerator.trim());
     this.shortcuts.set(next);
     return next;
+  }
+
+  /**
+   * Registers a shortcut and returns an idempotent disposer, automatically unbinding on `DestroyRef`
+   * when provided or when invoked inside an Angular injection context.
+   */
+  bindShortcut(
+    accelerator: string,
+    actionId: string,
+    handler: () => void,
+    destroyRef?: DestroyRef,
+  ): () => void {
+    this.registerShortcut(accelerator, actionId, handler);
+    let disposed = false;
+    const dispose = () => {
+      if (disposed) {
+        return;
+      }
+      disposed = true;
+      this.unregisterShortcut(accelerator);
+    };
+    let resolvedDestroyRef = destroyRef ?? null;
+    if (!resolvedDestroyRef) {
+      try {
+        resolvedDestroyRef = inject(DestroyRef, { optional: true });
+      } catch {
+        resolvedDestroyRef = null;
+      }
+    }
+    resolvedDestroyRef?.onDestroy(dispose);
+    return dispose;
   }
 
   triggerShortcut(accelerator: string): boolean {
@@ -363,12 +405,31 @@ export class NativeDesktopService {
   }
 }
 
-export function provideNativeDesktop(): EnvironmentProviders {
-  return makeEnvironmentProviders([
+export interface ProvideNativeDesktopOptions {
+  /** Automatically restore window geometry at startup and save it on `beforeunload`. */
+  persistWindowGeometry?: boolean;
+}
+
+export function provideNativeDesktop(options?: ProvideNativeDesktopOptions): EnvironmentProviders {
+  const providers = [
     NativeDesktopService,
     NativeSqliteService,
     NativeNetworkService,
     NativeComputeService,
     NativeFileSystemService,
-  ]);
+  ];
+  if (options?.persistWindowGeometry) {
+    return makeEnvironmentProviders([
+      ...providers,
+      provideEnvironmentInitializer(() => {
+        const desktop = inject(NativeDesktopService);
+        const bridge = ensureNgNativeBridge();
+        desktop.loadWindowGeometry();
+        bridge.listen('win', 'beforeunload', () => {
+          desktop.saveWindowGeometry(desktop.windowGeometry());
+        });
+      }),
+    ]);
+  }
+  return makeEnvironmentProviders(providers);
 }

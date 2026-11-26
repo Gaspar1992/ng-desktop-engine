@@ -1,5 +1,5 @@
 <ng-window id="win" [title]="windowTitle()" (beforeunload)="onBeforeUnload()">
-  <ng-header-bar id="hdr" [attr.subtitle]="subtitle()">{{ windowTitle() }}</ng-header-bar>
+  <ng-header-bar id="hdr" [subtitle]="subtitle()">{{ windowTitle() }}</ng-header-bar>
   <ng-box
     id="vbox"
     class="main-card"
@@ -31,11 +31,7 @@
       </ng-button>
     </ng-box>
 
-    <ng-spinner
-      id="loading_spinner"
-      [attr.visible]="pokedex.loading() ? 'true' : 'false'"
-      halign="center"
-    />
+    <ng-spinner id="loading_spinner" [visible]="pokedex.loading()" halign="center" />
 
     @if (pokedex.errorMessage(); as errMsg) {
     <ng-label id="error_banner" class="error-banner">{{ errMsg }}</ng-label>

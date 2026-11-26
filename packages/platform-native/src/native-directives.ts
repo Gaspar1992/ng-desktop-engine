@@ -1,4 +1,13 @@
-import { Directive, ElementRef, inject, Input, Renderer2 } from '@angular/core';
+import {
+  computed,
+  Directive,
+  effect,
+  ElementRef,
+  inject,
+  input,
+  Renderer2,
+  Signal,
+} from '@angular/core';
 
 export type NativeAttrInput = string | number | boolean | null | undefined;
 export type NativeBoolInput = boolean | string | number | null | undefined;
@@ -96,6 +105,40 @@ function isTruthyDisabledInput(value: NativeBoolInput): boolean {
   return Boolean(value);
 }
 
+type SignalBinding = readonly [attr: string, source: Signal<NativeAttrInput>, asProp?: boolean];
+
+/**
+ * Synchronizes Signal `input()` values to the native renderer without clobbering attributes
+ * managed by static template attributes, text interpolation, or `[formField]` directives.
+ */
+function bindSignalInputs(bindings: readonly SignalBinding[]): void {
+  const renderer = inject(Renderer2);
+  const el = inject<ElementRef<unknown>>(ElementRef).nativeElement;
+  const boundKeys = new Set<string>();
+
+  effect(() => {
+    for (const [name, source, asProp] of bindings) {
+      const value = source();
+      if (value === undefined) {
+        if (boundKeys.has(name)) {
+          if (asProp) {
+            syncNativeProp(renderer, el, name, null);
+          } else {
+            syncNativeAttr(renderer, el, name, null);
+          }
+        }
+        continue;
+      }
+      boundKeys.add(name);
+      if (asProp) {
+        syncNativeProp(renderer, el, name, value);
+      } else {
+        syncNativeAttr(renderer, el, name, value);
+      }
+    }
+  });
+}
+
 /**
  * Common layout, visibility, accessibility, and interaction directive covering all native desktop
  * widget elements (`<ng-*>`, `<gtk-*>`, `<adw-*>`).
@@ -105,78 +148,59 @@ function isTruthyDisabledInput(value: NativeBoolInput): boolean {
     'ng-window,adw-window,ng-dialog,gtk-dialog,adw-dialog,ng-header-bar,adw-header-bar,gtk-header-bar,ng-scroll,gtk-scrolled-window,ng-box,gtk-box,ng-grid,gtk-grid,ng-separator,gtk-separator,ng-button,gtk-button,ng-label,gtk-label,ng-entry,gtk-entry,ng-switch,gtk-switch,ng-checkbox,ng-check,ng-check-button,gtk-check-button,ng-slider,ng-scale,gtk-scale,ng-select,ng-dropdown,gtk-dropdown,gtk-drop-down,ng-image,adw-image,gtk-picture,ng-picture,ng-level-bar,gtk-level-bar,ng-flow,ng-flow-box,gtk-flow-box,ng-spinner,gtk-spinner,ng-progress-bar,gtk-progress-bar,ng-paned,gtk-paned,ng-stack,gtk-stack,adw-navigation-view,ng-expander,gtk-expander,ng-text-view,gtk-text-view,ng-password-entry,gtk-password-entry,ng-spin-button,gtk-spin-button,ng-search-entry,gtk-search-entry,ng-clamp,adw-clamp,ng-list,ng-table,gtk-list-box,gtk-list-view,ng-popover,gtk-popover,ng-menu,adw-entry-row,adw-password-entry-row,adw-switch-row,adw-combo-row,adw-spin-row',
 })
 export class NativeElementDirective {
-  private readonly renderer = inject(Renderer2);
-  private readonly el = inject<ElementRef<unknown>>(ElementRef).nativeElement;
+  readonly hexpand = input<NativeBoolInput>();
+  readonly vexpand = input<NativeBoolInput>();
+  readonly halign = input<NativeAttrInput>();
+  readonly valign = input<NativeAttrInput>();
+  readonly width = input<NativeNumberInput>();
+  readonly height = input<NativeNumberInput>();
+  readonly minWidth = input<NativeNumberInput>(undefined, { alias: 'min-width' });
+  readonly minHeight = input<NativeNumberInput>(undefined, { alias: 'min-height' });
+  readonly margin = input<NativeNumberInput>();
+  readonly marginTop = input<NativeNumberInput>(undefined, { alias: 'margin-top' });
+  readonly marginBottom = input<NativeNumberInput>(undefined, { alias: 'margin-bottom' });
+  readonly marginStart = input<NativeNumberInput>(undefined, { alias: 'margin-start' });
+  readonly marginEnd = input<NativeNumberInput>(undefined, { alias: 'margin-end' });
+  readonly visible = input<NativeBoolInput>();
+  readonly sensitive = input<NativeBoolInput>();
+  readonly disabled = input<NativeBoolInput>();
+  readonly tooltip = input<NativeAttrInput>();
+  readonly eventMask = input<NativeAttrInput>(undefined, { alias: 'event-mask' });
+  readonly dropTarget = input<NativeBoolInput>(undefined, { alias: 'drop-target' });
+  readonly col = input<NativeNumberInput>();
+  readonly row = input<NativeNumberInput>();
 
-  @Input() set hexpand(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'hexpand', val);
-  }
-  @Input() set vexpand(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'vexpand', val);
-  }
-  @Input() set halign(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'halign', val);
-  }
-  @Input() set valign(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'valign', val);
-  }
-  @Input() set width(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'width', val);
-  }
-  @Input() set height(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'height', val);
-  }
-  @Input('min-width') set minWidth(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'min-width', val);
-  }
-  @Input('min-height') set minHeight(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'min-height', val);
-  }
-  @Input() set margin(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'margin', val);
-  }
-  @Input('margin-top') set marginTop(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'margin-top', val);
-  }
-  @Input('margin-bottom') set marginBottom(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'margin-bottom', val);
-  }
-  @Input('margin-start') set marginStart(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'margin-start', val);
-  }
-  @Input('margin-end') set marginEnd(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'margin-end', val);
-  }
-  @Input() set visible(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'visible', val);
-  }
-  @Input() set sensitive(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'sensitive', val);
-  }
-  @Input() set disabled(val: NativeBoolInput) {
-    if (val === undefined) {
-      return;
+  private readonly resolvedSensitive = computed<NativeBoolInput>(() => {
+    const disabled = this.disabled();
+    if (disabled !== undefined) {
+      return isTruthyDisabledInput(disabled) ? 'false' : 'true';
     }
-    const nextSensitive = isTruthyDisabledInput(val) ? 'false' : 'true';
-    if (getElementAttribute(this.el, 'sensitive') === nextSensitive) {
-      return;
-    }
-    this.renderer.setProperty(this.el, 'disabled', val);
-  }
-  @Input() set tooltip(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'tooltip', val);
-  }
-  @Input('event-mask') set eventMask(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'event-mask', val);
-  }
-  @Input('drop-target') set dropTarget(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'drop-target', val);
-  }
-  @Input() set col(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'col', val);
-  }
-  @Input() set row(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'row', val);
+    return this.sensitive();
+  });
+
+  constructor() {
+    bindSignalInputs([
+      ['hexpand', this.hexpand],
+      ['vexpand', this.vexpand],
+      ['halign', this.halign],
+      ['valign', this.valign],
+      ['width', this.width],
+      ['height', this.height],
+      ['min-width', this.minWidth],
+      ['min-height', this.minHeight],
+      ['margin', this.margin],
+      ['margin-top', this.marginTop],
+      ['margin-bottom', this.marginBottom],
+      ['margin-start', this.marginStart],
+      ['margin-end', this.marginEnd],
+      ['visible', this.visible],
+      ['sensitive', this.resolvedSensitive],
+      ['tooltip', this.tooltip],
+      ['event-mask', this.eventMask],
+      ['drop-target', this.dropTarget],
+      ['col', this.col],
+      ['row', this.row],
+    ]);
   }
 }
 
@@ -189,41 +213,41 @@ export class NativeElementDirective {
     'ng-window,adw-window,ng-dialog,gtk-dialog,adw-dialog,ng-header-bar,adw-header-bar,gtk-header-bar',
 })
 export class NativeWindowDirective {
-  private readonly renderer = inject(Renderer2);
-  private readonly el = inject<ElementRef<unknown>>(ElementRef).nativeElement;
+  readonly title = input<NativeAttrInput>();
+  readonly subtitle = input<NativeAttrInput>();
+  readonly showTitleButtons = input<NativeBoolInput>(undefined, { alias: 'show-title-buttons' });
+  readonly icon = input<NativeAttrInput>();
+  readonly resizable = input<NativeBoolInput>();
+  readonly decorated = input<NativeBoolInput>();
+  readonly modal = input<NativeBoolInput>();
+  readonly transientForAttr = input<NativeAttrInput>(undefined, { alias: 'transient-for' });
+  readonly transientFor = input<NativeAttrInput>();
+  readonly preventClose = input<NativeBoolInput>();
+  readonly preventCloseAttr = input<NativeBoolInput>(undefined, { alias: 'prevent-close' });
+  readonly backdrop = input<NativeAttrInput>();
+  readonly theme = input<NativeAttrInput>();
 
-  @Input() set title(val: NativeAttrInput) {
-    syncNativeProp(this.renderer, this.el, 'title', val);
-  }
-  @Input() set subtitle(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'subtitle', val);
-  }
-  @Input('show-title-buttons') set showTitleButtons(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'show-title-buttons', val);
-  }
-  @Input() set icon(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'icon', val);
-  }
-  @Input() set resizable(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'resizable', val);
-  }
-  @Input() set decorated(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'decorated', val);
-  }
-  @Input() set modal(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'modal', val);
-  }
-  @Input('transient-for') set transientForAttr(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'transient-for', val);
-  }
-  @Input() set transientFor(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'transient-for', val);
-  }
-  @Input() set preventClose(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'prevent-close', val);
-  }
-  @Input('prevent-close') set preventCloseAttr(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'prevent-close', val);
+  private readonly resolvedTransientFor = computed(
+    () => this.transientFor() ?? this.transientForAttr(),
+  );
+  private readonly resolvedPreventClose = computed(
+    () => this.preventClose() ?? this.preventCloseAttr(),
+  );
+
+  constructor() {
+    bindSignalInputs([
+      ['title', this.title, true],
+      ['subtitle', this.subtitle],
+      ['show-title-buttons', this.showTitleButtons],
+      ['icon', this.icon],
+      ['resizable', this.resizable],
+      ['decorated', this.decorated],
+      ['modal', this.modal],
+      ['transient-for', this.resolvedTransientFor],
+      ['prevent-close', this.resolvedPreventClose],
+      ['backdrop', this.backdrop],
+      ['theme', this.theme],
+    ]);
   }
 }
 
@@ -236,80 +260,58 @@ export class NativeWindowDirective {
     'ng-box,gtk-box,ng-grid,gtk-grid,ng-flow,ng-flow-box,gtk-flow-box,ng-paned,gtk-paned,ng-scroll,gtk-scrolled-window,ng-stack,gtk-stack,adw-navigation-view,ng-expander,gtk-expander,ng-clamp,adw-clamp,ng-separator,gtk-separator',
 })
 export class NativeContainerDirective {
-  private readonly renderer = inject(Renderer2);
-  private readonly el = inject<ElementRef<unknown>>(ElementRef).nativeElement;
+  readonly orientation = input<NativeAttrInput>();
+  readonly spacing = input<NativeNumberInput>();
+  readonly gap = input<NativeNumberInput>();
+  readonly rowSpacing = input<NativeNumberInput>(undefined, { alias: 'row-spacing' });
+  readonly columnSpacing = input<NativeNumberInput>(undefined, { alias: 'column-spacing' });
+  readonly minChildren = input<NativeNumberInput>(undefined, { alias: 'min-children' });
+  readonly maxChildren = input<NativeNumberInput>(undefined, { alias: 'max-children' });
+  readonly minPerRow = input<NativeNumberInput>(undefined, { alias: 'min-per-row' });
+  readonly maxPerRow = input<NativeNumberInput>(undefined, { alias: 'max-per-row' });
+  readonly columns = input<NativeNumberInput>();
+  readonly homogeneous = input<NativeBoolInput>();
+  readonly position = input<NativeNumberInput>();
+  readonly visibleChild = input<NativeAttrInput>(undefined, { alias: 'visible-child' });
+  readonly activePage = input<NativeAttrInput>(undefined, { alias: 'active-page' });
+  readonly transition = input<NativeAttrInput>();
+  readonly transitionType = input<NativeAttrInput>(undefined, { alias: 'transition-type' });
+  readonly label = input<NativeAttrInput>();
+  readonly title = input<NativeAttrInput>();
+  readonly expanded = input<NativeBoolInput>();
+  readonly open = input<NativeBoolInput>();
+  readonly maxSize = input<NativeNumberInput>(undefined, { alias: 'max-size' });
+  readonly maximumSize = input<NativeNumberInput>(undefined, { alias: 'maximum-size' });
+  readonly scrollTo = input<NativeAttrInput>(undefined, { alias: 'scroll-to' });
+  readonly scrollAnchor = input<NativeAttrInput>(undefined, { alias: 'scroll-anchor' });
 
-  @Input() set orientation(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'orientation', val);
-  }
-  @Input() set spacing(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'spacing', val);
-  }
-  @Input() set gap(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'gap', val);
-  }
-  @Input('row-spacing') set rowSpacing(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'row-spacing', val);
-  }
-  @Input('column-spacing') set columnSpacing(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'column-spacing', val);
-  }
-  @Input('min-children') set minChildren(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'min-children', val);
-  }
-  @Input('max-children') set maxChildren(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'max-children', val);
-  }
-  @Input('min-per-row') set minPerRow(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'min-per-row', val);
-  }
-  @Input('max-per-row') set maxPerRow(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'max-per-row', val);
-  }
-  @Input() set columns(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'columns', val);
-  }
-  @Input() set homogeneous(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'homogeneous', val);
-  }
-  @Input() set position(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'position', val);
-  }
-  @Input('visible-child') set visibleChild(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'visible-child', val);
-  }
-  @Input('active-page') set activePage(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'active-page', val);
-  }
-  @Input() set transition(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'transition', val);
-  }
-  @Input('transition-type') set transitionType(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'transition-type', val);
-  }
-  @Input() set label(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'label', val);
-  }
-  @Input() set title(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'title', val);
-  }
-  @Input() set expanded(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'expanded', val);
-  }
-  @Input() set open(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'open', val);
-  }
-  @Input('max-size') set maxSize(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'max-size', val);
-  }
-  @Input('maximum-size') set maximumSize(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'maximum-size', val);
-  }
-  @Input('scroll-to') set scrollTo(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'scroll-to', val);
-  }
-  @Input('scroll-anchor') set scrollAnchor(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'scroll-anchor', val);
+  constructor() {
+    bindSignalInputs([
+      ['orientation', this.orientation],
+      ['spacing', this.spacing],
+      ['gap', this.gap],
+      ['row-spacing', this.rowSpacing],
+      ['column-spacing', this.columnSpacing],
+      ['min-children', this.minChildren],
+      ['max-children', this.maxChildren],
+      ['min-per-row', this.minPerRow],
+      ['max-per-row', this.maxPerRow],
+      ['columns', this.columns],
+      ['homogeneous', this.homogeneous],
+      ['position', this.position],
+      ['visible-child', this.visibleChild],
+      ['active-page', this.activePage],
+      ['transition', this.transition],
+      ['transition-type', this.transitionType],
+      ['label', this.label],
+      ['title', this.title],
+      ['expanded', this.expanded],
+      ['open', this.open],
+      ['max-size', this.maxSize],
+      ['maximum-size', this.maximumSize],
+      ['scroll-to', this.scrollTo],
+      ['scroll-anchor', this.scrollAnchor],
+    ]);
   }
 }
 
@@ -320,23 +322,20 @@ export class NativeContainerDirective {
   selector: 'ng-button,gtk-button,ng-label,gtk-label',
 })
 export class NativeTextWidgetDirective {
-  private readonly renderer = inject(Renderer2);
-  private readonly el = inject<ElementRef<unknown>>(ElementRef).nativeElement;
+  readonly label = input<NativeAttrInput>();
+  readonly text = input<NativeAttrInput>();
+  readonly wrap = input<NativeBoolInput>();
+  readonly selectable = input<NativeBoolInput>();
+  readonly ellipsize = input<NativeAttrInput>();
 
-  @Input() set label(val: NativeAttrInput) {
-    syncNativeProp(this.renderer, this.el, 'label', val);
-  }
-  @Input() set text(val: NativeAttrInput) {
-    syncNativeProp(this.renderer, this.el, 'text', val);
-  }
-  @Input() set wrap(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'wrap', val);
-  }
-  @Input() set selectable(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'selectable', val);
-  }
-  @Input() set ellipsize(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'ellipsize', val);
+  constructor() {
+    bindSignalInputs([
+      ['label', this.label, true],
+      ['text', this.text, true],
+      ['wrap', this.wrap],
+      ['selectable', this.selectable],
+      ['ellipsize', this.ellipsize],
+    ]);
   }
 }
 
@@ -348,35 +347,28 @@ export class NativeTextWidgetDirective {
     'ng-image,adw-image,gtk-picture,ng-picture,ng-level-bar,gtk-level-bar,ng-progress-bar,gtk-progress-bar,ng-spinner,gtk-spinner',
 })
 export class NativeMediaAndMeterDirective {
-  private readonly renderer = inject(Renderer2);
-  private readonly el = inject<ElementRef<unknown>>(ElementRef).nativeElement;
+  readonly src = input<NativeAttrInput>();
+  readonly ngSrc = input<NativeAttrInput>();
+  readonly alt = input<NativeAttrInput>();
+  readonly value = input<NativeNumberInput>();
+  readonly min = input<NativeNumberInput>();
+  readonly max = input<NativeNumberInput>();
+  readonly indeterminate = input<NativeBoolInput>();
+  readonly active = input<NativeBoolInput>();
+  readonly spinning = input<NativeBoolInput>();
 
-  @Input() set src(val: NativeAttrInput) {
-    syncNativeProp(this.renderer, this.el, 'src', val);
-  }
-  @Input() set ngSrc(val: NativeAttrInput) {
-    syncNativeProp(this.renderer, this.el, 'ngSrc', val);
-  }
-  @Input() set alt(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'alt', val);
-  }
-  @Input() set value(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'value', val);
-  }
-  @Input() set min(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'min', val);
-  }
-  @Input() set max(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'max', val);
-  }
-  @Input() set indeterminate(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'indeterminate', val);
-  }
-  @Input() set active(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'active', val);
-  }
-  @Input() set spinning(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'spinning', val);
+  constructor() {
+    bindSignalInputs([
+      ['src', this.src, true],
+      ['ngSrc', this.ngSrc, true],
+      ['alt', this.alt],
+      ['value', this.value],
+      ['min', this.min],
+      ['max', this.max],
+      ['indeterminate', this.indeterminate],
+      ['active', this.active],
+      ['spinning', this.spinning],
+    ]);
   }
 }
 
@@ -388,44 +380,34 @@ export class NativeMediaAndMeterDirective {
     'ng-entry,gtk-entry,ng-search-entry,gtk-search-entry,ng-password-entry,gtk-password-entry,ng-text-view,gtk-text-view,ng-switch,gtk-switch,ng-checkbox,ng-check,ng-check-button,gtk-check-button,ng-slider,ng-scale,gtk-scale,ng-spin-button,gtk-spin-button,ng-select,ng-dropdown,gtk-dropdown,gtk-drop-down,adw-entry-row,adw-password-entry-row,adw-switch-row,adw-combo-row,adw-spin-row',
 })
 export class NativeInputWidgetDirective {
-  private readonly renderer = inject(Renderer2);
-  private readonly el = inject<ElementRef<unknown>>(ElementRef).nativeElement;
+  readonly placeholder = input<NativeAttrInput>();
+  readonly value = input<NativeAttrInput>();
+  readonly text = input<NativeAttrInput>();
+  readonly active = input<NativeBoolInput>();
+  readonly checked = input<NativeBoolInput>();
+  readonly label = input<NativeAttrInput>();
+  readonly options = input<NativeAttrInput>();
+  readonly selected = input<NativeNumberInput>();
+  readonly editable = input<NativeBoolInput>();
+  readonly monospace = input<NativeBoolInput>();
+  readonly showPeekIcon = input<NativeBoolInput>(undefined, { alias: 'show-peek-icon' });
+  readonly peek = input<NativeBoolInput>();
 
-  @Input() set placeholder(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'placeholder', val);
-  }
-  @Input() set value(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'value', val);
-  }
-  @Input() set text(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'text', val);
-  }
-  @Input() set active(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'active', val);
-  }
-  @Input() set checked(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'checked', val);
-  }
-  @Input() set label(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'label', val);
-  }
-  @Input() set options(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'options', val);
-  }
-  @Input() set selected(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'selected', val);
-  }
-  @Input() set editable(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'editable', val);
-  }
-  @Input() set monospace(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'monospace', val);
-  }
-  @Input('show-peek-icon') set showPeekIcon(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'show-peek-icon', val);
-  }
-  @Input() set peek(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'peek', val);
+  constructor() {
+    bindSignalInputs([
+      ['placeholder', this.placeholder],
+      ['value', this.value],
+      ['text', this.text],
+      ['active', this.active],
+      ['checked', this.checked],
+      ['label', this.label],
+      ['options', this.options],
+      ['selected', this.selected],
+      ['editable', this.editable],
+      ['monospace', this.monospace],
+      ['show-peek-icon', this.showPeekIcon],
+      ['peek', this.peek],
+    ]);
   }
 }
 
@@ -436,23 +418,25 @@ export class NativeInputWidgetDirective {
   selector: 'ng-list,ng-table,gtk-list-box,gtk-list-view',
 })
 export class NativeListDirective {
-  private readonly renderer = inject(Renderer2);
-  private readonly el = inject<ElementRef<unknown>>(ElementRef).nativeElement;
+  readonly selectionModeAttr = input<NativeAttrInput>(undefined, { alias: 'selection-mode' });
+  readonly selectionMode = input<NativeAttrInput>();
+  readonly showSeparatorsAttr = input<NativeBoolInput>(undefined, { alias: 'show-separators' });
+  readonly showSeparators = input<NativeBoolInput>();
+  readonly separators = input<NativeBoolInput>();
 
-  @Input('selection-mode') set selectionModeAttr(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'selection-mode', val);
-  }
-  @Input() set selectionMode(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'selection-mode', val);
-  }
-  @Input('show-separators') set showSeparatorsAttr(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'show-separators', val);
-  }
-  @Input() set showSeparators(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'show-separators', val);
-  }
-  @Input() set separators(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'separators', val);
+  private readonly resolvedSelectionMode = computed(
+    () => this.selectionMode() ?? this.selectionModeAttr(),
+  );
+  private readonly resolvedShowSeparators = computed(
+    () => this.showSeparators() ?? this.showSeparatorsAttr(),
+  );
+
+  constructor() {
+    bindSignalInputs([
+      ['selection-mode', this.resolvedSelectionMode],
+      ['show-separators', this.resolvedShowSeparators],
+      ['separators', this.separators],
+    ]);
   }
 }
 
@@ -463,29 +447,25 @@ export class NativeListDirective {
   selector: 'ng-popover,gtk-popover,ng-menu',
 })
 export class NativePopoverDirective {
-  private readonly renderer = inject(Renderer2);
-  private readonly el = inject<ElementRef<unknown>>(ElementRef).nativeElement;
+  readonly open = input<NativeBoolInput>();
+  readonly position = input<NativeAttrInput>();
+  readonly placement = input<NativeAttrInput>();
+  readonly autohide = input<NativeBoolInput>();
+  readonly hasArrowAttr = input<NativeBoolInput>(undefined, { alias: 'has-arrow' });
+  readonly hasArrow = input<NativeBoolInput>();
+  readonly anchor = input<NativeAttrInput>();
 
-  @Input() set open(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'open', val);
-  }
-  @Input() set position(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'position', val);
-  }
-  @Input() set placement(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'placement', val);
-  }
-  @Input() set autohide(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'autohide', val);
-  }
-  @Input('has-arrow') set hasArrowAttr(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'has-arrow', val);
-  }
-  @Input() set hasArrow(val: NativeBoolInput) {
-    syncNativeAttr(this.renderer, this.el, 'has-arrow', val);
-  }
-  @Input() set anchor(val: NativeAttrInput) {
-    syncNativeAttr(this.renderer, this.el, 'anchor', val);
+  private readonly resolvedHasArrow = computed(() => this.hasArrow() ?? this.hasArrowAttr());
+
+  constructor() {
+    bindSignalInputs([
+      ['open', this.open],
+      ['position', this.position],
+      ['placement', this.placement],
+      ['autohide', this.autohide],
+      ['has-arrow', this.resolvedHasArrow],
+      ['anchor', this.anchor],
+    ]);
   }
 }
 
@@ -497,17 +477,16 @@ export class NativePopoverDirective {
   selector: 'ng-slider,ng-scale,gtk-scale,ng-spin-button,gtk-spin-button,adw-spin-row',
 })
 export class NativeNumericRangeDirective {
-  private readonly renderer = inject(Renderer2);
-  private readonly el = inject<ElementRef<unknown>>(ElementRef).nativeElement;
+  readonly min = input<NativeNumberInput>();
+  readonly max = input<NativeNumberInput>();
+  readonly step = input<NativeNumberInput>();
 
-  @Input() set min(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'min', val);
-  }
-  @Input() set max(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'max', val);
-  }
-  @Input() set step(val: NativeNumberInput) {
-    syncNativeAttr(this.renderer, this.el, 'step', val);
+  constructor() {
+    bindSignalInputs([
+      ['min', this.min],
+      ['max', this.max],
+      ['step', this.step],
+    ]);
   }
 }
 

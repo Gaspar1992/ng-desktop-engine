@@ -1,9 +1,9 @@
 import {
   Component,
+  DestroyRef,
   effect,
   ElementRef,
   inject,
-  OnDestroy,
   OnInit,
   signal,
   untracked,
@@ -24,10 +24,11 @@ import { PokedexService } from './core/services/pokedex.service';
   styleUrl: './app.css',
   encapsulation: ViewEncapsulation.None,
 })
-export class App implements OnInit, OnDestroy {
+export class App implements OnInit {
   protected readonly pokedex = inject(PokedexService);
   private readonly desktop = inject(NativeDesktopService);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly searchEntry = viewChild<ElementRef<NativeElementNode>>('searchEntry');
 
   protected readonly theme = this.desktop.theme;
@@ -88,7 +89,6 @@ export class App implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
-    this.desktop.loadWindowGeometry();
     const menuItems = [
       {
         id: 'refresh-catalog',
@@ -110,45 +110,42 @@ export class App implements OnInit, OnDestroy {
       },
       { id: 'back-to-list', label: 'Volver al listado', accelerator: 'Escape', enabled: true },
     ];
-    this.desktop.setAppMenu(menuItems, {
-      'refresh-catalog': () => void this.pokedex.loadCatalogPage(true),
-      'toggle-favorites': () => this.toggleFavoritesFilter(),
-      'export-favorites': () => {
-        this.pokedex.exportFavoritesToDisk();
+    this.desktop.setAppMenu(
+      menuItems,
+      {
+        'refresh-catalog': () => void this.pokedex.loadCatalogPage(true),
+        'toggle-favorites': () => this.toggleFavoritesFilter(),
+        'export-favorites': () => {
+          this.pokedex.exportFavoritesToDisk();
+        },
+        'back-to-list': () => void this.backToList(),
       },
-      'back-to-list': () => void this.backToList(),
-    });
+      { registerShortcuts: true },
+    );
     this.desktop.setTray({
       visible: true,
       icon: 'pokedex-app',
       tooltip: 'Pokédex Nacional — Angular 22 Native',
       menuItems,
     });
-    this.desktop.registerShortcut('<Control>f', 'focus-search', () => {
-      this.focusSearchEntry();
-    });
-    this.desktop.registerShortcut('<Control>b', 'toggle-favorites', () => {
-      this.toggleFavoritesFilter();
-    });
-    this.desktop.registerShortcut('Escape', 'back-to-list', () => {
-      void this.backToList();
-    });
-    this.desktop.registerShortcut('<Control>t', 'toggle-theme', () => {
-      this.toggleTheme();
-    });
+    this.desktop.bindShortcut(
+      '<Control>f',
+      'focus-search',
+      () => this.focusSearchEntry(),
+      this.destroyRef,
+    );
+    this.desktop.bindShortcut(
+      '<Control>t',
+      'toggle-theme',
+      () => this.toggleTheme(),
+      this.destroyRef,
+    );
 
     void this.pokedex.refreshFavorites();
     void this.pokedex.loadCatalogPage(true);
     if (!this.router.navigated) {
       this.router.initialNavigation();
     }
-  }
-
-  ngOnDestroy(): void {
-    this.desktop.unregisterShortcut('<Control>f');
-    this.desktop.unregisterShortcut('<Control>b');
-    this.desktop.unregisterShortcut('Escape');
-    this.desktop.unregisterShortcut('<Control>t');
   }
 
   onBeforeUnload(): void {

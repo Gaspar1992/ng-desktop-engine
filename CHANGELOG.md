@@ -5,6 +5,15 @@ This project adheres to [Conventional Commits](https://www.conventionalcommits.o
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-26
+
+### Developer Experience, JSON Schemas & Angular 22 Signal Directives (`v0.7.1`)
+
+- **release workflow & docs alignment (`PR #57`):** specify `ng-linux-counter` for `ng build` in `.github/workflows/release.yml` and align `ROADMAP.md`, `docs/GETTING_STARTED.md`, and `docs-site` architecture guide with `v0.7.0`+.
+- **builder JSON schemas (`@ng-desktop/builders`):** fix `packageFormats` (`msix`), add `gpu`, `appId`, `displayName`, `icon`, `iconSearchDir`, `window`, `server`, `hmr`, canonical `permissions.allow`/`deny` capability enums, and IDE `markdownDescription`/`examples`/`defaultSnippets` in `native-builder-schema.json`; remove monorepo-only `$ref` in `angular-native-schema.json`; add `runtime-manifest-schema.json` and `ng-add` `gpu` option.
+- **ergonomic desktop & bootstrap APIs + Pokédex cleanup:** make `bootstrapNativeApplication` `PromiseLike`, add `[backdrop]`/`[theme]` to `NativeWindowDirective`, add `setAppMenu(..., { registerShortcuts: true })`, `bindShortcut(..., destroyRef?)`, and `provideNativeDesktop({ persistWindowGeometry: true })`, and simplify `examples/counter-app`.
+- **100% Signal `input()` / `host` compliance:** migrate all remaining `@Input` setters in `NATIVE_UI_DIRECTIVES` (`native-directives.ts`) onto Signal `input()` + `bindSignalInputs` and move `@HostListener` in `docs-site/src/app/app.ts` to `host` metadata.
+
 ## [0.7.0] - 2026-11-26
 
 ### Coverage Shielding, Architectural Refactor & Phase 18 GPU/Composition (`v0.7.0`)
