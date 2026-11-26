@@ -107,9 +107,13 @@ function isCapabilityEnabled(capabilities, cap) {
 const IMPORT_SPECIFIER_CAPS = new Map([
   ['HttpClient', 'network'],
   ['provideNativeHttp', 'network'],
+  ['provideNativeHttpClient', 'network'],
   ['provideHttpClient', 'network'],
+  ['createNativeHttpResource', 'network'],
   ['NativeSqliteService', 'sqlite'],
   ['NativeFsService', 'filesystem:xdg'],
+  ['NativeFileSystemService', 'filesystem:xdg'],
+  ['NativeDropTargetDirective', 'filesystem:drop'],
   ['NativeComputeService', 'compute-threads'],
 ]);
 
@@ -119,8 +123,10 @@ const CALL_NAME_CAPS = new Map([
   ['httpBatch', 'network'],
   ['downloadFiles', 'network'],
   ['httpResource', 'network'],
+  ['createNativeHttpResource', 'network'],
   ['configureHttp', 'network'],
   ['sqliteExec', 'sqlite'],
+  ['sqliteExecute', 'sqlite'],
   ['sqliteQuery', 'sqlite'],
   ['openSqlite', 'sqlite'],
   ['resolveXdgPath', 'filesystem:xdg'],
@@ -131,11 +137,17 @@ const CALL_NAME_CAPS = new Map([
   ['openFileDialog', 'filesystem:dialogs'],
   ['saveFileDialog', 'filesystem:dialogs'],
   ['getClipboard', 'clipboard'],
+  ['getClipboardText', 'clipboard'],
   ['setClipboard', 'clipboard'],
+  ['setClipboardText', 'clipboard'],
   ['readClipboard', 'clipboard'],
   ['writeClipboard', 'clipboard'],
   ['sendNotification', 'notifications'],
+  ['notify', 'notifications'],
   ['computeFilter', 'compute-threads'],
+  ['fuzzyFilter', 'compute-threads'],
+  ['fuzzyFilterStrings', 'compute-threads'],
+  ['computeFuzzyFilter', 'compute-threads'],
   ['computeHash', 'compute-threads'],
 ]);
 
@@ -226,7 +238,11 @@ function inspectTypeScriptAst(filename, code, addEvidence) {
     }
 
     if (node.type === 'Literal' && typeof node.value === 'string') {
-      if (node.value === 'file-drop' || node.value === 'ng-drop-target') {
+      if (
+        node.value === 'file-drop' ||
+        node.value === 'ng-drop-target' ||
+        node.value === 'ngNativeDropTarget'
+      ) {
         addEvidence('filesystem:drop', filename, `literal '${node.value}'`);
       }
     }
@@ -276,7 +292,9 @@ export function analyzeSourcePermissions(files, permissionsConfig = {}) {
       inspectTypeScriptAst(item.file, item.content, addEvidence);
     } else if (item.file.endsWith('.html')) {
       if (
+        item.content.includes('(fileDrop)') ||
         item.content.includes('(file-drop)') ||
+        item.content.includes('ngNativeDropTarget') ||
         item.content.includes('dropTarget') ||
         item.content.includes('ng-drop-target')
       ) {

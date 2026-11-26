@@ -3,3 +3,147 @@
   font-size: 12px;
   border-radius: 6px;
 }
+
+.badge-normal {
+  background: #64748b;
+  color: #ffffff;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-fighting {
+  background: #c2410c;
+  color: #ffffff;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-flying {
+  background: #38bdf8;
+  color: #0f172a;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-poison {
+  background: #a855f7;
+  color: #ffffff;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-ground {
+  background: #ca8a04;
+  color: #0f172a;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-rock {
+  background: #78716c;
+  color: #ffffff;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-bug {
+  background: #65a30d;
+  color: #ffffff;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-ghost {
+  background: #6366f1;
+  color: #ffffff;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-steel {
+  background: #94a3b8;
+  color: #0f172a;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-fire {
+  background: #ea580c;
+  color: #ffffff;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-water {
+  background: #0284c7;
+  color: #ffffff;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-grass {
+  background: #16a34a;
+  color: #ffffff;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-electric {
+  background: #eab308;
+  color: #0f172a;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-psychic {
+  background: #db2777;
+  color: #ffffff;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-ice {
+  background: #22d3ee;
+  color: #0f172a;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-dragon {
+  background: #4f46e5;
+  color: #ffffff;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-dark {
+  background: #334155;
+  color: #f8fafc;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.badge-fairy {
+  background: #f472b6;
+  color: #0f172a;
+  padding: 6px;
+  border-radius: 6px;
+  font-weight: 700;
+}

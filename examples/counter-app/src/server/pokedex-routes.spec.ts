@@ -247,6 +247,25 @@ describe('Pokédex @ng-desktop/server routes', () => {
       expect(delFav.status).toBe(200);
       const favGet = await router.handle({ method: 'GET', url: '/api/favorites' });
       expect((JSON.parse(favGet.body) as { items: unknown[] }).items).toEqual([]);
+
+      // Verify :PORT stripping, malformed URI 400 handling, and empty POST/PUT body 400 safety.
+      const portOriginRes = await router.handle({
+        method: 'GET',
+        url: 'http://localhost:4200/api/pokemon?offset=0&limit=3',
+      });
+      expect(portOriginRes.status).toBe(200);
+
+      const malformedUriRes = await router.handle({
+        method: 'GET',
+        url: '/api/pokemon/%E0%A4%A',
+      });
+      expect(malformedUriRes.status).toBe(400);
+
+      const emptyFavRes = await router.handle({
+        method: 'POST',
+        url: '/api/favorites',
+      });
+      expect(emptyFavRes.status).toBe(400);
     } finally {
       rmSync(outDir, { recursive: true, force: true });
     }

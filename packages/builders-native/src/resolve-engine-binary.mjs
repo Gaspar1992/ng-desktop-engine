@@ -43,12 +43,15 @@ export const ENGINE_BINARY_PACKAGES = {
 };
 
 function defaultResolvePkgJsonPath(pkgName, cwd) {
-  try {
-    const req = createRequire(resolve(cwd, 'package.json'));
-    return req.resolve(`${pkgName}/package.json`);
-  } catch {
-    return null;
+  for (const base of [import.meta.url, resolve(cwd, 'package.json')]) {
+    try {
+      const req = createRequire(base);
+      return req.resolve(`${pkgName}/package.json`);
+    } catch {
+      // Try next resolution anchor (builder optionalDependencies vs workspace root).
+    }
   }
+  return null;
 }
 
 /**

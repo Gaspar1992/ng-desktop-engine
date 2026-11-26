@@ -1,4 +1,5 @@
 import {
+  createError,
   defaultStatusText,
   NativeEventHandler,
   NativeServerComputeMatch,
@@ -59,8 +60,22 @@ declare global {
   var __NG_NATIVE_SERVER_ROUTER__: NativeServerRouter | undefined;
 }
 
+function safeDecodeUriComponent(raw: string): string {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Bad Request',
+      message: `Malformed URI component '${raw}'`,
+    });
+  }
+}
+
 function parseUrlParts(rawUrl: string): { path: string; query: Record<string, string> } {
-  const withoutOrigin = rawUrl.trim().replace(/^(?:https?:\/\/localhost|local:\/?)/i, '');
+  const withoutOrigin = rawUrl
+    .trim()
+    .replace(/^(?:https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?|local:\/?)/i, '');
   const hashIdx = withoutOrigin.indexOf('#');
   const cleanUrl = hashIdx === -1 ? withoutOrigin : withoutOrigin.slice(0, hashIdx);
   const qIdx = cleanUrl.indexOf('?');
@@ -79,8 +94,8 @@ function parseUrlParts(rawUrl: string): { path: string; query: Record<string, st
       const eq = pair.indexOf('=');
       const rawKey = eq === -1 ? pair : pair.slice(0, eq);
       const rawVal = eq === -1 ? '' : pair.slice(eq + 1);
-      const key = decodeURIComponent(rawKey.replaceAll('+', ' '));
-      const val = decodeURIComponent(rawVal.replaceAll('+', ' '));
+      const key = safeDecodeUriComponent(rawKey.replaceAll('+', ' '));
+      const val = safeDecodeUriComponent(rawVal.replaceAll('+', ' '));
       query[key] = val;
     }
   }
@@ -105,7 +120,7 @@ function matchPattern(
     const seg = patSegs[i];
     if (seg.startsWith('*')) {
       const paramName = seg.slice(1).trim() || 'slug';
-      params[paramName] = pathSegs.slice(i).map(decodeURIComponent).join('/');
+      params[paramName] = pathSegs.slice(i).map(safeDecodeUriComponent).join('/');
       weights.push(1);
       return { params, weights };
     }
@@ -114,7 +129,7 @@ function matchPattern(
     }
     if (seg.startsWith(':')) {
       const paramName = seg.slice(1).trim();
-      params[paramName] = decodeURIComponent(pathSegs[i]);
+      params[paramName] = safeDecodeUriComponent(pathSegs[i]);
       weights.push(2);
       continue;
     }
@@ -318,69 +333,72 @@ export function createNativeServerRouter(
       const method = String(request.method || 'GET')
         .trim()
         .toUpperCase();
-      const { path, query } = parseUrlParts(request.url);
-
-      const pathMatches: Array<{
-        route: NativeServerRouteDefinition;
-        params: Record<string, string>;
-        weights: number[];
-        isExactMethod: boolean;
-      }> = [];
-
-      for (const route of routeList) {
-        const matched = matchPattern(route.pattern, path);
-        if (!matched) continue;
-        pathMatches.push({
-          route,
-          params: matched.params,
-          weights: matched.weights,
-          isExactMethod: route.method.toUpperCase() === method,
-        });
-      }
-
-      if (pathMatches.length === 0) {
-        return {
-          status: 404,
-          statusText: 'Not Found',
-          headers: { 'content-type': 'application/json; charset=utf-8' },
-          body: JSON.stringify({ error: `Route not found: ${path}`, statusCode: 404 }),
-        };
-      }
-
-      const methodMatches = pathMatches.filter((m) => m.isExactMethod || m.route.method === '*');
-      if (methodMatches.length === 0) {
-        return {
-          status: 405,
-          statusText: 'Method Not Allowed',
-          headers: { 'content-type': 'application/json; charset=utf-8' },
-          body: JSON.stringify({
-            error: `Method ${method} not allowed for ${path}`,
-            statusCode: 405,
-          }),
-        };
-      }
-
-      methodMatches.sort(compareMatchPrecedence);
-      const selected = methodMatches[0];
-      const baseCtx = contextFactory();
-      const event: NativeServerEvent = {
-        method,
-        url: request.url,
-        path,
-        headers: normalizeHeaders(request.headers),
-        body: request.body ?? null,
-        context: {
-          ...baseCtx,
-          params: selected.params,
-          query,
-        },
-        response: {
-          status: 200,
-          headers: {},
-        },
-      };
+      let responseHeaders: Record<string, string> = {};
 
       try {
+        const { path, query } = parseUrlParts(request.url);
+
+        const pathMatches: Array<{
+          route: NativeServerRouteDefinition;
+          params: Record<string, string>;
+          weights: number[];
+          isExactMethod: boolean;
+        }> = [];
+
+        for (const route of routeList) {
+          const matched = matchPattern(route.pattern, path);
+          if (!matched) continue;
+          pathMatches.push({
+            route,
+            params: matched.params,
+            weights: matched.weights,
+            isExactMethod: route.method.toUpperCase() === method,
+          });
+        }
+
+        if (pathMatches.length === 0) {
+          return {
+            status: 404,
+            statusText: 'Not Found',
+            headers: { 'content-type': 'application/json; charset=utf-8' },
+            body: JSON.stringify({ error: `Route not found: ${path}`, statusCode: 404 }),
+          };
+        }
+
+        const methodMatches = pathMatches.filter((m) => m.isExactMethod || m.route.method === '*');
+        if (methodMatches.length === 0) {
+          return {
+            status: 405,
+            statusText: 'Method Not Allowed',
+            headers: { 'content-type': 'application/json; charset=utf-8' },
+            body: JSON.stringify({
+              error: `Method ${method} not allowed for ${path}`,
+              statusCode: 405,
+            }),
+          };
+        }
+
+        methodMatches.sort(compareMatchPrecedence);
+        const selected = methodMatches[0];
+        const baseCtx = contextFactory();
+        const event: NativeServerEvent = {
+          method,
+          url: request.url,
+          path,
+          headers: normalizeHeaders(request.headers),
+          body: request.body ?? null,
+          context: {
+            ...baseCtx,
+            params: selected.params,
+            query,
+          },
+          response: {
+            status: 200,
+            headers: {},
+          },
+        };
+        responseHeaders = event.response.headers;
+
         const result = await selected.route.handler(event);
         return serializeResult(result, event);
       } catch (err) {
@@ -389,7 +407,7 @@ export function createNativeServerRouter(
             status: err.statusCode,
             statusText: err.statusMessage,
             headers: {
-              ...event.response.headers,
+              ...responseHeaders,
               'content-type': 'application/json; charset=utf-8',
             },
             body: JSON.stringify({

@@ -249,11 +249,24 @@ export class NativeHttpBackend implements HttpBackend {
         if (cancelled) {
           return;
         }
+        const headers = new HttpHeaders(rawRes.headers ?? {});
         let parsedBody: unknown = rawRes.body;
         if (req.responseType === 'json' && rawRes.body.length > 0) {
           try {
             parsedBody = JSON.parse(rawRes.body);
-          } catch {
+          } catch (parseErr) {
+            if (rawRes.status >= 200 && rawRes.status < 300) {
+              observer.error(
+                new HttpErrorResponse({
+                  error: { error: parseErr, text: rawRes.body },
+                  headers,
+                  status: rawRes.status,
+                  statusText: rawRes.statusText || 'OK',
+                  url: req.urlWithParams,
+                }),
+              );
+              return;
+            }
             parsedBody = rawRes.body;
           }
         } else if (req.responseType === 'blob' && typeof Blob === 'function') {
@@ -262,7 +275,6 @@ export class NativeHttpBackend implements HttpBackend {
           parsedBody = new TextEncoder().encode(rawRes.body).buffer;
         }
 
-        const headers = new HttpHeaders(rawRes.headers ?? {});
         if (rawRes.status >= 200 && rawRes.status < 300) {
           observer.next(
             new HttpResponse({
@@ -295,7 +307,9 @@ export class NativeHttpBackend implements HttpBackend {
             ? undefined
             : typeof serializedBody === 'string'
               ? serializedBody
-              : JSON.stringify(serializedBody);
+              : typeof URLSearchParams !== 'undefined' && serializedBody instanceof URLSearchParams
+                ? serializedBody.toString()
+                : JSON.stringify(serializedBody);
 
         const callKind = detectNativeCallKind(req);
         const options = {

@@ -228,6 +228,7 @@ function mapNativeEventNames(eventName: string): string[] {
     case 'dragleave':
       return ['dragleave'];
     case 'drop':
+    case 'file-drop':
       return ['drop', 'files-dropped'];
     default:
       return [eventName];
@@ -771,7 +772,28 @@ export class NativeRenderer2 extends Renderer2 {
   override removeStyle(el: NativeElementNode, style: string, _flags?: RendererStyleFlags2): void {
     el.styles.delete(style);
     if (!el.isVirtual) {
-      this.bridge.setAttribute(el.id, style, '');
+      const key = style.trim().toLowerCase();
+      let nativeAttr = style;
+      if (key === 'flex' || key === 'flex-grow' || key === 'width') {
+        nativeAttr = 'hexpand';
+      } else if (key === 'height') {
+        nativeAttr = 'vexpand';
+      } else if (key === 'flex-direction') {
+        nativeAttr = 'orientation';
+      } else if (key === 'gap') {
+        nativeAttr = 'spacing';
+      } else if (key === 'row-gap' || key === 'column-gap') {
+        nativeAttr = key.replace('-gap', '-spacing');
+      } else if (key === 'justify-self') {
+        nativeAttr = 'halign';
+      } else if (key === 'align-self') {
+        nativeAttr = 'valign';
+      } else if (key === 'margin-left') {
+        nativeAttr = 'margin-start';
+      } else if (key === 'margin-right') {
+        nativeAttr = 'margin-end';
+      }
+      this.bridge.setAttribute(el.id, nativeAttr, '');
     }
   }
 
@@ -1234,6 +1256,11 @@ export class NativeRendererFactory2 implements RendererFactory2 {
   private readonly defaultRenderer: NativeRenderer2;
   private readonly registeredTypeIds = new Set<string>();
   private readonly scopedClassesByScope = new Map<string, Set<string>>();
+  private readonly sharedRootVars = {
+    baseVars: new Map<string, string>(),
+    lightVars: new Map<string, string>(),
+    darkVars: new Map<string, string>(),
+  };
   private nodeCounter = 1;
   private primaryWindowId: string | null = null;
   private primaryScrollId: string | null = null;
@@ -1250,7 +1277,7 @@ export class NativeRendererFactory2 implements RendererFactory2 {
             if (!this.primaryWindowId || !this.nodesById.has(this.primaryWindowId)) {
               this.primaryWindowId = id;
             }
-          } else if (tag === 'ng-scroll' || tag === 'adw-scroll') {
+          } else if (tag === 'ng-scroll' || tag === 'gtk-scrolled-window') {
             if (!this.primaryScrollId || !this.nodesById.has(this.primaryScrollId)) {
               this.primaryScrollId = id;
             }
@@ -1267,7 +1294,12 @@ export class NativeRendererFactory2 implements RendererFactory2 {
       const typeKey = type.id || '__anonymous__';
       if (!this.registeredTypeIds.has(typeKey)) {
         this.registeredTypeIds.add(typeKey);
-        registerParsedStyles(this.bridge, type.styles, this.scopedClassesByScope);
+        registerParsedStyles(
+          this.bridge,
+          type.styles,
+          this.scopedClassesByScope,
+          this.sharedRootVars,
+        );
       }
     }
     return this.defaultRenderer;
@@ -1300,7 +1332,7 @@ export class NativeRendererFactory2 implements RendererFactory2 {
       return this.primaryScrollId;
     }
     for (const node of this.nodesById.values()) {
-      if (!node.isVirtual && (node.tag === 'ng-scroll' || node.tag === 'adw-scroll')) {
+      if (!node.isVirtual && (node.tag === 'ng-scroll' || node.tag === 'gtk-scrolled-window')) {
         this.primaryScrollId = node.id;
         return node.id;
       }
