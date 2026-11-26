@@ -55,38 +55,38 @@ impl GtkWidgetType {
     }
 
     fn from_tag(tag: &str) -> Option<Self> {
-        match tag {
-            "ng-window" | "adw-window" => Some(Self::Window),
-            "ng-dialog" | "gtk-dialog" | "adw-dialog" => Some(Self::Dialog),
-            "ng-header-bar" | "adw-header-bar" | "gtk-header-bar" => Some(Self::HeaderBar),
-            "ng-scroll" | "gtk-scrolled-window" => Some(Self::Scroll),
-            "ng-box" | "gtk-box" => Some(Self::Box),
-            "ng-grid" | "gtk-grid" => Some(Self::Grid),
-            "ng-separator" | "gtk-separator" => Some(Self::Separator),
-            "ng-label" | "gtk-label" => Some(Self::Label),
-            "ng-button" | "gtk-button" => Some(Self::Button),
-            "ng-entry" | "gtk-entry" => Some(Self::Entry),
-            "ng-switch" | "gtk-switch" => Some(Self::Switch),
-            "ng-checkbox" | "ng-check" | "gtk-check-button" => Some(Self::CheckButton),
-            "ng-slider" | "ng-scale" | "gtk-scale" => Some(Self::Slider),
-            "ng-select" | "ng-dropdown" | "gtk-drop-down" => Some(Self::DropDown),
-            "ng-image" | "gtk-picture" | "ng-picture" => Some(Self::Image),
-            "ng-level-bar" | "gtk-level-bar" => Some(Self::LevelBar),
-            "ng-spinner" | "gtk-spinner" => Some(Self::Spinner),
-            "ng-progress-bar" | "gtk-progress-bar" => Some(Self::ProgressBar),
-            "ng-flow" | "ng-flow-box" | "gtk-flow-box" => Some(Self::FlowBox),
-            "ng-paned" | "gtk-paned" => Some(Self::Paned),
-            "ng-stack" | "gtk-stack" | "adw-navigation-view" => Some(Self::Stack),
-            "ng-expander" | "gtk-expander" => Some(Self::Expander),
-            "ng-text-view" | "gtk-text-view" => Some(Self::TextView),
-            "ng-password-entry" | "gtk-password-entry" => Some(Self::PasswordEntry),
-            "ng-search-entry" | "gtk-search-entry" => Some(Self::SearchEntry),
-            "ng-spin-button" | "gtk-spin-button" => Some(Self::SpinButton),
-            "ng-clamp" | "adw-clamp" => Some(Self::Clamp),
-            "ng-list" | "ng-table" | "gtk-list-box" | "gtk-list-view" => Some(Self::ListView),
-            "ng-popover" | "gtk-popover" | "ng-menu" => Some(Self::Popover),
-            "ng-anchor" | "#comment" => Some(Self::Anchor),
-            _ => None,
+        match super::WidgetTag::from_tag(tag) {
+            super::WidgetTag::Window => Some(Self::Window),
+            super::WidgetTag::Dialog => Some(Self::Dialog),
+            super::WidgetTag::HeaderBar => Some(Self::HeaderBar),
+            super::WidgetTag::Scroll => Some(Self::Scroll),
+            super::WidgetTag::Box => Some(Self::Box),
+            super::WidgetTag::Grid => Some(Self::Grid),
+            super::WidgetTag::Separator => Some(Self::Separator),
+            super::WidgetTag::Label => Some(Self::Label),
+            super::WidgetTag::Button => Some(Self::Button),
+            super::WidgetTag::Entry => Some(Self::Entry),
+            super::WidgetTag::Switch => Some(Self::Switch),
+            super::WidgetTag::CheckButton => Some(Self::CheckButton),
+            super::WidgetTag::Slider => Some(Self::Slider),
+            super::WidgetTag::DropDown => Some(Self::DropDown),
+            super::WidgetTag::Image => Some(Self::Image),
+            super::WidgetTag::LevelBar => Some(Self::LevelBar),
+            super::WidgetTag::Spinner => Some(Self::Spinner),
+            super::WidgetTag::ProgressBar => Some(Self::ProgressBar),
+            super::WidgetTag::FlowBox => Some(Self::FlowBox),
+            super::WidgetTag::Paned => Some(Self::Paned),
+            super::WidgetTag::Stack => Some(Self::Stack),
+            super::WidgetTag::Expander => Some(Self::Expander),
+            super::WidgetTag::TextView => Some(Self::TextView),
+            super::WidgetTag::PasswordEntry => Some(Self::PasswordEntry),
+            super::WidgetTag::SearchEntry => Some(Self::SearchEntry),
+            super::WidgetTag::SpinButton => Some(Self::SpinButton),
+            super::WidgetTag::Clamp => Some(Self::Clamp),
+            super::WidgetTag::ListView => Some(Self::ListView),
+            super::WidgetTag::Popover => Some(Self::Popover),
+            super::WidgetTag::Anchor => Some(Self::Anchor),
+            super::WidgetTag::Unknown => None,
         }
     }
 }
@@ -1352,39 +1352,55 @@ impl PlatformBackend for GtkLinuxBackend {
     }
 
     fn map_native_widget(&self, tag: &str) -> &'static str {
-        match tag {
-            "ng-window" | "adw-window" => "AdwApplicationWindow",
-            "ng-dialog" | "gtk-dialog" | "adw-dialog" => "AdwDialog",
-            "ng-header-bar" | "adw-header-bar" | "gtk-header-bar" => "AdwHeaderBar",
-            "ng-scroll" | "gtk-scrolled-window" => "GtkScrolledWindow",
-            "ng-box" | "gtk-box" => "GtkBox",
-            "ng-grid" | "gtk-grid" => "GtkGrid",
-            "ng-separator" | "gtk-separator" => "GtkSeparator",
-            "ng-label" | "gtk-label" => "GtkLabel",
-            "ng-button" | "gtk-button" => "GtkButton",
-            "ng-entry" | "gtk-entry" => "GtkEntry",
-            "ng-switch" | "gtk-switch" => "GtkSwitch",
-            "ng-checkbox" | "ng-check" | "gtk-check-button" => "GtkCheckButton",
-            "ng-slider" | "ng-scale" | "gtk-scale" => "GtkScale",
-            "ng-select" | "ng-dropdown" | "gtk-drop-down" => "GtkDropDown",
-            "ng-image" | "gtk-picture" | "ng-picture" => "GtkPicture",
-            "ng-level-bar" | "gtk-level-bar" => "GtkLevelBar",
-            "ng-spinner" | "gtk-spinner" => "GtkSpinner",
-            "ng-progress-bar" | "gtk-progress-bar" => "GtkProgressBar",
-            "ng-flow" | "ng-flow-box" | "gtk-flow-box" => "GtkFlowBox",
-            "ng-paned" | "gtk-paned" => "GtkPaned",
-            "ng-stack" | "gtk-stack" | "adw-navigation-view" => "GtkStack",
-            "ng-expander" | "gtk-expander" => "GtkExpander",
-            "ng-text-view" | "gtk-text-view" => "GtkTextView",
-            "ng-password-entry" | "gtk-password-entry" => "GtkPasswordEntry",
-            "ng-search-entry" | "gtk-search-entry" => "GtkSearchEntry",
-            "ng-spin-button" | "gtk-spin-button" => "GtkSpinButton",
-            "ng-clamp" | "adw-clamp" => "AdwClamp",
-            "ng-list" | "ng-table" | "gtk-list-box" | "gtk-list-view" => "GtkListBox",
-            "ng-popover" | "gtk-popover" | "ng-menu" => "GtkPopover",
-            "ng-anchor" | "#comment" => "GtkAnchorComment",
-            _ => "GtkWidget",
+        match super::WidgetTag::from_tag(tag) {
+            super::WidgetTag::Window => "AdwApplicationWindow",
+            super::WidgetTag::Dialog => "AdwDialog",
+            super::WidgetTag::HeaderBar => "AdwHeaderBar",
+            super::WidgetTag::Scroll => "GtkScrolledWindow",
+            super::WidgetTag::Box => "GtkBox",
+            super::WidgetTag::Grid => "GtkGrid",
+            super::WidgetTag::Separator => "GtkSeparator",
+            super::WidgetTag::Label => "GtkLabel",
+            super::WidgetTag::Button => "GtkButton",
+            super::WidgetTag::Entry => "GtkEntry",
+            super::WidgetTag::Switch => "GtkSwitch",
+            super::WidgetTag::CheckButton => "GtkCheckButton",
+            super::WidgetTag::Slider => "GtkScale",
+            super::WidgetTag::DropDown => "GtkDropDown",
+            super::WidgetTag::Image => "GtkPicture",
+            super::WidgetTag::LevelBar => "GtkLevelBar",
+            super::WidgetTag::Spinner => "GtkSpinner",
+            super::WidgetTag::ProgressBar => "GtkProgressBar",
+            super::WidgetTag::FlowBox => "GtkFlowBox",
+            super::WidgetTag::Paned => "GtkPaned",
+            super::WidgetTag::Stack => "GtkStack",
+            super::WidgetTag::Expander => "GtkExpander",
+            super::WidgetTag::TextView => "GtkTextView",
+            super::WidgetTag::PasswordEntry => "GtkPasswordEntry",
+            super::WidgetTag::SearchEntry => "GtkSearchEntry",
+            super::WidgetTag::SpinButton => "GtkSpinButton",
+            super::WidgetTag::Clamp => "AdwClamp",
+            super::WidgetTag::ListView => "GtkListBox",
+            super::WidgetTag::Popover => "GtkPopover",
+            super::WidgetTag::Anchor => "GtkAnchorComment",
+            super::WidgetTag::Unknown => "GtkWidget",
         }
+    }
+
+    fn is_native_display_active(&self) -> bool {
+        Self::is_native_display_active(self)
+    }
+
+    fn open_window_count(&self) -> u32 {
+        Self::open_window_count(self)
+    }
+
+    fn is_ffi_driver_loaded(&self) -> bool {
+        Self::is_native_display_active(self)
+    }
+
+    fn step_native_events(&self, may_block: bool) -> Vec<NativeEvent> {
+        Self::step_native_events(self, may_block)
     }
 
     fn flush_commands(&mut self, commands: &[RenderCommand]) {

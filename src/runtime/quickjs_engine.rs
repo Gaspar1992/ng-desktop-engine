@@ -106,16 +106,9 @@ impl QuickJsEngine {
     fn eval_and_drain_with_microtasks(&self, call: &str) -> Result<String, EngineError> {
         let primary = self.eval_raw(call)?;
         let followup = self.eval_raw("globalThis.__NG_NATIVE__.__drainQueue()")?;
-        let mut combined = String::new();
-        for chunk in [primary.trim(), followup.trim()] {
-            if !chunk.is_empty() && chunk != "undefined" {
-                if !combined.is_empty() {
-                    combined.push('\n');
-                }
-                combined.push_str(chunk);
-            }
-        }
-        Ok(combined)
+        Ok(super::js_engine::combine_eval_and_drain(
+            &primary, &followup,
+        ))
     }
 }
 

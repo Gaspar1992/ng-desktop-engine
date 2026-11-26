@@ -11,7 +11,9 @@ pub mod headless;
 pub mod layout_solver;
 pub mod linux_gtk;
 pub mod macos_appkit;
+mod retained_backend;
 pub mod scene_state;
+pub mod widget_tag;
 pub mod win32_sys;
 pub mod windows_winui;
 
@@ -23,6 +25,7 @@ pub use linux_gtk::GtkLinuxBackend;
 pub use macos_appkit::{AppKitWidgetBinding, MacOsAppKitBackend};
 pub use scene_state::{NativeSceneNode, NativeSceneState};
 use std::sync::OnceLock;
+pub use widget_tag::WidgetTag;
 pub use windows_winui::{WinUiBackend, WinUiControlBinding};
 
 /// Cross-platform GPU rendering preference resolved from `NG_DESKTOP_GPU_BACKEND`.
@@ -114,39 +117,39 @@ pub(super) fn trace_flush_commands(
 
 /// Default cross-platform tag-to-widget mapping shared by generic and headless backends.
 #[must_use]
-pub const fn default_map_native_widget(tag: &str) -> &'static str {
-    match tag.as_bytes() {
-        b"ng-window" | b"adw-window" => "NativeWindow",
-        b"ng-dialog" | b"gtk-dialog" | b"adw-dialog" => "NativeDialog",
-        b"ng-header-bar" | b"adw-header-bar" | b"gtk-header-bar" => "NativeHeaderBar",
-        b"ng-scroll" | b"gtk-scrolled-window" => "NativeScrollView",
-        b"ng-box" | b"gtk-box" => "NativeBox",
-        b"ng-grid" | b"gtk-grid" => "NativeGrid",
-        b"ng-separator" | b"gtk-separator" => "NativeSeparator",
-        b"ng-label" | b"gtk-label" => "NativeLabel",
-        b"ng-button" | b"gtk-button" => "NativeButton",
-        b"ng-entry" | b"gtk-entry" => "NativeEntry",
-        b"ng-switch" | b"gtk-switch" => "NativeSwitch",
-        b"ng-checkbox" | b"ng-check" | b"gtk-check-button" => "NativeCheckButton",
-        b"ng-slider" | b"ng-scale" | b"gtk-scale" => "NativeSlider",
-        b"ng-select" | b"ng-dropdown" | b"gtk-drop-down" => "NativeDropDown",
-        b"ng-image" | b"gtk-picture" | b"ng-picture" => "NativeImage",
-        b"ng-level-bar" | b"gtk-level-bar" => "NativeLevelBar",
-        b"ng-progress-bar" | b"gtk-progress-bar" => "NativeProgressBar",
-        b"ng-spinner" | b"gtk-spinner" => "NativeSpinner",
-        b"ng-flow" | b"ng-flow-box" | b"gtk-flow-box" => "NativeFlowBox",
-        b"ng-paned" | b"gtk-paned" => "NativePaned",
-        b"ng-stack" | b"gtk-stack" | b"adw-navigation-view" => "NativeStack",
-        b"ng-expander" | b"gtk-expander" => "NativeExpander",
-        b"ng-text-view" | b"gtk-text-view" => "NativeTextView",
-        b"ng-password-entry" | b"gtk-password-entry" => "NativePasswordEntry",
-        b"ng-search-entry" | b"gtk-search-entry" => "NativeSearchEntry",
-        b"ng-spin-button" | b"gtk-spin-button" => "NativeSpinButton",
-        b"ng-clamp" | b"adw-clamp" => "NativeClamp",
-        b"ng-list" | b"ng-table" | b"gtk-list-box" | b"gtk-list-view" => "NativeListView",
-        b"ng-popover" | b"gtk-popover" | b"ng-menu" => "NativePopover",
-        b"ng-anchor" => "NativeAnchor",
-        _ => "NativeWidget",
+pub fn default_map_native_widget(tag: &str) -> &'static str {
+    match WidgetTag::from_tag(tag) {
+        WidgetTag::Window => "NativeWindow",
+        WidgetTag::Dialog => "NativeDialog",
+        WidgetTag::HeaderBar => "NativeHeaderBar",
+        WidgetTag::Scroll => "NativeScrollView",
+        WidgetTag::Box => "NativeBox",
+        WidgetTag::Grid => "NativeGrid",
+        WidgetTag::Separator => "NativeSeparator",
+        WidgetTag::Label => "NativeLabel",
+        WidgetTag::Button => "NativeButton",
+        WidgetTag::Entry => "NativeEntry",
+        WidgetTag::Switch => "NativeSwitch",
+        WidgetTag::CheckButton => "NativeCheckButton",
+        WidgetTag::Slider => "NativeSlider",
+        WidgetTag::DropDown => "NativeDropDown",
+        WidgetTag::Image => "NativeImage",
+        WidgetTag::LevelBar => "NativeLevelBar",
+        WidgetTag::ProgressBar => "NativeProgressBar",
+        WidgetTag::Spinner => "NativeSpinner",
+        WidgetTag::FlowBox => "NativeFlowBox",
+        WidgetTag::Paned => "NativePaned",
+        WidgetTag::Stack => "NativeStack",
+        WidgetTag::Expander => "NativeExpander",
+        WidgetTag::TextView => "NativeTextView",
+        WidgetTag::PasswordEntry => "NativePasswordEntry",
+        WidgetTag::SearchEntry => "NativeSearchEntry",
+        WidgetTag::SpinButton => "NativeSpinButton",
+        WidgetTag::Clamp => "NativeClamp",
+        WidgetTag::ListView => "NativeListView",
+        WidgetTag::Popover => "NativePopover",
+        WidgetTag::Anchor => "NativeAnchor",
+        WidgetTag::Unknown => "NativeWidget",
     }
 }
 
@@ -159,6 +162,29 @@ pub trait PlatformBackend {
         default_map_native_widget(tag)
     }
     fn flush_commands(&mut self, commands: &[RenderCommand]);
+    fn is_native_display_active(&self) -> bool {
+        false
+    }
+    fn open_window_count(&self) -> u32 {
+        0
+    }
+    fn is_ffi_driver_loaded(&self) -> bool {
+        false
+    }
+    fn step_native_events(&self, _may_block: bool) -> Vec<NativeEvent> {
+        Vec::new()
+    }
+}
+
+macro_rules! dispatch_backend {
+    ($self:expr, $b:ident => $body:expr) => {
+        match $self {
+            Self::LinuxGtk($b) => $body,
+            Self::WindowsWinUi($b) => $body,
+            Self::MacOsAppKit($b) => $body,
+            Self::Headless($b) => $body,
+        }
+    };
 }
 
 /// Polymorphic backend wrapper produced by the Platform Factory from `angular.json`.
@@ -202,77 +228,61 @@ impl AnyPlatformBackend {
     }
 
     pub fn is_native_display_active(&self) -> bool {
-        match self {
-            Self::LinuxGtk(b) => b.is_native_display_active(),
-            Self::WindowsWinUi(b) => b.is_native_display_active(),
-            Self::MacOsAppKit(b) => b.is_native_display_active(),
-            Self::Headless(_) => false,
-        }
+        dispatch_backend!(self, b => b.is_native_display_active())
     }
 
     pub fn open_window_count(&self) -> u32 {
-        match self {
-            Self::LinuxGtk(b) => b.open_window_count(),
-            Self::WindowsWinUi(b) => b.open_window_count(),
-            Self::MacOsAppKit(b) => b.open_window_count(),
-            Self::Headless(_) => 0,
-        }
+        dispatch_backend!(self, b => b.open_window_count())
     }
 
     pub fn is_ffi_driver_loaded(&self) -> bool {
-        match self {
-            Self::LinuxGtk(b) => b.is_native_display_active(),
-            Self::WindowsWinUi(b) => b.is_ffi_loaded(),
-            Self::MacOsAppKit(b) => b.is_ffi_loaded(),
-            Self::Headless(_) => false,
-        }
+        dispatch_backend!(self, b => b.is_ffi_driver_loaded())
     }
 
     pub fn step_event_loop(&self, may_block: bool) -> Vec<NodeId> {
-        match self {
-            Self::LinuxGtk(b) => b.step_event_loop(may_block),
-            Self::WindowsWinUi(b) => b.step_native_events().into_iter().map(|e| e.node).collect(),
-            Self::MacOsAppKit(b) => b.step_native_events().into_iter().map(|e| e.node).collect(),
-            Self::Headless(_) => Vec::new(),
-        }
+        self.step_native_events(may_block)
+            .into_iter()
+            .map(|e| e.node)
+            .collect()
     }
 
     pub fn step_native_events(&self, may_block: bool) -> Vec<NativeEvent> {
         match self {
-            Self::LinuxGtk(b) => b.step_native_events(may_block),
-            Self::WindowsWinUi(b) => b.step_native_events(),
-            Self::MacOsAppKit(b) => b.step_native_events(),
-            Self::Headless(_) => Vec::new(),
+            Self::LinuxGtk(b) => PlatformBackend::step_native_events(&**b, may_block),
+            Self::WindowsWinUi(b) => PlatformBackend::step_native_events(&**b, may_block),
+            Self::MacOsAppKit(b) => PlatformBackend::step_native_events(&**b, may_block),
+            Self::Headless(b) => PlatformBackend::step_native_events(b, may_block),
         }
     }
 }
 
 impl PlatformBackend for AnyPlatformBackend {
     fn backend_name(&self) -> &str {
-        match self {
-            Self::LinuxGtk(b) => b.backend_name(),
-            Self::WindowsWinUi(b) => b.backend_name(),
-            Self::MacOsAppKit(b) => b.backend_name(),
-            Self::Headless(b) => b.backend_name(),
-        }
+        dispatch_backend!(self, b => b.backend_name())
     }
 
     fn map_native_widget(&self, tag: &str) -> &'static str {
-        match self {
-            Self::LinuxGtk(b) => b.map_native_widget(tag),
-            Self::WindowsWinUi(b) => b.map_native_widget(tag),
-            Self::MacOsAppKit(b) => b.map_native_widget(tag),
-            Self::Headless(b) => b.map_native_widget(tag),
-        }
+        dispatch_backend!(self, b => b.map_native_widget(tag))
     }
 
     fn flush_commands(&mut self, commands: &[RenderCommand]) {
-        match self {
-            Self::LinuxGtk(b) => b.flush_commands(commands),
-            Self::WindowsWinUi(b) => b.flush_commands(commands),
-            Self::MacOsAppKit(b) => b.flush_commands(commands),
-            Self::Headless(b) => b.flush_commands(commands),
-        }
+        dispatch_backend!(self, b => b.flush_commands(commands));
+    }
+
+    fn is_native_display_active(&self) -> bool {
+        Self::is_native_display_active(self)
+    }
+
+    fn open_window_count(&self) -> u32 {
+        Self::open_window_count(self)
+    }
+
+    fn is_ffi_driver_loaded(&self) -> bool {
+        Self::is_ffi_driver_loaded(self)
+    }
+
+    fn step_native_events(&self, may_block: bool) -> Vec<NativeEvent> {
+        Self::step_native_events(self, may_block)
     }
 }
 
