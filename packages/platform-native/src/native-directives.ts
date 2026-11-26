@@ -1,8 +1,98 @@
-import { computed, Directive, input } from '@angular/core';
+import {
+  computed,
+  Directive,
+  effect,
+  ElementRef,
+  inject,
+  input,
+  Renderer2,
+  Signal,
+} from '@angular/core';
 
 export type NativeAttrInput = string | number | boolean | null | undefined;
 export type NativeBoolInput = boolean | string | number | null | undefined;
 export type NativeNumberInput = number | string | null | undefined;
+
+interface AttributeStorage {
+  attributes?: Map<string, string> | { getNamedItem?: (name: string) => { value: string } | null };
+}
+
+function getElementAttribute(el: unknown, name: string): string | undefined {
+  if (!el || typeof el !== 'object') {
+    return undefined;
+  }
+  const attrs = (el as AttributeStorage).attributes;
+  if (attrs instanceof Map) {
+    return attrs.get(name);
+  }
+  if (attrs && typeof attrs.getNamedItem === 'function') {
+    return attrs.getNamedItem(name)?.value;
+  }
+  return undefined;
+}
+
+function setCachedAttribute(el: unknown, name: string, value: string): void {
+  if (!el || typeof el !== 'object') {
+    return;
+  }
+  const attrs = (el as AttributeStorage).attributes;
+  if (attrs instanceof Map) {
+    attrs.set(name, value);
+  }
+}
+
+function hasElementAttribute(el: unknown, name: string): boolean {
+  if (!el || typeof el !== 'object') {
+    return false;
+  }
+  const attrs = (el as AttributeStorage).attributes;
+  if (attrs instanceof Map) {
+    return attrs.has(name);
+  }
+  if (attrs && typeof attrs.getNamedItem === 'function') {
+    return attrs.getNamedItem(name) !== null;
+  }
+  return false;
+}
+
+function syncNativeAttr(
+  renderer: Renderer2,
+  el: unknown,
+  name: string,
+  value: NativeAttrInput,
+): void {
+  if (value === undefined) {
+    return;
+  }
+  if (value === null) {
+    if (hasElementAttribute(el, name)) {
+      renderer.removeAttribute(el, name);
+    }
+    return;
+  }
+  const strVal = String(value);
+  if (getElementAttribute(el, name) === strVal) {
+    return;
+  }
+  renderer.setAttribute(el, name, strVal);
+}
+
+function syncNativeProp(
+  renderer: Renderer2,
+  el: unknown,
+  name: string,
+  value: NativeAttrInput,
+): void {
+  if (value === undefined) {
+    return;
+  }
+  const strVal = value === null ? '' : String(value);
+  if (getElementAttribute(el, name) === strVal) {
+    return;
+  }
+  setCachedAttribute(el, name, strVal);
+  renderer.setProperty(el, name, strVal);
+}
 
 function isTruthyDisabledInput(value: NativeBoolInput): boolean {
   if (value === undefined || value === null || value === false || value === 0) {
@@ -15,6 +105,40 @@ function isTruthyDisabledInput(value: NativeBoolInput): boolean {
   return Boolean(value);
 }
 
+type SignalBinding = readonly [attr: string, source: Signal<NativeAttrInput>, asProp?: boolean];
+
+/**
+ * Synchronizes Signal `input()` values to the native renderer without clobbering attributes
+ * managed by static template attributes, text interpolation, or `[formField]` directives.
+ */
+function bindSignalInputs(bindings: readonly SignalBinding[]): void {
+  const renderer = inject(Renderer2);
+  const el = inject<ElementRef<unknown>>(ElementRef).nativeElement;
+  const boundKeys = new Set<string>();
+
+  effect(() => {
+    for (const [name, source, asProp] of bindings) {
+      const value = source();
+      if (value === undefined) {
+        if (boundKeys.has(name)) {
+          if (asProp) {
+            syncNativeProp(renderer, el, name, null);
+          } else {
+            syncNativeAttr(renderer, el, name, null);
+          }
+        }
+        continue;
+      }
+      boundKeys.add(name);
+      if (asProp) {
+        syncNativeProp(renderer, el, name, value);
+      } else {
+        syncNativeAttr(renderer, el, name, value);
+      }
+    }
+  });
+}
+
 /**
  * Common layout, visibility, accessibility, and interaction directive covering all native desktop
  * widget elements (`<ng-*>`, `<gtk-*>`, `<adw-*>`).
@@ -22,28 +146,6 @@ function isTruthyDisabledInput(value: NativeBoolInput): boolean {
 @Directive({
   selector:
     'ng-window,adw-window,ng-dialog,gtk-dialog,adw-dialog,ng-header-bar,adw-header-bar,gtk-header-bar,ng-scroll,gtk-scrolled-window,ng-box,gtk-box,ng-grid,gtk-grid,ng-separator,gtk-separator,ng-button,gtk-button,ng-label,gtk-label,ng-entry,gtk-entry,ng-switch,gtk-switch,ng-checkbox,ng-check,ng-check-button,gtk-check-button,ng-slider,ng-scale,gtk-scale,ng-select,ng-dropdown,gtk-dropdown,gtk-drop-down,ng-image,adw-image,gtk-picture,ng-picture,ng-level-bar,gtk-level-bar,ng-flow,ng-flow-box,gtk-flow-box,ng-spinner,gtk-spinner,ng-progress-bar,gtk-progress-bar,ng-paned,gtk-paned,ng-stack,gtk-stack,adw-navigation-view,ng-expander,gtk-expander,ng-text-view,gtk-text-view,ng-password-entry,gtk-password-entry,ng-spin-button,gtk-spin-button,ng-search-entry,gtk-search-entry,ng-clamp,adw-clamp,ng-list,ng-table,gtk-list-box,gtk-list-view,ng-popover,gtk-popover,ng-menu,adw-entry-row,adw-password-entry-row,adw-switch-row,adw-combo-row,adw-spin-row',
-  host: {
-    '[attr.hexpand]': 'hexpand()',
-    '[attr.vexpand]': 'vexpand()',
-    '[attr.halign]': 'halign()',
-    '[attr.valign]': 'valign()',
-    '[attr.width]': 'width()',
-    '[attr.height]': 'height()',
-    '[attr.min-width]': 'minWidth()',
-    '[attr.min-height]': 'minHeight()',
-    '[attr.margin]': 'margin()',
-    '[attr.margin-top]': 'marginTop()',
-    '[attr.margin-bottom]': 'marginBottom()',
-    '[attr.margin-start]': 'marginStart()',
-    '[attr.margin-end]': 'marginEnd()',
-    '[attr.visible]': 'visible()',
-    '[attr.sensitive]': 'resolvedSensitive()',
-    '[attr.tooltip]': 'tooltip()',
-    '[attr.event-mask]': 'eventMask()',
-    '[attr.drop-target]': 'dropTarget()',
-    '[attr.col]': 'col()',
-    '[attr.row]': 'row()',
-  },
 })
 export class NativeElementDirective {
   readonly hexpand = input<NativeBoolInput>();
@@ -68,13 +170,38 @@ export class NativeElementDirective {
   readonly col = input<NativeNumberInput>();
   readonly row = input<NativeNumberInput>();
 
-  protected readonly resolvedSensitive = computed<NativeBoolInput>(() => {
+  private readonly resolvedSensitive = computed<NativeBoolInput>(() => {
     const disabled = this.disabled();
     if (disabled !== undefined) {
       return isTruthyDisabledInput(disabled) ? 'false' : 'true';
     }
     return this.sensitive();
   });
+
+  constructor() {
+    bindSignalInputs([
+      ['hexpand', this.hexpand],
+      ['vexpand', this.vexpand],
+      ['halign', this.halign],
+      ['valign', this.valign],
+      ['width', this.width],
+      ['height', this.height],
+      ['min-width', this.minWidth],
+      ['min-height', this.minHeight],
+      ['margin', this.margin],
+      ['margin-top', this.marginTop],
+      ['margin-bottom', this.marginBottom],
+      ['margin-start', this.marginStart],
+      ['margin-end', this.marginEnd],
+      ['visible', this.visible],
+      ['sensitive', this.resolvedSensitive],
+      ['tooltip', this.tooltip],
+      ['event-mask', this.eventMask],
+      ['drop-target', this.dropTarget],
+      ['col', this.col],
+      ['row', this.row],
+    ]);
+  }
 }
 
 /**
@@ -84,19 +211,6 @@ export class NativeElementDirective {
 @Directive({
   selector:
     'ng-window,adw-window,ng-dialog,gtk-dialog,adw-dialog,ng-header-bar,adw-header-bar,gtk-header-bar',
-  host: {
-    '[attr.title]': 'title()',
-    '[attr.subtitle]': 'subtitle()',
-    '[attr.show-title-buttons]': 'showTitleButtons()',
-    '[attr.icon]': 'icon()',
-    '[attr.resizable]': 'resizable()',
-    '[attr.decorated]': 'decorated()',
-    '[attr.modal]': 'modal()',
-    '[attr.transient-for]': 'transientFor() ?? transientForAttr()',
-    '[attr.prevent-close]': 'preventClose() ?? preventCloseAttr()',
-    '[attr.backdrop]': 'backdrop()',
-    '[attr.theme]': 'theme()',
-  },
 })
 export class NativeWindowDirective {
   readonly title = input<NativeAttrInput>();
@@ -112,6 +226,29 @@ export class NativeWindowDirective {
   readonly preventCloseAttr = input<NativeBoolInput>(undefined, { alias: 'prevent-close' });
   readonly backdrop = input<NativeAttrInput>();
   readonly theme = input<NativeAttrInput>();
+
+  private readonly resolvedTransientFor = computed(
+    () => this.transientFor() ?? this.transientForAttr(),
+  );
+  private readonly resolvedPreventClose = computed(
+    () => this.preventClose() ?? this.preventCloseAttr(),
+  );
+
+  constructor() {
+    bindSignalInputs([
+      ['title', this.title, true],
+      ['subtitle', this.subtitle],
+      ['show-title-buttons', this.showTitleButtons],
+      ['icon', this.icon],
+      ['resizable', this.resizable],
+      ['decorated', this.decorated],
+      ['modal', this.modal],
+      ['transient-for', this.resolvedTransientFor],
+      ['prevent-close', this.resolvedPreventClose],
+      ['backdrop', this.backdrop],
+      ['theme', this.theme],
+    ]);
+  }
 }
 
 /**
@@ -121,32 +258,6 @@ export class NativeWindowDirective {
 @Directive({
   selector:
     'ng-box,gtk-box,ng-grid,gtk-grid,ng-flow,ng-flow-box,gtk-flow-box,ng-paned,gtk-paned,ng-scroll,gtk-scrolled-window,ng-stack,gtk-stack,adw-navigation-view,ng-expander,gtk-expander,ng-clamp,adw-clamp,ng-separator,gtk-separator',
-  host: {
-    '[attr.orientation]': 'orientation()',
-    '[attr.spacing]': 'spacing()',
-    '[attr.gap]': 'gap()',
-    '[attr.row-spacing]': 'rowSpacing()',
-    '[attr.column-spacing]': 'columnSpacing()',
-    '[attr.min-children]': 'minChildren()',
-    '[attr.max-children]': 'maxChildren()',
-    '[attr.min-per-row]': 'minPerRow()',
-    '[attr.max-per-row]': 'maxPerRow()',
-    '[attr.columns]': 'columns()',
-    '[attr.homogeneous]': 'homogeneous()',
-    '[attr.position]': 'position()',
-    '[attr.visible-child]': 'visibleChild()',
-    '[attr.active-page]': 'activePage()',
-    '[attr.transition]': 'transition()',
-    '[attr.transition-type]': 'transitionType()',
-    '[attr.label]': 'label()',
-    '[attr.title]': 'title()',
-    '[attr.expanded]': 'expanded()',
-    '[attr.open]': 'open()',
-    '[attr.max-size]': 'maxSize()',
-    '[attr.maximum-size]': 'maximumSize()',
-    '[attr.scroll-to]': 'scrollTo()',
-    '[attr.scroll-anchor]': 'scrollAnchor()',
-  },
 })
 export class NativeContainerDirective {
   readonly orientation = input<NativeAttrInput>();
@@ -173,6 +284,35 @@ export class NativeContainerDirective {
   readonly maximumSize = input<NativeNumberInput>(undefined, { alias: 'maximum-size' });
   readonly scrollTo = input<NativeAttrInput>(undefined, { alias: 'scroll-to' });
   readonly scrollAnchor = input<NativeAttrInput>(undefined, { alias: 'scroll-anchor' });
+
+  constructor() {
+    bindSignalInputs([
+      ['orientation', this.orientation],
+      ['spacing', this.spacing],
+      ['gap', this.gap],
+      ['row-spacing', this.rowSpacing],
+      ['column-spacing', this.columnSpacing],
+      ['min-children', this.minChildren],
+      ['max-children', this.maxChildren],
+      ['min-per-row', this.minPerRow],
+      ['max-per-row', this.maxPerRow],
+      ['columns', this.columns],
+      ['homogeneous', this.homogeneous],
+      ['position', this.position],
+      ['visible-child', this.visibleChild],
+      ['active-page', this.activePage],
+      ['transition', this.transition],
+      ['transition-type', this.transitionType],
+      ['label', this.label],
+      ['title', this.title],
+      ['expanded', this.expanded],
+      ['open', this.open],
+      ['max-size', this.maxSize],
+      ['maximum-size', this.maximumSize],
+      ['scroll-to', this.scrollTo],
+      ['scroll-anchor', this.scrollAnchor],
+    ]);
+  }
 }
 
 /**
@@ -180,13 +320,6 @@ export class NativeContainerDirective {
  */
 @Directive({
   selector: 'ng-button,gtk-button,ng-label,gtk-label',
-  host: {
-    '[attr.label]': 'label()',
-    '[attr.text]': 'text()',
-    '[attr.wrap]': 'wrap()',
-    '[attr.selectable]': 'selectable()',
-    '[attr.ellipsize]': 'ellipsize()',
-  },
 })
 export class NativeTextWidgetDirective {
   readonly label = input<NativeAttrInput>();
@@ -194,6 +327,16 @@ export class NativeTextWidgetDirective {
   readonly wrap = input<NativeBoolInput>();
   readonly selectable = input<NativeBoolInput>();
   readonly ellipsize = input<NativeAttrInput>();
+
+  constructor() {
+    bindSignalInputs([
+      ['label', this.label, true],
+      ['text', this.text, true],
+      ['wrap', this.wrap],
+      ['selectable', this.selectable],
+      ['ellipsize', this.ellipsize],
+    ]);
+  }
 }
 
 /**
@@ -202,17 +345,6 @@ export class NativeTextWidgetDirective {
 @Directive({
   selector:
     'ng-image,adw-image,gtk-picture,ng-picture,ng-level-bar,gtk-level-bar,ng-progress-bar,gtk-progress-bar,ng-spinner,gtk-spinner',
-  host: {
-    '[attr.src]': 'src()',
-    '[attr.ngSrc]': 'ngSrc()',
-    '[attr.alt]': 'alt()',
-    '[attr.value]': 'value()',
-    '[attr.min]': 'min()',
-    '[attr.max]': 'max()',
-    '[attr.indeterminate]': 'indeterminate()',
-    '[attr.active]': 'active()',
-    '[attr.spinning]': 'spinning()',
-  },
 })
 export class NativeMediaAndMeterDirective {
   readonly src = input<NativeAttrInput>();
@@ -224,6 +356,20 @@ export class NativeMediaAndMeterDirective {
   readonly indeterminate = input<NativeBoolInput>();
   readonly active = input<NativeBoolInput>();
   readonly spinning = input<NativeBoolInput>();
+
+  constructor() {
+    bindSignalInputs([
+      ['src', this.src, true],
+      ['ngSrc', this.ngSrc, true],
+      ['alt', this.alt],
+      ['value', this.value],
+      ['min', this.min],
+      ['max', this.max],
+      ['indeterminate', this.indeterminate],
+      ['active', this.active],
+      ['spinning', this.spinning],
+    ]);
+  }
 }
 
 /**
@@ -232,20 +378,6 @@ export class NativeMediaAndMeterDirective {
 @Directive({
   selector:
     'ng-entry,gtk-entry,ng-search-entry,gtk-search-entry,ng-password-entry,gtk-password-entry,ng-text-view,gtk-text-view,ng-switch,gtk-switch,ng-checkbox,ng-check,ng-check-button,gtk-check-button,ng-slider,ng-scale,gtk-scale,ng-spin-button,gtk-spin-button,ng-select,ng-dropdown,gtk-dropdown,gtk-drop-down,adw-entry-row,adw-password-entry-row,adw-switch-row,adw-combo-row,adw-spin-row',
-  host: {
-    '[attr.placeholder]': 'placeholder()',
-    '[attr.value]': 'value()',
-    '[attr.text]': 'text()',
-    '[attr.active]': 'active()',
-    '[attr.checked]': 'checked()',
-    '[attr.label]': 'label()',
-    '[attr.options]': 'options()',
-    '[attr.selected]': 'selected()',
-    '[attr.editable]': 'editable()',
-    '[attr.monospace]': 'monospace()',
-    '[attr.show-peek-icon]': 'showPeekIcon()',
-    '[attr.peek]': 'peek()',
-  },
 })
 export class NativeInputWidgetDirective {
   readonly placeholder = input<NativeAttrInput>();
@@ -260,6 +392,23 @@ export class NativeInputWidgetDirective {
   readonly monospace = input<NativeBoolInput>();
   readonly showPeekIcon = input<NativeBoolInput>(undefined, { alias: 'show-peek-icon' });
   readonly peek = input<NativeBoolInput>();
+
+  constructor() {
+    bindSignalInputs([
+      ['placeholder', this.placeholder],
+      ['value', this.value],
+      ['text', this.text],
+      ['active', this.active],
+      ['checked', this.checked],
+      ['label', this.label],
+      ['options', this.options],
+      ['selected', this.selected],
+      ['editable', this.editable],
+      ['monospace', this.monospace],
+      ['show-peek-icon', this.showPeekIcon],
+      ['peek', this.peek],
+    ]);
+  }
 }
 
 /**
@@ -267,11 +416,6 @@ export class NativeInputWidgetDirective {
  */
 @Directive({
   selector: 'ng-list,ng-table,gtk-list-box,gtk-list-view',
-  host: {
-    '[attr.selection-mode]': 'selectionMode() ?? selectionModeAttr()',
-    '[attr.show-separators]': 'showSeparators() ?? showSeparatorsAttr()',
-    '[attr.separators]': 'separators()',
-  },
 })
 export class NativeListDirective {
   readonly selectionModeAttr = input<NativeAttrInput>(undefined, { alias: 'selection-mode' });
@@ -279,6 +423,21 @@ export class NativeListDirective {
   readonly showSeparatorsAttr = input<NativeBoolInput>(undefined, { alias: 'show-separators' });
   readonly showSeparators = input<NativeBoolInput>();
   readonly separators = input<NativeBoolInput>();
+
+  private readonly resolvedSelectionMode = computed(
+    () => this.selectionMode() ?? this.selectionModeAttr(),
+  );
+  private readonly resolvedShowSeparators = computed(
+    () => this.showSeparators() ?? this.showSeparatorsAttr(),
+  );
+
+  constructor() {
+    bindSignalInputs([
+      ['selection-mode', this.resolvedSelectionMode],
+      ['show-separators', this.resolvedShowSeparators],
+      ['separators', this.separators],
+    ]);
+  }
 }
 
 /**
@@ -286,14 +445,6 @@ export class NativeListDirective {
  */
 @Directive({
   selector: 'ng-popover,gtk-popover,ng-menu',
-  host: {
-    '[attr.open]': 'open()',
-    '[attr.position]': 'position()',
-    '[attr.placement]': 'placement()',
-    '[attr.autohide]': 'autohide()',
-    '[attr.has-arrow]': 'hasArrow() ?? hasArrowAttr()',
-    '[attr.anchor]': 'anchor()',
-  },
 })
 export class NativePopoverDirective {
   readonly open = input<NativeBoolInput>();
@@ -303,6 +454,19 @@ export class NativePopoverDirective {
   readonly hasArrowAttr = input<NativeBoolInput>(undefined, { alias: 'has-arrow' });
   readonly hasArrow = input<NativeBoolInput>();
   readonly anchor = input<NativeAttrInput>();
+
+  private readonly resolvedHasArrow = computed(() => this.hasArrow() ?? this.hasArrowAttr());
+
+  constructor() {
+    bindSignalInputs([
+      ['open', this.open],
+      ['position', this.position],
+      ['placement', this.placement],
+      ['autohide', this.autohide],
+      ['has-arrow', this.resolvedHasArrow],
+      ['anchor', this.anchor],
+    ]);
+  }
 }
 
 /**
@@ -311,16 +475,19 @@ export class NativePopoverDirective {
  */
 @Directive({
   selector: 'ng-slider,ng-scale,gtk-scale,ng-spin-button,gtk-spin-button,adw-spin-row',
-  host: {
-    '[attr.min]': 'min()',
-    '[attr.max]': 'max()',
-    '[attr.step]': 'step()',
-  },
 })
 export class NativeNumericRangeDirective {
   readonly min = input<NativeNumberInput>();
   readonly max = input<NativeNumberInput>();
   readonly step = input<NativeNumberInput>();
+
+  constructor() {
+    bindSignalInputs([
+      ['min', this.min],
+      ['max', this.max],
+      ['step', this.step],
+    ]);
+  }
 }
 
 /**
