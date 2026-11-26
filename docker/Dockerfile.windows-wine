@@ -40,4 +40,4 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 WORKDIR /workspace
 COPY . .
 
-CMD ["sh", "-c", "pnpm install --frozen-lockfile && pnpm run build && cargo clippy --target x86_64-pc-windows-gnu --all-targets -- -D warnings && NG_E2E_REQUIRE_FULL=1 xvfb-run -a cargo test --target x86_64-pc-windows-gnu --verbose"]
+CMD ["sh", "-c", "pnpm install --frozen-lockfile && pnpm run build && cargo clippy --target x86_64-pc-windows-gnu --all-targets -- -D warnings && NG_E2E_REQUIRE_FULL=1 xvfb-run -a cargo test --target x86_64-pc-windows-gnu --verbose -- --test-threads=1"]
