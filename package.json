@@ -19,6 +19,8 @@
     "test": "ng test ng-linux-counter",
     "docs:serve": "ng serve ng-desktop-docs",
     "docs:build": "ng build ng-desktop-docs",
+    "docs:api": "node scripts/build-api-docs.mjs",
+    "docs:site": "pnpm run docs:build && pnpm run docs:api",
     "docs:test": "ng test ng-desktop-docs --watch=false",
     "test:pack": "node scripts/test-external-pack.mjs",
     "test:rust": "cargo test",
