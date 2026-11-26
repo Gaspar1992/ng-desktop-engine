@@ -1158,4 +1158,17 @@ mod tests {
         );
         assert_eq!(flags, vec![false]);
     }
+
+    #[test]
+    fn empty_parallel_downloads_and_unmatched_routes_behave_cleanly() {
+        assert_eq!(
+            NativeHttpEngine::download_files_parallel_with(2, 500, &[]),
+            Vec::<bool>::new()
+        );
+
+        let mut engine = NativeHttpEngine::new();
+        let req = NativeHttpRequest::new("DELETE", "http://127.0.0.1:0/missing/99");
+        let res = engine.execute_http(&req);
+        assert!(res.status >= 400);
+    }
 }

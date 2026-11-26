@@ -18,7 +18,41 @@ import { DocsThemeService } from '../core/theme.service';
     <header #headerEl class="site-header" [class.is-wide]="isWide()">
       <div class="header-inner docs-container">
         <a routerLink="/" class="brand-link" aria-label="ng-desktop-engine home">
-          <span class="brand-badge" aria-hidden="true">ng</span>
+          <span class="brand-badge" aria-hidden="true">
+            <svg viewBox="0 0 64 64" fill="none" class="brand-icon">
+              <defs>
+                <linearGradient
+                  id="navbarShieldGrad"
+                  x1="8"
+                  y1="6"
+                  x2="56"
+                  y2="58"
+                  gradientUnits="userSpaceOnUse"
+                >
+                  <stop offset="0%" stop-color="#dd0031" />
+                  <stop offset="100%" stop-color="#7c3aed" />
+                </linearGradient>
+              </defs>
+              <path
+                d="M32 4 8 13l3.6 31.2L32 60l20.4-15.8L56 13 32 4Z"
+                fill="url(#navbarShieldGrad)"
+              />
+              <rect
+                x="17"
+                y="18"
+                width="30"
+                height="22"
+                rx="4"
+                fill="#ffffff"
+                fill-opacity="0.95"
+              />
+              <rect x="17" y="18" width="30" height="6" rx="3" fill="#18181b" fill-opacity="0.16" />
+              <circle cx="22" cy="21" r="1.5" fill="#dd0031" />
+              <circle cx="26.5" cy="21" r="1.5" fill="#f59e0b" />
+              <circle cx="31" cy="21" r="1.5" fill="#10b981" />
+              <path d="M25 35.5 32 26l7 9.5h-3.6L32 30.8l-3.4 4.7H25Z" fill="#18181b" />
+            </svg>
+          </span>
           <span class="brand-text">
             <strong>ng-desktop</strong>
             <span class="version-pill">v0.6.0</span>
@@ -155,15 +189,18 @@ import { DocsThemeService } from '../core/theme.service';
     }
 
     .brand-badge {
-      display: grid;
-      place-items: center;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       width: 2rem;
       height: 2rem;
-      border-radius: 9px;
-      background: linear-gradient(135deg, var(--accent), var(--violet));
-      color: #ffffff;
-      font-weight: 800;
-      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+
+    .brand-icon {
+      width: 100%;
+      height: 100%;
+      display: block;
     }
 
     .brand-text {
