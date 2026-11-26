@@ -30,4 +30,4 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 WORKDIR /workspace
 COPY . .
 
-CMD ["sh", "-c", "pnpm install --frozen-lockfile && pnpm run build && NG_E2E_REQUIRE_FULL=1 xvfb-run -a cargo test --verbose"]
+CMD ["sh", "-c", "pnpm install --frozen-lockfile && pnpm run build && NG_DESKTOP_GPU_BACKEND=software NG_E2E_REQUIRE_FULL=1 xvfb-run -a cargo test --verbose -- --test-threads=1"]

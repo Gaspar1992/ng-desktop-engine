@@ -76,6 +76,7 @@ impl QuickJsEngine {
         context: &Context,
         js_code: &str,
     ) -> Result<String, EngineError> {
+        const MAX_MICROTASKS_PER_EVAL: usize = 4096;
         let output = context.with(|ctx| {
             let val: Value<'_> = ctx
                 .eval(js_code)
@@ -90,8 +91,10 @@ impl QuickJsEngine {
             }
         })?;
 
-        while runtime.is_job_pending() {
+        let mut drained = 0usize;
+        while runtime.is_job_pending() && drained < MAX_MICROTASKS_PER_EVAL {
             let _ = runtime.execute_pending_job();
+            drained += 1;
         }
         Ok(output)
     }
@@ -270,5 +273,27 @@ mod tests {
             })
             .expect("spawn stack guard test thread");
         handle.join().expect("stack guard thread must not panic");
+    }
+
+    #[test]
+    fn quickjs_caps_infinite_promise_microtask_loop() {
+        let mut qjs = QuickJsEngine::new();
+        let res = qjs.eval_script(
+            r#"
+            let ticks = 0;
+            function loop() {
+                ticks += 1;
+                Promise.resolve().then(loop);
+            }
+            Promise.resolve().then(loop);
+            "ok";
+            "#,
+        );
+        assert!(
+            res.is_ok(),
+            "infinite microtask loop must not hang: {res:?}"
+        );
+        let ticks: usize = qjs.eval_raw("ticks").unwrap().trim().parse().unwrap();
+        assert_eq!(ticks, 4096);
     }
 }

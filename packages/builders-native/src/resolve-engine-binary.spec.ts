@@ -28,7 +28,9 @@ describe('Phase 12 — Prebuilt Engine Binary Resolution (resolveEngineBinaryPat
           ? '/app/node_modules/@ng-desktop/engine-win32-x64-msvc/package.json'
           : null,
       fileExists: (p) =>
-        p.endsWith('node_modules/@ng-desktop/engine-win32-x64-msvc/bin/ng-native-engine.exe'),
+        p
+          .replaceAll('\\', '/')
+          .endsWith('node_modules/@ng-desktop/engine-win32-x64-msvc/bin/ng-native-engine.exe'),
     });
 
     expect(winRes.mode).toBe('binary');
@@ -52,11 +54,13 @@ describe('Phase 12 — Prebuilt Engine Binary Resolution (resolveEngineBinaryPat
       arch: 'arm64',
       workspaceRoot: '/repo',
       resolvePkgPath: () => null,
-      fileExists: (p) => p === '/repo/target/release/ng-native-engine',
+      fileExists: (p) => p.replaceAll('\\', '/').endsWith('/repo/target/release/ng-native-engine'),
     });
     expect(localRelease.mode).toBe('binary');
     expect(localRelease.source).toBe('cargo-target');
-    expect(localRelease.command).toBe('/repo/target/release/ng-native-engine');
+    expect(localRelease.command.replaceAll('\\', '/')).toContain(
+      '/repo/target/release/ng-native-engine',
+    );
 
     const fallback = resolveEngineBinaryPath({
       env: {},

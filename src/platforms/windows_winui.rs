@@ -374,6 +374,23 @@ impl WinUiFfiDriver {
                     }
                 }
             }
+            RenderCommand::RemoveChild { child, .. } => {
+                if !self.live_toplevels.contains(child)
+                    && let (Some(win32), Some(&h)) = (&self.win32, self.live_handles.get(child))
+                {
+                    win32.set_visible(h, false);
+                }
+            }
+            RenderCommand::SetTheme { theme } => {
+                if let Some(win32) = &self.win32 {
+                    let dark = matches!(theme, crate::desktop::DesktopTheme::Dark);
+                    for id in &self.live_toplevels {
+                        if let Some(&h) = self.live_handles.get(id) {
+                            win32.apply_dwm_theme(h, dark);
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }

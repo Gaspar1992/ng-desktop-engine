@@ -291,9 +291,9 @@ impl AppKitFfiDriver {
                     }
                     h
                 }
-                cls => sys.create_view(
+                _ => sys.create_view(
                     id,
-                    cls,
+                    mapped_tag,
                     NsRect {
                         origin: NsPoint { x: 0.0, y: 0.0 },
                         size: NsSize {
@@ -418,7 +418,16 @@ impl AppKitFfiDriver {
                 {
                     let cls = binding.objc_class;
                     match key.as_str() {
-                        "title" | "label" => sys.set_title(h, value),
+                        "title" | "label" => {
+                            if matches!(cls, "NSWindow" | "NSPanel" | "NSButton" | "NSBox") {
+                                sys.set_title(h, value);
+                            } else if matches!(
+                                cls,
+                                "NSTextField" | "NSSecureTextField" | "NSSearchField"
+                            ) {
+                                sys.set_string_value(h, value);
+                            }
+                        }
                         "value" | "text" => sys.set_string_value(h, value),
                         "visible" => {
                             let visible = NativeSceneState::parse_truthy_attr(value);

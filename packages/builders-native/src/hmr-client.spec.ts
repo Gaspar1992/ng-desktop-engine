@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { pingHmr, pushHmrEval, pushHmrReload, sendHmrMessage } from './hmr-client.mjs';
 
 describe('HMR IPC Client (Node.js)', () => {
-  const testSocket = `/tmp/ng-native-hmr-vitest-${process.pid}.sock`;
+  const testSocket = join(tmpdir(), `ng-native-hmr-vitest-${process.pid}.sock`);
   let server: net.Server;
 
   beforeAll(async () => {
@@ -31,9 +31,19 @@ describe('HMR IPC Client (Node.js)', () => {
       });
     });
 
-    await new Promise<void>((resolve) => {
-      server.listen(testSocket, () => resolve());
-    });
+    if (process.platform === 'win32') {
+      await new Promise<void>((resolve) => {
+        server.listen(0, '127.0.0.1', () => {
+          const addr = server.address() as net.AddressInfo;
+          writeFileSync(testSocket, `tcp://127.0.0.1:${addr.port}\n`, 'utf8');
+          resolve();
+        });
+      });
+    } else {
+      await new Promise<void>((resolve) => {
+        server.listen(testSocket, () => resolve());
+      });
+    }
   });
 
   afterAll(async () => {
@@ -103,7 +113,9 @@ describe('HMR IPC Client (Node.js)', () => {
   });
 
   it('gracefully handles missing socket when engine is stopped', async () => {
-    const res = await sendHmrMessage('/tmp/nonexistent-engine.sock', { type: 'ping' });
+    const res = await sendHmrMessage(join(tmpdir(), `nonexistent-engine-${process.pid}.sock`), {
+      type: 'ping',
+    });
     expect(res.connected).toBe(false);
     expect(res.error).toBe('Socket file not found');
   });

@@ -213,7 +213,18 @@ type GetModuleHandleWFn = unsafe extern "system" fn(*const u16) -> *mut c_void;
 #[cfg(target_os = "windows")]
 type GetLastErrorFn = unsafe extern "system" fn() -> u32;
 #[cfg(target_os = "windows")]
+type DwmSetWindowAttributeFn =
+    unsafe extern "system" fn(*mut c_void, u32, *const c_void, u32) -> i32;
+#[cfg(target_os = "windows")]
 const ERROR_CLASS_ALREADY_EXISTS: u32 = 1410;
+#[cfg(target_os = "windows")]
+const DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1: u32 = 19;
+#[cfg(target_os = "windows")]
+const DWMWA_USE_IMMERSIVE_DARK_MODE: u32 = 20;
+#[cfg(target_os = "windows")]
+const DWMWA_SYSTEMBACKDROP_TYPE: u32 = 38;
+#[cfg(target_os = "windows")]
+const DWMSBT_MAINWINDOW: c_int = 2;
 
 #[cfg(target_os = "windows")]
 #[repr(C)]
@@ -469,6 +480,7 @@ pub(super) struct Win32Sys {
     translate_message: TranslateMessageFn,
     dispatch_message_w: DispatchMessageWFn,
     enable_window: EnableWindowFn,
+    dwm_set_window_attribute: Option<DwmSetWindowAttributeFn>,
 }
 
 #[cfg(target_os = "windows")]
@@ -476,6 +488,9 @@ impl Win32Sys {
     pub(super) fn try_load() -> Option<Self> {
         let user32 = unsafe { DynLib::open(c"user32.dll") }?;
         let kernel32 = unsafe { DynLib::open(c"kernel32.dll") }?;
+        let dwm_set_window_attribute: Option<DwmSetWindowAttributeFn> =
+            unsafe { DynLib::open(c"dwmapi.dll") }
+                .and_then(|lib| unsafe { lib.sym(c"DwmSetWindowAttribute") });
 
         let register_class_ex_w: RegisterClassExWFn = unsafe { user32.sym(c"RegisterClassExW") }?;
         let create_window_ex_w: CreateWindowExWFn = unsafe { user32.sym(c"CreateWindowExW") }?;
@@ -525,6 +540,7 @@ impl Win32Sys {
             translate_message,
             dispatch_message_w,
             enable_window,
+            dwm_set_window_attribute,
         })
     }
 
@@ -652,7 +668,44 @@ impl Win32Sys {
                     suppress_change: false,
                 },
             );
+        if crate::platforms::GpuRendererPreference::from_env().prefers_hardware_acceleration() {
+            self.apply_dwm_theme(handle, false);
+        }
         Some(handle)
+    }
+
+    pub(super) fn apply_dwm_theme(&self, handle: Win32Handle, dark: bool) {
+        let Some(dwm_set) = self.dwm_set_window_attribute else {
+            return;
+        };
+        let dark_val = c_int::from(dark);
+        let hwnd = handle.0 as *mut c_void;
+        let dword_size = u32::try_from(size_of::<c_int>()).unwrap_or(4);
+        unsafe {
+            let hr = dwm_set(
+                hwnd,
+                DWMWA_USE_IMMERSIVE_DARK_MODE,
+                (&raw const dark_val).cast::<c_void>(),
+                dword_size,
+            );
+            if hr != 0 {
+                let _ = dwm_set(
+                    hwnd,
+                    DWMWA_USE_IMMERSIVE_DARK_MODE_BEFORE_20H1,
+                    (&raw const dark_val).cast::<c_void>(),
+                    dword_size,
+                );
+            }
+            if crate::platforms::GpuRendererPreference::from_env().prefers_hardware_acceleration() {
+                let backdrop = DWMSBT_MAINWINDOW;
+                let _ = dwm_set(
+                    hwnd,
+                    DWMWA_SYSTEMBACKDROP_TYPE,
+                    (&raw const backdrop).cast::<c_void>(),
+                    dword_size,
+                );
+            }
+        }
     }
 
     pub(super) fn create_child_control(

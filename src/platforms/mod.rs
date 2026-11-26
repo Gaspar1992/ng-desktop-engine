@@ -25,6 +25,54 @@ pub use scene_state::{NativeSceneNode, NativeSceneState};
 use std::sync::OnceLock;
 pub use windows_winui::{WinUiBackend, WinUiControlBinding};
 
+/// Cross-platform GPU rendering preference resolved from `NG_DESKTOP_GPU_BACKEND`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GpuRendererPreference {
+    Auto,
+    Vulkan,
+    Gl,
+    Ngl,
+    Metal,
+    Dwm,
+    Software,
+}
+
+impl GpuRendererPreference {
+    #[must_use]
+    pub fn parse(raw: &str) -> Self {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "vulkan" => Self::Vulkan,
+            "gl" => Self::Gl,
+            "ngl" => Self::Ngl,
+            "metal" => Self::Metal,
+            "dwm" => Self::Dwm,
+            "software" | "cairo" | "cpu" => Self::Software,
+            _ => Self::Auto,
+        }
+    }
+
+    #[must_use]
+    pub fn from_env() -> Self {
+        std::env::var("NG_DESKTOP_GPU_BACKEND").map_or(Self::Auto, |raw| Self::parse(&raw))
+    }
+
+    #[must_use]
+    pub const fn gsk_renderer_value(self) -> Option<&'static str> {
+        match self {
+            Self::Vulkan => Some("vulkan"),
+            Self::Gl => Some("gl"),
+            Self::Ngl => Some("ngl"),
+            Self::Software => Some("cairo"),
+            Self::Auto | Self::Metal | Self::Dwm => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn prefers_hardware_acceleration(self) -> bool {
+        !matches!(self, Self::Software)
+    }
+}
+
 static TRACE_COMMANDS: OnceLock<bool> = OnceLock::new();
 
 fn parse_trace_flag(raw: &str) -> bool {
@@ -116,8 +164,8 @@ pub trait PlatformBackend {
 /// Polymorphic backend wrapper produced by the Platform Factory from `angular.json`.
 pub enum AnyPlatformBackend {
     LinuxGtk(Box<GtkLinuxBackend>),
-    WindowsWinUi(WinUiBackend),
-    MacOsAppKit(MacOsAppKitBackend),
+    WindowsWinUi(Box<WinUiBackend>),
+    MacOsAppKit(Box<MacOsAppKitBackend>),
     Headless(HeadlessBackend),
 }
 
@@ -132,8 +180,8 @@ impl AnyPlatformBackend {
     pub fn from_target(target_platform: &str) -> Result<Self, String> {
         match target_platform {
             "linux-gtk4" => Ok(Self::LinuxGtk(Box::default())),
-            "windows-winui" => Ok(Self::WindowsWinUi(WinUiBackend::new())),
-            "macos-appkit" => Ok(Self::MacOsAppKit(MacOsAppKitBackend::new())),
+            "windows-winui" => Ok(Self::WindowsWinUi(Box::default())),
+            "macos-appkit" => Ok(Self::MacOsAppKit(Box::default())),
             "headless" => Ok(Self::headless()),
             other => Err(format!("Unsupported targetPlatform '{other}'")),
         }
@@ -146,8 +194,8 @@ impl AnyPlatformBackend {
                 &cfg.project_name,
                 &cfg.icon_search_dir,
             )))),
-            "windows-winui" => Ok(Self::WindowsWinUi(WinUiBackend::new())),
-            "macos-appkit" => Ok(Self::MacOsAppKit(MacOsAppKitBackend::new())),
+            "windows-winui" => Ok(Self::WindowsWinUi(Box::default())),
+            "macos-appkit" => Ok(Self::MacOsAppKit(Box::default())),
             "headless" => Ok(Self::headless()),
             other => Err(format!("Unsupported targetPlatform '{other}'")),
         }
@@ -297,5 +345,55 @@ mod tests {
         cocoa.flush_commands(&[]);
         assert_eq!(winui.get_layout_rect(box_id).unwrap().width, 1376);
         assert_eq!(cocoa.get_layout_rect(box_id).unwrap().width, 1376);
+    }
+
+    #[test]
+    fn gpu_renderer_preference_parses_os_backends_and_software_fallback() {
+        assert_eq!(
+            GpuRendererPreference::parse(""),
+            GpuRendererPreference::Auto
+        );
+        assert_eq!(
+            GpuRendererPreference::parse("Vulkan"),
+            GpuRendererPreference::Vulkan
+        );
+        assert_eq!(
+            GpuRendererPreference::parse("gl"),
+            GpuRendererPreference::Gl
+        );
+        assert_eq!(
+            GpuRendererPreference::parse("ngl"),
+            GpuRendererPreference::Ngl
+        );
+        assert_eq!(
+            GpuRendererPreference::parse("metal"),
+            GpuRendererPreference::Metal
+        );
+        assert_eq!(
+            GpuRendererPreference::parse("dwm"),
+            GpuRendererPreference::Dwm
+        );
+        assert_eq!(
+            GpuRendererPreference::parse("cairo"),
+            GpuRendererPreference::Software
+        );
+        assert_eq!(
+            GpuRendererPreference::parse("software"),
+            GpuRendererPreference::Software
+        );
+
+        assert_eq!(
+            GpuRendererPreference::Vulkan.gsk_renderer_value(),
+            Some("vulkan")
+        );
+        assert_eq!(GpuRendererPreference::Gl.gsk_renderer_value(), Some("gl"));
+        assert_eq!(GpuRendererPreference::Ngl.gsk_renderer_value(), Some("ngl"));
+        assert_eq!(
+            GpuRendererPreference::Software.gsk_renderer_value(),
+            Some("cairo")
+        );
+        assert_eq!(GpuRendererPreference::Auto.gsk_renderer_value(), None);
+        assert!(GpuRendererPreference::Metal.prefers_hardware_acceleration());
+        assert!(!GpuRendererPreference::Software.prefers_hardware_acceleration());
     }
 }
